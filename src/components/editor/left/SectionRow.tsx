@@ -1,0 +1,209 @@
+"use client";
+
+import { forwardRef, memo, useEffect, useRef, type ButtonHTMLAttributes } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Eye, EyeOff, GripVertical, Lock, Unlock } from "lucide-react";
+import type { SectionBase } from "@/src/types/project";
+import SectionRowMenu from "@/src/components/editor/left/SectionRowMenu";
+
+const IconButton = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement>
+>(({ className, ...props }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    className={`ui-button h-7 w-7 px-0 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
+      className ?? ""
+    }`}
+    {...props}
+  />
+));
+
+IconButton.displayName = "IconButton";
+
+export type SectionRowProps = {
+  section: SectionBase;
+  label: string;
+  isSelected: boolean;
+  isEditing: boolean;
+  draftName: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  disableDrag: boolean;
+  onSelect: () => void;
+  onStartRename: () => void;
+  onChangeName: (value: string) => void;
+  onCommitName: () => void;
+  onCancelName: () => void;
+  onToggleVisibility: () => void;
+  onToggleLock: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+};
+
+function SectionRow({
+  section,
+  label,
+  isSelected,
+  isEditing,
+  draftName,
+  canMoveUp,
+  canMoveDown,
+  disableDrag,
+  onSelect,
+  onStartRename,
+  onChangeName,
+  onCommitName,
+  onCancelName,
+  onToggleVisibility,
+  onToggleLock,
+  onDuplicate,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+}: SectionRowProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: section.id, disabled: disableDrag });
+
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  const controlsClass =
+    "absolute right-1 top-0 flex h-full items-center gap-1.5 opacity-0 pointer-events-none transition-opacity duration-100 group-hover:opacity-100 group-hover:pointer-events-auto" +
+    (isSelected ? " opacity-100 pointer-events-auto" : "");
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={dragStyle}
+      className={
+        "group relative flex h-8 items-center gap-2 rounded-md border border-[var(--ui-border)]/40 bg-[var(--ui-panel)]/65 px-2 transition " +
+        (isSelected
+          ? " bg-[color-mix(in_oklab,var(--ui-primary)_10%,var(--ui-panel))]"
+          : " hover:bg-[var(--ui-panel)]/85") +
+        (!section.visible ? " opacity-60" : "") +
+        (isDragging ? " ring-1 ring-[var(--ui-primary)]/50" : "")
+      }
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        if (!section.locked) {
+          onStartRename();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !isEditing && !section.locked) {
+          event.preventDefault();
+          onStartRename();
+        }
+      }}
+    >
+      {isSelected ? (
+        <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--ui-primary)]" />
+      ) : null}
+      <div
+        className={
+          "flex min-w-0 flex-1 items-center gap-2 pr-2 transition-[padding] duration-100 " +
+          (isSelected ? "pr-24" : "group-hover:pr-24")
+        }
+      >
+        <span className="h-2.5 w-2.5 rounded-sm bg-[var(--ui-border)]/80" />
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            className="ui-input h-7 w-full min-w-0 text-[13px]"
+            value={draftName}
+            onChange={(event) => onChangeName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                onCommitName();
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                onCancelName();
+              }
+            }}
+            onBlur={onCommitName}
+          />
+        ) : (
+          <span
+            className="truncate text-[13px] font-medium text-[var(--ui-text)]"
+            title={label}
+          >
+            {label}
+          </span>
+        )}
+      </div>
+      <div className={controlsClass}>
+        <IconButton
+          aria-label={section.visible ? "セクションを非表示" : "セクションを表示"}
+          title={section.visible ? "セクションを非表示" : "セクションを表示"}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleVisibility();
+          }}
+        >
+          {section.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+        </IconButton>
+        <IconButton
+          aria-label={section.locked ? "ロックを解除" : "ロックする"}
+          title={section.locked ? "ロックを解除" : "ロックする"}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleLock();
+          }}
+        >
+          {section.locked ? <Lock size={14} /> : <Unlock size={14} />}
+        </IconButton>
+        {!section.locked ? (
+          <IconButton
+            aria-label="ドラッグして並び替え"
+            title="ドラッグして並び替え"
+            className="cursor-grab"
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={14} />
+          </IconButton>
+        ) : null}
+        <SectionRowMenu
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
+          disableDuplicate={section.locked}
+          disableDelete={section.locked}
+          disableMoveUp={!canMoveUp || section.locked}
+          disableMoveDown={!canMoveDown || section.locked}
+        />
+      </div>
+    </div>
+  );
+}
+
+export default memo(SectionRow);
