@@ -218,7 +218,7 @@ export default function EditorLayout() {
 
 	return (
 		<div className="flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
-			<TopBar />
+			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} />
 			<div className="flex min-h-0 flex-1">
 				<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
 				<PreviewPane />
@@ -230,39 +230,47 @@ export default function EditorLayout() {
 				</aside>
 			</div>
 			{templateChooserOpen ? (
-				<div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-					<div className="ui-card w-full max-w-xl">
-						<div className="flex items-start justify-between gap-4">
-							<div>
-								<div className="text-xs font-semibold text-[var(--ui-muted)]">
+				<div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-6">
+					<div className="w-full max-w-2xl rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+						<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+							<div className="space-y-2">
+								<div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-3 py-1 text-[11px] font-semibold text-[var(--ui-muted)]">
 									テンプレート選択
 								</div>
-								<div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
+								<div className="text-xl font-semibold text-[var(--ui-text)]">
 									使いたいテンプレートを選択してください
 								</div>
-								<div className="mt-2 text-sm text-[var(--ui-muted)]">
+								<div className="text-sm text-[var(--ui-muted)]">
 									キャンペーンを選ぶと、今の並びのLPが読み込まれます。
 								</div>
 							</div>
 							{lastTemplate ? (
-								<span className="ui-chip h-7 px-3 text-[11px]">
+								<span className="ui-chip h-8 px-3 text-[11px]">
 									前回: {lastTemplate.title}
 								</span>
 							) : null}
 						</div>
-						<div className="mt-4 grid gap-3">
+						<div className="mt-5 grid gap-4 sm:grid-cols-2">
 							{TEMPLATE_OPTIONS.map((option) => (
 								<button
 									key={option.id}
 									type="button"
 									onClick={() => handleTemplateSelect(option)}
-									className="rounded-lg border border-[var(--ui-border)] p-4 text-left transition hover:border-[var(--ui-text)]"
+									className="group relative flex h-full flex-col gap-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-5 text-left transition hover:border-[var(--ui-text)] hover:bg-[var(--ui-panel)]"
 								>
-									<div className="text-sm font-semibold text-[var(--ui-text)]">
-										{option.title}
+									<div className="flex items-center justify-between">
+										<div className="text-base font-semibold text-[var(--ui-text)]">
+											{option.title}
+										</div>
+										<span className="rounded-full border border-[var(--ui-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--ui-muted)]">
+											標準
+										</span>
 									</div>
-									<div className="mt-1 text-xs text-[var(--ui-muted)]">
+									<div className="text-sm text-[var(--ui-muted)]">
 										{option.description}
+									</div>
+									<div className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[var(--ui-text)] px-3 py-1 text-[11px] font-semibold text-[var(--ui-bg)]">
+										このテンプレートで開く
 									</div>
 								</button>
 							))}

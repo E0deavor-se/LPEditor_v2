@@ -11,7 +11,11 @@ import {
 import { exportProjectToZip, triggerZipDownload } from "@/src/export/exportZip";
 import { pickAndImportZip } from "@/src/lib/importZip";
 
-export default function TopBar() {
+type TopBarProps = {
+  onOpenTemplate?: () => void;
+};
+
+export default function TopBar({ onOpenTemplate }: TopBarProps) {
   const themeMode = useThemeStore((state) => state.mode);
   const surfaceStyle = useThemeStore((state) => state.surfaceStyle);
   const presetId = useThemeStore((state) => state.presetId);
@@ -158,6 +162,16 @@ export default function TopBar() {
       }
     >
       <div className="flex items-center gap-2">
+        {onOpenTemplate ? (
+          <button
+            className="ui-button h-8 px-3 text-[11px]"
+            type="button"
+            aria-label="テンプレート選択に戻る"
+            onClick={onOpenTemplate}
+          >
+            テンプレート選択
+          </button>
+        ) : null}
         <button
           className="ui-button h-8 px-3 text-[11px]"
           type="button"
