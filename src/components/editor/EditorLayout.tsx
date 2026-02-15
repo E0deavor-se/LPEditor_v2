@@ -1,20 +1,42 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LeftPanel from "@/src/components/editor/LeftPanel";
 import PreviewPane from "@/src/components/editor/PreviewPane";
 import TopBar from "@/src/components/editor/TopBar";
 import InspectorPanel from "@/src/components/editor/right/InspectorPanel";
 import { getDb } from "@/src/db/db";
-import { useEditorStore } from "@/src/store/editorStore";
+import { createProjectFromTemplate, useEditorStore } from "@/src/store/editorStore";
+import type { ProjectState } from "@/src/types/project";
 
 const RIGHT_PANEL_WIDTH = 360;
+const TEMPLATE_STORAGE_KEY = "lp-editor.template";
+
+type TemplateOption = {
+  id: string;
+  title: string;
+  description: string;
+  templateType: ProjectState["meta"]["templateType"];
+};
+
+const TEMPLATE_OPTIONS: TemplateOption[] = [
+  {
+    id: "campaign",
+    title: "キャンペーン",
+    description: "クーポン/ポイント施策向けの標準LP構成",
+    templateType: "coupon",
+  },
+];
 
 export default function EditorLayout() {
 	const [leftWidth, setLeftWidth] = useState(320);
+	const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
+	const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 	const manualSaveTick = useEditorStore((state) => state.manualSaveTick);
 	const project = useEditorStore((state) => state.project);
 	const hasUserEdits = useEditorStore((state) => state.hasUserEdits);
+	const setProject = useEditorStore((state) => state.setProject);
+	const replaceProject = useEditorStore((state) => state.replaceProject);
 	const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
 	const setPageBackground = useEditorStore((state) => state.setPageBackground);
 	const projectRef = useRef(project);
@@ -24,10 +46,58 @@ export default function EditorLayout() {
 	const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const autoSaveInFlightRef = useRef(false);
 	const randomBgAppliedRef = useRef(false);
+	const loadAttemptedRef = useRef(false);
+	const lastTemplate = useMemo(
+		() =>
+			TEMPLATE_OPTIONS.find((option) => option.id === selectedTemplateId) ?? null,
+		[selectedTemplateId]
+	);
+
+	useEffect(() => {
+		const stored = window.localStorage.getItem(TEMPLATE_STORAGE_KEY);
+		if (stored) {
+			setSelectedTemplateId(stored);
+		}
+	}, []);
 
 	useEffect(() => {
 		projectRef.current = project;
 	}, [project]);
+
+	useEffect(() => {
+		if (loadAttemptedRef.current) {
+			return;
+		}
+		loadAttemptedRef.current = true;
+		const loadProject = async () => {
+			try {
+				const db = await getDb();
+				const record = await db.projects.get("project_default");
+				if (!record?.data) {
+					setTemplateChooserOpen(true);
+					return;
+				}
+				replaceProject(record.data);
+				setSaveStatus("saved", "保存データを読み込みました");
+				setTemplateChooserOpen(false);
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: "保存データの読み込みに失敗しました。";
+				setSaveStatus("error", message);
+				setTemplateChooserOpen(true);
+			}
+		};
+		void loadProject();
+	}, [replaceProject, setSaveStatus]);
+
+	const handleTemplateSelect = (option: TemplateOption) => {
+		window.localStorage.setItem(TEMPLATE_STORAGE_KEY, option.id);
+		setSelectedTemplateId(option.id);
+		setProject(createProjectFromTemplate(option.templateType, option.title));
+		setTemplateChooserOpen(false);
+	};
 
 	useEffect(() => {
 		if (randomBgAppliedRef.current) {
@@ -159,6 +229,47 @@ export default function EditorLayout() {
 					<InspectorPanel />
 				</aside>
 			</div>
+			{templateChooserOpen ? (
+				<div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+					<div className="ui-card w-full max-w-xl">
+						<div className="flex items-start justify-between gap-4">
+							<div>
+								<div className="text-xs font-semibold text-[var(--ui-muted)]">
+									テンプレート選択
+								</div>
+								<div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
+									使いたいテンプレートを選択してください
+								</div>
+								<div className="mt-2 text-sm text-[var(--ui-muted)]">
+									キャンペーンを選ぶと、今の並びのLPが読み込まれます。
+								</div>
+							</div>
+							{lastTemplate ? (
+								<span className="ui-chip h-7 px-3 text-[11px]">
+									前回: {lastTemplate.title}
+								</span>
+							) : null}
+						</div>
+						<div className="mt-4 grid gap-3">
+							{TEMPLATE_OPTIONS.map((option) => (
+								<button
+									key={option.id}
+									type="button"
+									onClick={() => handleTemplateSelect(option)}
+									className="rounded-lg border border-[var(--ui-border)] p-4 text-left transition hover:border-[var(--ui-text)]"
+								>
+									<div className="text-sm font-semibold text-[var(--ui-text)]">
+										{option.title}
+									</div>
+									<div className="mt-1 text-xs text-[var(--ui-muted)]">
+										{option.description}
+									</div>
+								</button>
+							))}
+						</div>
+					</div>
+				</div>
+			) : null}
 		</div>
 	);
 }

@@ -1764,6 +1764,24 @@ const createDefaultProjectState = (): ProjectState => {
   };
 };
 
+export const createProjectFromTemplate = (
+  templateType: ProjectState["meta"]["templateType"],
+  projectName: string
+): ProjectState => {
+  const base = createDefaultProjectState();
+  const nowIso = new Date().toISOString();
+  return {
+    ...base,
+    meta: {
+      ...base.meta,
+      templateType,
+      projectName,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+  };
+};
+
 const createSection = (type: string): SectionBase => {
   const id = `sec_${type}_${Math.random().toString(36).slice(2, 8)}`;
   let section: SectionBase;
