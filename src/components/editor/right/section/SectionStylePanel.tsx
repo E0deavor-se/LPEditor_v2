@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { LayoutGrid, Paintbrush } from "lucide-react";
 import Accordion from "@/src/components/editor/right/primitives/Accordion";
 import ColorField from "@/src/components/editor/right/primitives/ColorField";
@@ -21,6 +22,9 @@ type SectionStylePanelProps = {
   style: SectionStyle;
   cardStyle: SectionCardStyle;
   showSectionDesign?: boolean;
+  surfaceExtras?: ReactNode;
+  hideGradient?: boolean;
+  hideTitleBand?: boolean;
   onStyleChange: (patch: SectionStylePatch) => void;
   onCardStyleChange: (patch: SectionCardStylePatch) => void;
   onApplyStyleToAll: () => void;
@@ -32,6 +36,9 @@ export default function SectionStylePanel({
   style,
   cardStyle,
   showSectionDesign = true,
+  surfaceExtras,
+  hideGradient = false,
+  hideTitleBand = false,
   onStyleChange,
   onCardStyleChange,
   onApplyStyleToAll,
@@ -63,41 +70,7 @@ export default function SectionStylePanel({
         </button>
       </div>
       <Accordion title={t.inspector.section.groups.surface} icon={<Paintbrush size={14} />}>
-        <FieldRow label={t.inspector.section.fields.gradient}>
-          <ToggleField
-            value={isGradient}
-            ariaLabel={t.inspector.section.fields.gradient}
-            onChange={(next) =>
-              onStyleChange({
-                background: {
-                  type: next ? "gradient" : "solid",
-                },
-              })
-            }
-          />
-        </FieldRow>
-        {isGradient ? (
-          <>
-            <FieldRow label={t.inspector.section.fields.color1}>
-              <ColorField
-                value={style.background.color1}
-                ariaLabel={t.inspector.section.fields.color1}
-                onChange={(next) =>
-                  onStyleChange({ background: { color1: next } })
-                }
-              />
-            </FieldRow>
-            <FieldRow label={t.inspector.section.fields.color2}>
-              <ColorField
-                value={style.background.color2}
-                ariaLabel={t.inspector.section.fields.color2}
-                onChange={(next) =>
-                  onStyleChange({ background: { color2: next } })
-                }
-              />
-            </FieldRow>
-          </>
-        ) : (
+        {hideGradient ? (
           <FieldRow label={t.inspector.section.fields.background}>
             <ColorField
               value={style.background.color1}
@@ -107,6 +80,54 @@ export default function SectionStylePanel({
               }
             />
           </FieldRow>
+        ) : (
+          <>
+            <FieldRow label={t.inspector.section.fields.gradient}>
+              <ToggleField
+                value={isGradient}
+                ariaLabel={t.inspector.section.fields.gradient}
+                onChange={(next) =>
+                  onStyleChange({
+                    background: {
+                      type: next ? "gradient" : "solid",
+                    },
+                  })
+                }
+              />
+            </FieldRow>
+            {isGradient ? (
+              <>
+                <FieldRow label={t.inspector.section.fields.color1}>
+                  <ColorField
+                    value={style.background.color1}
+                    ariaLabel={t.inspector.section.fields.color1}
+                    onChange={(next) =>
+                      onStyleChange({ background: { color1: next } })
+                    }
+                  />
+                </FieldRow>
+                <FieldRow label={t.inspector.section.fields.color2}>
+                  <ColorField
+                    value={style.background.color2}
+                    ariaLabel={t.inspector.section.fields.color2}
+                    onChange={(next) =>
+                      onStyleChange({ background: { color2: next } })
+                    }
+                  />
+                </FieldRow>
+              </>
+            ) : (
+              <FieldRow label={t.inspector.section.fields.background}>
+                <ColorField
+                  value={style.background.color1}
+                  ariaLabel={t.inspector.section.fields.background}
+                  onChange={(next) =>
+                    onStyleChange({ background: { color1: next } })
+                  }
+                />
+              </FieldRow>
+            )}
+          </>
         )}
         <FieldRow label={t.inspector.section.fields.border}>
           <ToggleField
@@ -153,64 +174,67 @@ export default function SectionStylePanel({
             <option value="md">{t.inspector.section.shadowOptions.md}</option>
           </SelectField>
         </FieldRow>
-        <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
-          <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
-            タイトル帯
+        {hideTitleBand ? null : (
+          <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
+            <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
+              タイトル帯
+            </div>
+            <FieldRow label="帯背景色">
+              <ColorField
+                value={cardStyle.headerBgColor || "#5fc2f5"}
+                ariaLabel="帯背景色"
+                onChange={(next) => onCardStyleChange({ headerBgColor: next })}
+              />
+            </FieldRow>
+            <FieldRow label="帯文字色">
+              <ColorField
+                value={cardStyle.headerTextColor || "#ffffff"}
+                ariaLabel="帯文字色"
+                onChange={(next) => onCardStyleChange({ headerTextColor: next })}
+              />
+            </FieldRow>
+            <FieldRow label="帯高さ">
+              <SegmentedField
+                value={bandSize}
+                ariaLabel="帯高さ"
+                options={[
+                  { value: "sm", label: "S" },
+                  { value: "md", label: "M" },
+                  { value: "lg", label: "L" },
+                ]}
+                onChange={(next) => onCardStyleChange({ labelChipBg: next })}
+              />
+            </FieldRow>
+            <FieldRow label="帯位置">
+              <SegmentedField
+                value={bandPosition}
+                ariaLabel="帯位置"
+                options={[
+                  { value: "top", label: "上" },
+                  { value: "inset", label: "内側" },
+                ]}
+                onChange={(next) =>
+                  onCardStyleChange({ labelChipEnabled: next === "inset" })
+                }
+              />
+            </FieldRow>
+            <FieldRow label="テキスト位置">
+              <SegmentedField
+                value={bandAlign}
+                ariaLabel="テキスト位置"
+                options={[
+                  { value: "left", label: "左" },
+                  { value: "center", label: "中央" },
+                  { value: "right", label: "右" },
+                ]}
+                onChange={(next) =>
+                  onCardStyleChange({ labelChipTextColor: next })
+                }
+              />
+            </FieldRow>
           </div>
-          <FieldRow label="帯背景色">
-            <ColorField
-              value={cardStyle.headerBgColor || "#5fc2f5"}
-              ariaLabel="帯背景色"
-              onChange={(next) => onCardStyleChange({ headerBgColor: next })}
-            />
-          </FieldRow>
-          <FieldRow label="帯文字色">
-            <ColorField
-              value={cardStyle.headerTextColor || "#ffffff"}
-              ariaLabel="帯文字色"
-              onChange={(next) => onCardStyleChange({ headerTextColor: next })}
-            />
-          </FieldRow>
-          <FieldRow label="帯高さ">
-            <SegmentedField
-              value={bandSize}
-              ariaLabel="帯高さ"
-              options={[
-                { value: "sm", label: "S" },
-                { value: "md", label: "M" },
-                { value: "lg", label: "L" },
-              ]}
-              onChange={(next) => onCardStyleChange({ labelChipBg: next })}
-            />
-          </FieldRow>
-          <FieldRow label="帯位置">
-            <SegmentedField
-              value={bandPosition}
-              ariaLabel="帯位置"
-              options={[
-                { value: "top", label: "上" },
-                { value: "inset", label: "内側" },
-              ]}
-              onChange={(next) =>
-                onCardStyleChange({ labelChipEnabled: next === "inset" })
-              }
-            />
-          </FieldRow>
-          <FieldRow label="テキスト位置">
-            <SegmentedField
-              value={bandAlign}
-              ariaLabel="テキスト位置"
-              options={[
-                { value: "left", label: "左" },
-                { value: "center", label: "中央" },
-                { value: "right", label: "右" },
-              ]}
-              onChange={(next) =>
-                onCardStyleChange({ labelChipTextColor: next })
-              }
-            />
-          </FieldRow>
-        </div>
+        )}
+        {surfaceExtras}
       </Accordion>
 
       {showSectionDesign ? (

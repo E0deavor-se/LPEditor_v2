@@ -102,6 +102,27 @@ export const SECTION_CAPABILITIES: Record<string, SectionCapabilities> = {
   paymentHistoryGuide: {
     ...baseEnabled,
   },
+  tabbedNotes: {
+    ...baseEnabled,
+  },
+  excludedStoresList: {
+    text: false,
+    typography: true,
+    colors: true,
+    layout: true,
+    decorations: false,
+    animation: false,
+    allowBackgroundGradient: false,
+  },
+  excludedBrandsList: {
+    text: false,
+    typography: true,
+    colors: true,
+    layout: true,
+    decorations: false,
+    animation: false,
+    allowBackgroundGradient: false,
+  },
 };
 
 export const getSectionCapabilities = (type: string): SectionCapabilities =>

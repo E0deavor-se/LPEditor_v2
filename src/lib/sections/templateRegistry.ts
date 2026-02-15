@@ -22,6 +22,12 @@ const createLineId = () =>
 const createRowId = () =>
   `row_${Math.random().toString(36).slice(2, 8)}`;
 
+const createTabId = () =>
+  `tab_${Math.random().toString(36).slice(2, 8)}`;
+
+const createTabItemId = () =>
+  `tab_item_${Math.random().toString(36).slice(2, 8)}`;
+
 const createDefaultContent = (): SectionContent => ({
   title: "",
   items: [
@@ -212,6 +218,138 @@ export const templates: SectionTemplate[] = [
           "なお、店頭や問い合わせ窓口での現在の順位や金額、当選結果についてのご質問にはお答えできません。",
         imageUrl: "/footer-defaults/img-02.png",
         imageAlt: "決済履歴の確認方法",
+      },
+      content: { title: "", items: [] },
+      style: createDefaultStyle(),
+    }),
+  },
+  {
+    id: "tpl_tabbed_notes",
+    title: "付箋タブセクション",
+    description: "付箋タブで注意事項を切り替えて表示します。",
+    tags: ["注意事項", "タブ", "付箋"],
+    category: "info",
+    sectionType: "tabbedNotes",
+    create: () => ({
+      id: createId("tabbedNotes"),
+      type: "tabbedNotes",
+      visible: true,
+      locked: false,
+      data: {
+        title: "注意事項",
+        tabs: [
+          {
+            id: createTabId(),
+            labelTop: "事前獲得クーポン",
+            labelBottom: "注意事項",
+            intro: "",
+            items: [
+              {
+                id: createTabItemId(),
+                text:
+                  "＊レジで表示されているお買上げ金額は割引表示されません。割引後の金額はau PAY アプリの「履歴」をご確認ください。",
+                bullet: "none",
+                tone: "accent",
+                bold: false,
+                subItems: [],
+              },
+              {
+                id: createTabItemId(),
+                text:
+                  "クーポンは1回20,000円（税込）以上のお支払いにご利用いただけます。",
+                bullet: "disc",
+                tone: "normal",
+                bold: false,
+                subItems: [],
+              },
+              {
+                id: createTabItemId(),
+                text:
+                  "キャンペーン期間中でも、クーポンの割引総額が所定の金額に達した場合、配布終了となり獲得済みクーポンのご利用は不可となります。",
+                bullet: "disc",
+                tone: "accent",
+                bold: true,
+                subItems: [],
+              },
+            ],
+            footnote: "※2026年2月6日時点の情報です。",
+            ctaText: "",
+            ctaLinkText: "",
+            ctaLinkUrl: "",
+            ctaTargetKind: "url",
+            ctaSectionId: "",
+            ctaImageUrl: "",
+            ctaImageAlt: "",
+            ctaImageAssetId: "",
+            buttonText: "",
+            buttonTargetKind: "url",
+            buttonUrl: "",
+            buttonSectionId: "",
+          },
+          {
+            id: createTabId(),
+            labelTop: "クイックチャンス",
+            labelBottom: "注意事項",
+            intro: "",
+            items: [
+              {
+                id: createTabItemId(),
+                text:
+                  "クーポンの利用方法は以下の通りとなります。",
+                bullet: "disc",
+                tone: "normal",
+                bold: false,
+                subItems: [
+                  "①クーポン画面を表示します。",
+                  "②クーポン利用の旨をお申し出いただき、クーポン画面を提示します。",
+                  "③「利用する」ボタンを押下してください。",
+                ],
+              },
+              {
+                id: createTabItemId(),
+                text:
+                  "クーポンの利用期限前であっても、予告なく終了する場合があります。",
+                bullet: "disc",
+                tone: "normal",
+                bold: false,
+                subItems: [],
+              },
+              {
+                id: createTabItemId(),
+                text:
+                  "本キャンペーンは予告なく変更・終了する場合があります。",
+                bullet: "disc",
+                tone: "accent",
+                bold: true,
+                subItems: [],
+              },
+            ],
+            footnote: "※2026年2月6日時点の情報です。",
+            ctaText: "",
+            ctaLinkText: "",
+            ctaLinkUrl: "",
+            ctaTargetKind: "url",
+            ctaSectionId: "",
+            ctaImageUrl: "",
+            ctaImageAlt: "",
+            ctaImageAssetId: "",
+            buttonText: "",
+            buttonTargetKind: "url",
+            buttonUrl: "",
+            buttonSectionId: "",
+          },
+        ],
+        tabStyle: {
+          variant: "simple",
+          inactiveBg: "#DDDDDD",
+          inactiveText: "#000000",
+          activeBg: "#000000",
+          activeText: "#FFFFFF",
+          border: "#000000",
+          contentBg: "#FFFFFF",
+          contentBorder: "#000000",
+          accent: "#EB5505",
+        },
       },
       content: { title: "", items: [] },
       style: createDefaultStyle(),

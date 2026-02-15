@@ -8,6 +8,14 @@ import NumberField from "@/src/components/editor/right/primitives/NumberField";
 import SegmentedField from "@/src/components/editor/right/primitives/SegmentedField";
 import SelectField from "@/src/components/editor/right/primitives/SelectField";
 import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
+import {
+  BACKGROUND_PRESET_OPTIONS,
+  resolveBackgroundPreset,
+} from "@/src/lib/backgroundPresets";
+import {
+  BACKGROUND_PATTERN_OPTIONS,
+  normalizePatternSpec,
+} from "@/src/lib/backgroundPatterns";
 import type { BackgroundSpec } from "@/src/types/project";
 
 export type BackgroundTarget = "page" | "mv";
@@ -22,16 +30,9 @@ type PageStyleBackgroundProps = {
 };
 
 const DEFAULT_SOLID = "#ffffff";
-const PRESET_OPTIONS = [
-  { id: "sunset", label: "Sunset" },
-  { id: "sky", label: "Sky" },
-  { id: "mint", label: "Mint" },
-  { id: "sand", label: "Sand" },
-  { id: "night", label: "Night" },
-];
-
 type SolidSpec = Extract<BackgroundSpec, { type: "solid" }>;
 type GradientSpec = Extract<BackgroundSpec, { type: "gradient" }>;
+type PatternSpec = Extract<BackgroundSpec, { type: "pattern" }>;
 type ImageSpec = Extract<BackgroundSpec, { type: "image" }>;
 type VideoSpec = Extract<BackgroundSpec, { type: "video" }>;
 type PresetSpec = Extract<BackgroundSpec, { type: "preset" }>;
@@ -63,6 +64,14 @@ const ensureGradient = (spec?: BackgroundSpec): GradientSpec => {
       { color: DEFAULT_SOLID, pos: 100 },
     ],
   };
+};
+
+const ensurePattern = (spec?: BackgroundSpec): PatternSpec => {
+  if (spec && spec.type === "pattern") {
+    return normalizePatternSpec(spec, DEFAULT_SOLID);
+  }
+  const fallbackId = BACKGROUND_PATTERN_OPTIONS[0]?.id ?? "dots";
+  return normalizePatternSpec({ patternId: fallbackId }, DEFAULT_SOLID);
 };
 
 const ensureImage = (spec?: BackgroundSpec): ImageSpec =>
@@ -111,6 +120,7 @@ export default function PageStyleBackground({
   const backgroundType = currentSpec.type;
   const previewStyle = buildBackgroundStyle(currentSpec, {
     resolveAssetUrl,
+    resolvePreset: resolveBackgroundPreset,
     fallbackColor: DEFAULT_SOLID,
   }).style;
 
@@ -128,6 +138,10 @@ export default function PageStyleBackground({
     }
     if (nextType === "image") {
       onChange(ensureImage(spec));
+      return;
+    }
+    if (nextType === "pattern") {
+      onChange(ensurePattern(spec));
       return;
     }
     if (nextType === "video") {
@@ -165,6 +179,7 @@ export default function PageStyleBackground({
           >
             <option value="solid">単色</option>
             <option value="gradient">グラデ</option>
+            <option value="pattern">柄</option>
             <option value="image">画像</option>
             <option value="video">動画</option>
             <option value="preset">プリセット</option>
@@ -178,6 +193,75 @@ export default function PageStyleBackground({
               onChange={(next) => onChange({ type: "solid", color: next })}
             />
           </FieldRow>
+        ) : null}
+        {backgroundType === "pattern" ? (
+          <>
+            <FieldRow label="柄">
+              <SelectField
+                value={ensurePattern(spec).patternId}
+                ariaLabel="柄タイプ"
+                onChange={(next) => {
+                  const pattern = ensurePattern(spec);
+                  onChange({
+                    ...pattern,
+                    patternId: next as PatternSpec["patternId"],
+                  });
+                }}
+              >
+                {BACKGROUND_PATTERN_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectField>
+            </FieldRow>
+            <FieldRow label="前景色">
+              <ColorField
+                value={ensurePattern(spec).foreground}
+                ariaLabel="柄前景色"
+                onChange={(next) => {
+                  const pattern = ensurePattern(spec);
+                  onChange({ ...pattern, foreground: next });
+                }}
+              />
+            </FieldRow>
+            <FieldRow label="背景色">
+              <ColorField
+                value={ensurePattern(spec).background}
+                ariaLabel="柄背景色"
+                onChange={(next) => {
+                  const pattern = ensurePattern(spec);
+                  onChange({ ...pattern, background: next });
+                }}
+              />
+            </FieldRow>
+            <FieldRow label="サイズ">
+              <NumberField
+                value={ensurePattern(spec).size}
+                min={4}
+                max={120}
+                step={1}
+                ariaLabel="柄サイズ"
+                onChange={(next) => {
+                  const pattern = ensurePattern(spec);
+                  onChange({ ...pattern, size: next });
+                }}
+              />
+            </FieldRow>
+            <FieldRow label="濃さ">
+              <NumberField
+                value={ensurePattern(spec).opacity}
+                min={0}
+                max={1}
+                step={0.05}
+                ariaLabel="柄濃さ"
+                onChange={(next) => {
+                  const pattern = ensurePattern(spec);
+                  onChange({ ...pattern, opacity: next });
+                }}
+              />
+            </FieldRow>
+          </>
         ) : null}
         {backgroundType === "gradient" ? (
           <>
@@ -253,7 +337,7 @@ export default function PageStyleBackground({
               }}
             >
               <option value="">未選択</option>
-              {PRESET_OPTIONS.map((option) => (
+              {BACKGROUND_PRESET_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.label}
                 </option>

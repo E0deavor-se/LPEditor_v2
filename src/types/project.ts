@@ -10,6 +10,41 @@ export type SectionTypography = {
   textColor: string;
 };
 
+export type BackgroundPatternId =
+  | "dots"
+  | "diagonal"
+  | "grid"
+  | "zigzag"
+  | "noise"
+  | "checker"
+  | "cross"
+  | "stripes"
+  | "waves"
+  | "stars"
+  | "hearts"
+  | "ribbon"
+  | "clouds"
+  | "candy"
+  | "balloons"
+  | "flowers"
+  | "bow"
+  | "yume";
+
+export type BackgroundPatternSpec = {
+  type: "pattern";
+  patternId: BackgroundPatternId;
+  foreground: string;
+  background: string;
+  size: number;
+  opacity: number;
+};
+
+export type BackgroundLayerSpec = {
+  type: "layers";
+  layers: BackgroundSpec[];
+  backgroundColor?: string;
+};
+
 export type BackgroundSpec =
   | { type: "solid"; color: string }
   | {
@@ -17,6 +52,8 @@ export type BackgroundSpec =
       angle: number;
       stops: { color: string; pos: number }[];
     }
+  | BackgroundPatternSpec
+  | BackgroundLayerSpec
   | {
       type: "image";
       assetId: string;
@@ -152,6 +189,38 @@ export type ContentItemAnimation = {
   delayMs: number;
 };
 
+export type SectionAnimation = {
+  type:
+    | "none"
+    | "fade"
+    | "slide"
+    | "slideDown"
+    | "slideLeft"
+    | "slideRight"
+    | "zoom"
+    | "bounce"
+    | "flip"
+    | "flipY"
+    | "rotate"
+    | "blur"
+    | "pop"
+    | "swing"
+    | "float"
+    | "pulse"
+    | "shake"
+    | "wobble"
+    | "skew"
+    | "roll"
+    | "tilt"
+    | "zoomOut"
+    | "stretch"
+    | "compress"
+    | "glide";
+  trigger: "onView" | "onScroll";
+  speed: number;
+  easing: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out";
+};
+
 export type TextContentItem = {
   id: string;
   type: "text";
@@ -276,6 +345,7 @@ export type PageBaseStyle = {
     letterSpacing: number;
     fontWeight: number;
   };
+  sectionAnimation: SectionAnimation;
   colors: {
     background: string;
     text: string;

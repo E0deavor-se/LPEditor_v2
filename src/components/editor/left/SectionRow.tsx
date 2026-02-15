@@ -3,9 +3,8 @@
 import { forwardRef, memo, useEffect, useRef, type ButtonHTMLAttributes } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Eye, EyeOff, GripVertical, Lock, Unlock } from "lucide-react";
+import { Eye, EyeOff, GripVertical, Lock, Trash2, Unlock } from "lucide-react";
 import type { SectionBase } from "@/src/types/project";
-import SectionRowMenu from "@/src/components/editor/left/SectionRowMenu";
 
 const IconButton = forwardRef<
   HTMLButtonElement,
@@ -179,6 +178,17 @@ function SectionRow({
         >
           {section.locked ? <Lock size={14} /> : <Unlock size={14} />}
         </IconButton>
+        <IconButton
+          aria-label="セクションを削除"
+          title="セクションを削除"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          disabled={section.locked}
+        >
+          <Trash2 size={14} />
+        </IconButton>
         {!section.locked ? (
           <IconButton
             aria-label="ドラッグして並び替え"
@@ -191,16 +201,6 @@ function SectionRow({
             <GripVertical size={14} />
           </IconButton>
         ) : null}
-        <SectionRowMenu
-          onDuplicate={onDuplicate}
-          onDelete={onDelete}
-          onMoveUp={onMoveUp}
-          onMoveDown={onMoveDown}
-          disableDuplicate={section.locked}
-          disableDelete={section.locked}
-          disableMoveUp={!canMoveUp || section.locked}
-          disableMoveDown={!canMoveDown || section.locked}
-        />
       </div>
     </div>
   );

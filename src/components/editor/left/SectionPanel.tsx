@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   closestCenter,
   DndContext,
@@ -22,16 +23,23 @@ import type { SectionBase } from "@/src/types/project";
 
 const SectionTypeLabels: Record<string, string> = {
   brandBar: "ブランドバー",
-  heroImage: "MV画像",
-  campaignPeriodBar: "キャンペーン期間(MV直下)",
+  heroImage: "メインビジュアル",
+  campaignPeriodBar: "キャンペーン期間",
   campaignOverview: "キャンペーン概要",
   couponFlow: "クーポン利用方法",
   targetStores: "対象店舗",
   legalNotes: "注意事項",
   footerHtml: "問い合わせ",
   rankingTable: "ランキング表",
-  paymentHistoryGuide: "決済履歴の確認方法",
+  paymentHistoryGuide: "決済利用方法",
+  excludedStoresList: "対象外店舗一覧",
+  excludedBrandsList: "対象外ブランド一覧",
+  tabbedNotes: "付箋タブセクション",
 };
+
+const SECTION_CHOICES = Object.entries(SectionTypeLabels).map(
+  ([type, label]) => ({ type, label })
+);
 
 const normalizeName = (name: string) =>
   name.trim().length > 0 ? name.trim() : "無題";
@@ -68,9 +76,6 @@ export default function SectionPanel() {
   const reorderSections = useEditorStore(
     (state: EditorUIState) => state.reorderSections
   );
-  const addSection = useEditorStore(
-    (state: EditorUIState) => state.addSection
-  );
   const insertSectionAfter = useEditorStore(
     (state: EditorUIState) => state.insertSectionAfter
   );
@@ -80,6 +85,7 @@ export default function SectionPanel() {
   const originalNameRef = useRef("");
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -117,6 +123,10 @@ export default function SectionPanel() {
     setDraftName(originalNameRef.current);
     setEditingId(null);
   }, [editingId]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!listRef.current) {
@@ -267,6 +277,14 @@ export default function SectionPanel() {
     ]
   );
 
+  const sectionTypeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    sections.forEach((section) => {
+      counts[section.type] = (counts[section.type] ?? 0) + 1;
+    });
+    return counts;
+  }, [sections]);
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeId = event.active?.id?.toString();
@@ -277,6 +295,14 @@ export default function SectionPanel() {
       reorderSections(activeId, overId);
     },
     [reorderSections]
+  );
+
+  const handleAddSection = useCallback(
+    (type: string) => {
+      insertSectionAfter(undefined, type);
+      setIsAddMenuOpen(false);
+    },
+    [insertSectionAfter]
   );
 
   return (
@@ -302,55 +328,79 @@ export default function SectionPanel() {
         </div>
       </button>
       {header}
-      {isAddMenuOpen ? (
-        <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/70 p-2 text-[12px]">
-          <div className="mb-2 text-[10px] text-[var(--ui-muted)]">
-            追加するセクションタイプを選択
-          </div>
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              className="ui-button h-8 justify-start px-2 text-[12px]"
-              onClick={() => {
-                addSection();
-                setIsAddMenuOpen(false);
-              }}
-            >
-              通常セクション
-            </button>
-            <button
-              type="button"
-              className="ui-button h-8 justify-start px-2 text-[12px]"
-              onClick={() => {
-                insertSectionAfter(undefined, "couponFlow");
-                setIsAddMenuOpen(false);
-              }}
-            >
-              クーポン利用方法
-            </button>
-            <button
-              type="button"
-              className="ui-button h-8 justify-start px-2 text-[12px]"
-              onClick={() => {
-                insertSectionAfter(undefined, "rankingTable");
-                setIsAddMenuOpen(false);
-              }}
-            >
-              ランキング表
-            </button>
-            <button
-              type="button"
-              className="ui-button h-8 justify-start px-2 text-[12px]"
-              onClick={() => {
-                insertSectionAfter(undefined, "paymentHistoryGuide");
-                setIsAddMenuOpen(false);
-              }}
-            >
-              決済履歴の確認方法
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {isAddMenuOpen && isMounted
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4">
+              <div className="w-full max-w-xl rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1.5">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--ui-muted)]">
+                      セクション追加
+                    </div>
+                    <div className="text-lg font-semibold text-[var(--ui-text)]">
+                      追加するセクションを選択してください
+                    </div>
+                    <div className="text-[12px] text-[var(--ui-muted)]">
+                      クリックすると即時に追加されます。
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-button h-7 px-2.5 text-[10px]"
+                    onClick={() => setIsAddMenuOpen(false)}
+                  >
+                    閉じる
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {SECTION_CHOICES.map((option) => (
+                    (() => {
+                      const count = sectionTypeCounts[option.type] ?? 0;
+                      const isAdded = count > 0;
+                      return (
+                    <button
+                      key={option.type}
+                      type="button"
+                      onClick={() => handleAddSection(option.type)}
+                      className={
+                        "group relative flex h-full flex-col gap-2 rounded-lg border p-4 text-left transition " +
+                        (isAdded
+                          ? "border-[var(--ui-primary)]/40 bg-[var(--ui-panel)]"
+                          : "border-[var(--ui-border)] bg-[var(--ui-panel-muted)] hover:border-[var(--ui-text)] hover:bg-[var(--ui-panel)]")
+                      }
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-[var(--ui-text)]">
+                          {option.label}
+                        </div>
+                        {isAdded ? (
+                          <span className="rounded-full border border-[var(--ui-primary)]/40 px-2 py-0.5 text-[9px] font-semibold text-[var(--ui-primary)]">
+                            追加済み
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-[var(--ui-border)] px-2 py-0.5 text-[9px] font-semibold text-[var(--ui-muted)]">
+                            追加
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[12px] text-[var(--ui-muted)]">
+                        {isAdded
+                          ? `追加済み: ${count}件`
+                          : "このセクションを追加します。"}
+                      </div>
+                      <div className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[var(--ui-text)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--ui-bg)]">
+                        追加する
+                      </div>
+                    </button>
+                      );
+                    })()
+                  ))}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       {sections.length === 0 ? emptyState : (
         <DndContext
           sensors={sensors}

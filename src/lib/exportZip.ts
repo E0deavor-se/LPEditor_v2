@@ -130,6 +130,182 @@ export const buildIndexHtml = (project: ProjectState): string => {
             </section>
           `;
         }
+        case "tabbedNotes": {
+          const data = section.data ?? {};
+          const rawTabs = Array.isArray(data.tabs) ? data.tabs : [];
+          const tabs = rawTabs.map((tab, index) => {
+            const entry = tab && typeof tab === "object"
+              ? (tab as Record<string, unknown>)
+              : {};
+            const rawItems = Array.isArray(entry.items) ? entry.items : [];
+            const items = rawItems.map((item, itemIndex) => {
+              const itemEntry = item && typeof item === "object"
+                ? (item as Record<string, unknown>)
+                : {};
+              const subItems = Array.isArray(itemEntry.subItems)
+                ? itemEntry.subItems.map((value) => str(value))
+                : [];
+              return {
+                id:
+                  typeof itemEntry.id === "string" && itemEntry.id.trim()
+                    ? itemEntry.id
+                    : `tab_item_${index + 1}_${itemIndex + 1}`,
+                text: str(itemEntry.text ?? ""),
+                bullet: itemEntry.bullet === "none" ? "none" : "disc",
+                tone: itemEntry.tone === "accent" ? "accent" : "normal",
+                bold: Boolean(itemEntry.bold),
+                subItems,
+              };
+            });
+            const ctaTargetKind =
+              entry.ctaTargetKind === "section" ? "section" : "url";
+            const ctaSectionId = str(entry.ctaSectionId ?? "");
+            const ctaLinkUrl = str(entry.ctaLinkUrl ?? "");
+            const resolvedCtaUrl =
+              ctaTargetKind === "section" && ctaSectionId
+                ? `#sec-${ctaSectionId}`
+                : ctaLinkUrl;
+            const ctaImageUrl = str(entry.ctaImageUrl ?? "");
+            const ctaImageAlt = escapeHtml(str(entry.ctaImageAlt ?? ""));
+            const ctaImageAssetId = str(entry.ctaImageAssetId ?? "");
+            const resolvedCtaImage =
+              ctaImageAssetId && project.assets?.[ctaImageAssetId]?.data
+                ? project.assets[ctaImageAssetId].data
+                : ctaImageUrl;
+            const buttonTargetKind =
+              entry.buttonTargetKind === "section" ? "section" : "url";
+            const buttonSectionId = str(entry.buttonSectionId ?? "");
+            const buttonUrl = str(entry.buttonUrl ?? "");
+            const resolvedButtonUrl =
+              buttonTargetKind === "section" && buttonSectionId
+                ? `#sec-${buttonSectionId}`
+                : buttonUrl;
+            return {
+              id:
+                typeof entry.id === "string" && entry.id.trim()
+                  ? entry.id
+                  : `tab_${index + 1}`,
+              labelTop: escapeHtml(str(entry.labelTop ?? "")),
+              labelBottom: escapeHtml(str(entry.labelBottom ?? "注意事項")),
+              intro: escapeHtml(str(entry.intro ?? "")),
+              items,
+              footnote: escapeHtml(str(entry.footnote ?? "")),
+              ctaText: escapeHtml(str(entry.ctaText ?? "")),
+              ctaLinkText: escapeHtml(str(entry.ctaLinkText ?? "")),
+              resolvedCtaUrl,
+              resolvedCtaImage,
+              ctaImageAlt,
+              buttonText: escapeHtml(str(entry.buttonText ?? "")),
+              resolvedButtonUrl,
+            };
+          });
+          const rawStyle = data.tabStyle && typeof data.tabStyle === "object"
+            ? (data.tabStyle as Record<string, unknown>)
+            : {};
+          const rawVariant = typeof rawStyle.variant === "string"
+            ? rawStyle.variant
+            : "simple";
+          const variant =
+            rawVariant === "sticky" ||
+            rawVariant === "underline" ||
+            rawVariant === "popout"
+              ? rawVariant
+              : "simple";
+          const tabStyle = {
+            variant,
+            inactiveBg: typeof rawStyle.inactiveBg === "string" ? rawStyle.inactiveBg : "#DDDDDD",
+            inactiveText:
+              typeof rawStyle.inactiveText === "string" ? rawStyle.inactiveText : "#000000",
+            activeBg: typeof rawStyle.activeBg === "string" ? rawStyle.activeBg : "#000000",
+            activeText:
+              typeof rawStyle.activeText === "string" ? rawStyle.activeText : "#FFFFFF",
+            border: typeof rawStyle.border === "string" ? rawStyle.border : "#000000",
+            contentBg:
+              typeof rawStyle.contentBg === "string" ? rawStyle.contentBg : "#FFFFFF",
+            contentBorder:
+              typeof rawStyle.contentBorder === "string"
+                ? rawStyle.contentBorder
+                : "#000000",
+            accent: typeof rawStyle.accent === "string" ? rawStyle.accent : "#EB5505",
+          };
+          const styleVars = [
+            `--tab-inactive-bg:${escapeHtml(str(tabStyle.inactiveBg))}`,
+            `--tab-inactive-text:${escapeHtml(str(tabStyle.inactiveText))}`,
+            `--tab-active-bg:${escapeHtml(str(tabStyle.activeBg))}`,
+            `--tab-active-text:${escapeHtml(str(tabStyle.activeText))}`,
+            `--tab-border:${escapeHtml(str(tabStyle.border))}`,
+            `--tab-content-bg:${escapeHtml(str(tabStyle.contentBg))}`,
+            `--tab-content-border:${escapeHtml(str(tabStyle.contentBorder))}`,
+            `--tab-accent:${escapeHtml(str(tabStyle.accent))}`,
+          ].join(";");
+          const tabName = `tab-${section.id}`;
+          const tabHtml = tabs
+            .map((tab, index) => {
+              const tabId = `${tabName}-${index + 1}`;
+              const itemsHtml = tab.items
+                .map((item) => {
+                  const itemClass = [
+                    "tabbed-notes__item",
+                    item.bullet === "disc" ? "is-disc" : "",
+                    item.tone === "accent" ? "is-accent" : "",
+                    item.bold ? "is-bold" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                  const subList = item.subItems.length > 0
+                    ? `<ul class="tabbed-notes__sublist">${item.subItems
+                        .map((sub) => `<li>${escapeHtml(sub)}</li>`)
+                        .join("")}</ul>`
+                    : "";
+                  return `<li class="${itemClass}">${escapeHtml(item.text)}${subList}</li>`;
+                })
+                .join("");
+              const ctaHtml =
+                tab.ctaText || tab.ctaLinkText || tab.resolvedCtaImage
+                  ? `
+                    <div class="tabbed-notes__cta">
+                      ${tab.ctaText ? `<p class="tabbed-notes__cta-text">${tab.ctaText}</p>` : ""}
+                      ${tab.ctaLinkText && tab.resolvedCtaUrl ? `<a class="tabbed-notes__cta-link" href="${tab.resolvedCtaUrl}">${tab.ctaLinkText}</a>` : ""}
+                      ${tab.resolvedCtaImage ? `<a class="tabbed-notes__cta-image" href="${tab.resolvedCtaUrl || "#"}"><img src="${escapeHtml(str(tab.resolvedCtaImage))}" alt="${tab.ctaImageAlt}" /></a>` : ""}
+                    </div>
+                  `
+                  : "";
+              const buttonHtml =
+                tab.buttonText && tab.resolvedButtonUrl
+                  ? `
+                    <div class="tabbed-notes__button">
+                      <a class="tabbed-notes__button-link" href="${tab.resolvedButtonUrl}">${tab.buttonText}</a>
+                    </div>
+                  `
+                  : "";
+              return `
+                <input id="${tabId}" type="radio" name="${tabName}" class="tabbed-notes__switch" ${
+                  index === 0 ? "checked=\"checked\"" : ""
+                }>
+                <label class="tabbed-notes__label" for="${tabId}">
+                  ${tab.labelTop ? `<span class="tabbed-notes__label-top">${tab.labelTop}</span>` : ""}
+                  <span class="tabbed-notes__label-bottom">${tab.labelBottom}</span>
+                </label>
+                <div class="tabbed-notes__content">
+                  <div class="tabbed-notes__panel">
+                    ${tab.intro ? `<p class="tabbed-notes__intro">${tab.intro}</p>` : ""}
+                    <ul class="tabbed-notes__list">${itemsHtml}</ul>
+                    ${tab.footnote ? `<p class="tabbed-notes__footnote">${tab.footnote}</p>` : ""}
+                    ${ctaHtml}
+                    ${buttonHtml}
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+          return `
+            <section class="container tabbed-notes tabbed-notes--${tabStyle.variant}" style="${styleVars}">
+              <div class="tabbed-notes__wrap">
+                ${tabHtml}
+              </div>
+            </section>
+          `;
+        }
         case "targetStores":
           return `
             <section class="container">
@@ -769,6 +945,203 @@ ul {
   color: #64748b;
   border-radius: 6px;
 }
+.tabbed-notes {
+  margin-top: 16px;
+}
+.tabbed-notes__wrap {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--tab-border, #000000);
+}
+.tabbed-notes__label {
+  color: var(--tab-inactive-text, #000000);
+  background: var(--tab-inactive-bg, #dddddd);
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: center;
+  padding: 10px 8px;
+  order: -1;
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+  border-radius: 16px 16px 0 0;
+  flex: 1;
+}
+.tabbed-notes__label:not(:last-of-type) {
+  border-right: 1px solid var(--tab-border, #000000);
+}
+.tabbed-notes__label-top {
+  display: block;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.tabbed-notes__label-bottom {
+  display: block;
+  line-height: 1.2;
+}
+.tabbed-notes--sticky .tabbed-notes__wrap {
+  border-bottom: none;
+  gap: 6px;
+}
+.tabbed-notes--sticky .tabbed-notes__label {
+  border: 1px solid var(--tab-border, #000000);
+  border-radius: 10px 10px 4px 4px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
+}
+.tabbed-notes--sticky .tabbed-notes__label:not(:last-of-type) {
+  border-right: none;
+}
+.tabbed-notes--underline .tabbed-notes__wrap {
+  gap: 12px;
+  border-bottom: 1px solid var(--tab-border, #000000);
+}
+.tabbed-notes--underline .tabbed-notes__label {
+  background: transparent;
+  border-radius: 0;
+  padding: 8px 4px;
+}
+.tabbed-notes--underline .tabbed-notes__label:not(:last-of-type) {
+  border-right: none;
+}
+.tabbed-notes--underline .tabbed-notes__switch:checked + .tabbed-notes__label {
+  background: transparent;
+  color: var(--tab-active-bg, #000000);
+  box-shadow: inset 0 -2px 0 var(--tab-active-bg, #000000);
+}
+.tabbed-notes--popout .tabbed-notes__wrap {
+  gap: 8px;
+}
+.tabbed-notes--popout .tabbed-notes__label {
+  border: 1px solid var(--tab-border, #000000);
+  border-bottom: 1px solid var(--tab-border, #000000);
+  border-radius: 14px 14px 0 0;
+}
+.tabbed-notes--popout .tabbed-notes__label:not(:last-of-type) {
+  border-right: none;
+}
+.tabbed-notes--popout .tabbed-notes__switch:checked + .tabbed-notes__label {
+  border-bottom-color: var(--tab-content-bg, #ffffff);
+  margin-bottom: -1px;
+}
+.tabbed-notes--popout .tabbed-notes__switch:checked + .tabbed-notes__label::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  transform: translateX(-50%);
+  border-width: 8px 8px 0;
+  border-style: solid;
+  border-color: var(--tab-active-bg, #000000) transparent transparent;
+}
+.tabbed-notes__content {
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+.tabbed-notes__switch:checked + .tabbed-notes__label {
+  color: var(--tab-active-text, #ffffff);
+  background-color: var(--tab-active-bg, #000000);
+}
+.tabbed-notes__switch:checked + .tabbed-notes__label + .tabbed-notes__content {
+  height: auto;
+  overflow: auto;
+  opacity: 1;
+  transition: 0.5s opacity;
+}
+.tabbed-notes__switch {
+  display: none;
+}
+.tabbed-notes__panel {
+  background-color: var(--tab-content-bg, #ffffff);
+  border: 1px solid var(--tab-content-border, #000000);
+  border-radius: 0;
+  padding: 0 36px 36px;
+}
+.tabbed-notes__intro {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 14px;
+}
+.tabbed-notes__list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+}
+.tabbed-notes__item {
+  position: relative;
+  padding-left: 1em;
+  text-indent: -1em;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.tabbed-notes__item + .tabbed-notes__item {
+  margin-top: 6px;
+}
+.tabbed-notes__item.is-disc::before {
+  content: "・";
+}
+.tabbed-notes__item.is-accent {
+  color: var(--tab-accent, #eb5505);
+}
+.tabbed-notes__item.is-bold {
+  font-weight: 700;
+}
+.tabbed-notes__sublist {
+  margin-top: 6px;
+  padding-left: 1em;
+  list-style: none;
+}
+.tabbed-notes__sublist li {
+  padding-left: 1em;
+  text-indent: -1em;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.tabbed-notes__footnote {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+.tabbed-notes__cta {
+  margin-top: 18px;
+  text-align: center;
+}
+.tabbed-notes__cta-text {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.tabbed-notes__cta-link {
+  color: var(--tab-accent, #eb5505);
+  text-decoration: underline;
+  font-weight: 700;
+}
+.tabbed-notes__cta-image {
+  display: block;
+  margin: 12px auto 0;
+  max-width: 65%;
+}
+.tabbed-notes__cta-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tabbed-notes__button {
+  margin-top: 16px;
+  text-align: center;
+}
+.tabbed-notes__button-link {
+  display: inline-block;
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: var(--tab-active-bg, #000000);
+  color: var(--tab-active-text, #ffffff);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+}
 @media (max-width: 640px) {
   .ranking-table__date {
     font-size: 16px;
@@ -780,6 +1153,15 @@ ul {
   .payment-guide__body,
   .payment-guide__alert {
     font-size: 12px;
+  }
+  .tabbed-notes__label {
+    font-size: 14px;
+  }
+  .tabbed-notes__panel {
+    padding: 0 20px 24px;
+  }
+  .tabbed-notes__cta-image {
+    max-width: 100%;
   }
 }
 .footer {

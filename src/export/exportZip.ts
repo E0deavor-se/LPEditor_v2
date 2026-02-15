@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
+import { resolveBackgroundPreset } from "@/src/lib/backgroundPresets";
 import { FOOTER_DEFAULT_ASSET_PATHS } from "@/src/lib/footerTemplate";
 import type {
   AssetMeta,
@@ -106,8 +107,8 @@ const normalizePathsDeep = (value: unknown): unknown => {
       shouldNormalizeKey(key)
     ) {
       result[key] = normalizePath(normalizedEntry);
-          return `
-            <section class="container tabbed-notes tabbed-notes--${tabStyle.variant}" style="${styleVars}">
+      return;
+    }
     result[key] = normalizedEntry;
   });
   return result;
@@ -560,6 +561,98 @@ const replaceAssetDataUrls = (text: string, map: Map<string, string>) => {
   return result;
 };
 
+const collectUrlsFromHtmlCss = (html: string, cssText: string) => {
+  const urls = new Set<string>();
+  const htmlRegex = /(src|href|poster)=("|')([^"']+)("|')/g;
+  let match = htmlRegex.exec(html);
+  while (match) {
+    if (match[3]) {
+      urls.add(match[3]);
+    }
+    match = htmlRegex.exec(html);
+  }
+  const cssRegex = /url\(([^)]+)\)/g;
+  let cssMatch = cssRegex.exec(cssText);
+  while (cssMatch) {
+    const raw = String(cssMatch[1] ?? "").trim().replace(/^['"]|['"]$/g, "");
+    if (raw) {
+      urls.add(raw);
+    }
+    cssMatch = cssRegex.exec(cssText);
+  }
+  return Array.from(urls);
+};
+
+const shouldCollectExternalUrl = (url: string) => {
+  if (!url || url.startsWith("data:") || url.startsWith("blob:")) {
+    return false;
+  }
+  if (url.startsWith("./assets/") || url.startsWith("assets/")) {
+    return false;
+  }
+  if (url.startsWith("/_next/")) {
+    return false;
+  }
+  return url.startsWith("/") || url.startsWith("http://") || url.startsWith("https://");
+};
+
+const resolveFetchUrl = (url: string) => {
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+  if (url.startsWith("/")) {
+    return `${window.location.origin}${url}`;
+  }
+  return url;
+};
+
+const collectExternalAssets = async (
+  zip: JSZip,
+  urls: string[],
+  warnings: ExportWarning[]
+) => {
+  const urlMap = new Map<string, string>();
+  const hashMap = new Map<string, string>();
+  for (const url of urls) {
+    if (!shouldCollectExternalUrl(url)) {
+      continue;
+    }
+    try {
+      const fetchUrl = resolveFetchUrl(url);
+      const asset = await fetchAssetBytes(fetchUrl);
+      const hash = await hashBytes(asset.bytes);
+      const filename = url.split("/").pop()?.split("?")[0] || "asset";
+      const extension = resolveAssetExtension(filename, asset.mimeType);
+      const kind = resolveAssetKind(asset.mimeType);
+      const folder = getAssetFolder(kind);
+      const path = hashMap.get(hash) ??
+        normalizePath(`${folder}/${hash}.${extension}`);
+      if (!hashMap.has(hash)) {
+        zip.file(path, asset.bytes);
+        zip.file(toDistAssetPath(path), asset.bytes);
+        hashMap.set(hash, path);
+      }
+      urlMap.set(url, `./${path}`);
+    } catch (error) {
+      warnings.push({
+        type: "asset",
+        url,
+        message: "external asset fetch failed",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return urlMap;
+};
+
+const replaceExternalUrls = (text: string, map: Map<string, string>) => {
+  let result = text;
+  map.forEach((path, url) => {
+    result = result.split(url).join(path);
+  });
+  return result;
+};
+
 const rewriteAssetUrlsInHtml = (
   html: string,
   urlMap: Map<string, string>,
@@ -664,6 +757,7 @@ const applyBackgroundLayerToElement = (
   }
   const background = buildBackgroundStyle(spec as any, {
     resolveAssetUrl: (assetId) => resolveBackgroundAssetUrl(assetMetaById, assetId),
+    resolvePreset: resolveBackgroundPreset,
     fallbackColor: "transparent",
   });
 
@@ -1370,6 +1464,125 @@ const renderExcludedStoresList = (stores: StoresTable | null) => {
   return `<div class="tenpo-container">${blocks}</div>`;
 };
 
+const pickHeader = (headers: string[], candidates: string[]) =>
+  candidates.find((candidate) => headers.includes(candidate)) ?? "";
+
+const buildBrandAnchorId = (
+  label: string,
+  index: number,
+  used: Set<string>
+) => {
+  const trimmed = label.trim();
+  const base = trimmed ? trimmed.replace(/\s+/g, "-") : `brand-${index + 1}`;
+  let next = base;
+  let counter = 1;
+  while (used.has(next)) {
+    next = `${base}-${counter}`;
+    counter += 1;
+  }
+  used.add(next);
+  return next;
+};
+
+const buildExcludedBrandGroupsFromStores = (stores: StoresTable | null) => {
+  if (!stores || stores.rows.length === 0) {
+    return [] as Array<{
+      brand: string;
+      id: string;
+      entries: Array<{ name: string; address: string }>;
+    }>;
+  }
+  const headers = [...(stores.columns ?? []), ...(stores.extraColumns ?? [])];
+  const brandKey = pickHeader(headers, [
+    "ブランド名",
+    "ブランド",
+    "グループ",
+    "チェーン名",
+  ]);
+  const canonical = stores.canonical;
+  const storeNameKey = canonical.storeNameKey;
+  const addressKey = canonical.addressKey;
+  const order: string[] = [];
+  const groups = new Map<string, Array<{ name: string; address: string }>>();
+  stores.rows.forEach((row) => {
+    const brand = str(row[brandKey]).trim();
+    const name = str(row[storeNameKey]).trim();
+    const address = str(row[addressKey]).trim();
+    if (!brand && !name && !address) {
+      return;
+    }
+    const key = brand || "未分類";
+    if (!groups.has(key)) {
+      order.push(key);
+      groups.set(key, []);
+    }
+    groups.get(key)?.push({ name, address });
+  });
+  const usedIds = new Set<string>();
+  return order.map((brand, index) => ({
+    brand,
+    entries: groups.get(brand) ?? [],
+    id: buildBrandAnchorId(brand, index, usedIds),
+  }));
+};
+
+const renderExcludedBrandsNav = (
+  groups: Array<{ brand: string; id: string }>
+) => {
+  if (groups.length === 0) {
+    return "";
+  }
+  return `
+    <ul class="excluded-brand-list">
+      ${groups
+        .map(
+          (group) => `
+            <li>
+              <span class="excluded-brand-marker">▼</span>
+              <a class="excluded-brand-link" href="#${escapeHtml(group.id)}">${escapeHtml(
+            group.brand
+          )}</a>
+            </li>
+          `
+        )
+        .join("")}
+    </ul>
+  `;
+};
+
+const renderExcludedBrandsList = (
+  groups: Array<{ brand: string; id: string; entries: Array<{ name: string; address: string }> }>
+) => {
+  if (groups.length === 0) {
+    return `<div class="excluded-empty">CSVを取り込むと、対象外ブランドの一覧が表示されます。</div>`;
+  }
+  const blocks = groups
+    .map((group) => {
+      const rows = group.entries
+        .map(
+          (entry) => `
+            <div class="tenpo_list">
+              <span class="tenpo_list_shop">${escapeHtml(
+                entry.name || "ブランド名"
+              )}</span>
+              <span class="tenpo_list_add">${escapeHtml(entry.address)}</span>
+            </div>
+          `
+        )
+        .join("");
+      return `
+        <div>
+          <div class="tenpo_list_title">
+            <h2 id="${escapeHtml(group.id)}">${escapeHtml(group.brand)}</h2>
+          </div>
+          ${rows}
+        </div>
+      `;
+    })
+    .join("");
+  return `<div class="tenpo-container">${blocks}</div>`;
+};
+
 export const renderProjectToHtml = (
   project: ProjectState,
   cssHref = "styles.css"
@@ -1755,6 +1968,96 @@ export const renderProjectToHtml = (
                 <h1 class="excluded-title">${titleHtml}</h1>
                 ${renderExcludedStoresNav()}
                 ${renderExcludedStoresList(stores)}
+                <div class="excluded-footer">
+                  <a class="excluded-return" href="${returnUrl}">
+                    <span class="excluded-return__label">${returnLabel}</span>
+                    <span class="excluded-return__arrow" aria-hidden="true"></span>
+                  </a>
+                  <div class="excluded-footer__links">
+                    ${resolvedFooterLinks
+                      .map(
+                        (link) =>
+                          `<a href="${escapeHtml(link.url)}">${escapeHtml(
+                            link.label
+                          )}</a>`
+                      )
+                      .join("")}
+                  </div>
+                  <div class="excluded-footer__copy">${footerCopy}</div>
+                </div>
+              </div>
+            </section>
+          `;
+        }
+        case "excludedBrandsList": {
+          const brandGroups = buildExcludedBrandGroupsFromStores(stores);
+          const rawTitleTemplate = str(section.data.title || "対象外ブランド一覧");
+          const rawHighlight = str(section.data.highlightLabel || "対象外");
+          const highlight = escapeHtml(rawHighlight);
+          const returnUrl = escapeHtml(str(section.data.returnUrl || "#"));
+          const returnLabel = escapeHtml(
+            str(section.data.returnLabel || "キャンペーンページに戻る")
+          );
+          const footerCopy = escapeHtml(
+            str(
+              section.data.footerCopy ||
+                "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED."
+            )
+          );
+          const footerLinksRaw = Array.isArray(section.data.footerLinks)
+            ? section.data.footerLinks
+            : [];
+          const footerLinks = footerLinksRaw
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") {
+                return null;
+              }
+              const label =
+                "label" in entry && typeof entry.label === "string"
+                  ? entry.label
+                  : "";
+              const url =
+                "url" in entry && typeof entry.url === "string" ? entry.url : "";
+              if (!label || !url) {
+                return null;
+              }
+              return { label, url };
+            })
+            .filter((entry): entry is { label: string; url: string } => entry != null);
+          const resolvedFooterLinks = footerLinks.length
+            ? footerLinks
+            : [
+                { label: "サイトポリシー", url: "#" },
+                { label: "会社概要", url: "#" },
+                { label: "動作環境", url: "#" },
+                { label: "Cookie情報の利用", url: "#" },
+                { label: "広告配信などについて", url: "#" },
+              ];
+          const hasHighlightPlaceholder =
+            highlight && rawTitleTemplate.includes("{highlight}");
+          const titleParts = rawTitleTemplate.split("{highlight}");
+          const titleHtml = hasHighlightPlaceholder
+            ? `
+              <span class="excluded-title__text">${escapeHtml(
+                titleParts[0]
+              )}</span>
+              <span class="excluded-title__badge">${highlight}</span>
+              <span class="excluded-title__text">${escapeHtml(
+                titleParts.slice(1).join("{highlight}")
+              )}</span>
+            `
+            : `
+              <span class="excluded-title__text">${escapeHtml(
+                rawTitleTemplate
+              )}</span>
+              ${highlight ? `<span class="excluded-title__badge">${highlight}</span>` : ""}
+            `;
+          return `
+            <section class="excluded-stores">
+              <div class="excluded-wrap">
+                <h1 class="excluded-title">${titleHtml}</h1>
+                ${renderExcludedBrandsNav(brandGroups)}
+                ${renderExcludedBrandsList(brandGroups)}
                 <div class="excluded-footer">
                   <a class="excluded-return" href="${returnUrl}">
                     <span class="excluded-return__label">${returnLabel}</span>
@@ -2203,6 +2506,23 @@ ul {
   color: #eb5505;
   display: inline-block;
   margin-right: 10px;
+}
+.excluded-brand-list {
+  list-style: none;
+  margin: 8px 0 16px;
+  padding: 0;
+}
+.excluded-brand-list li {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+.excluded-brand-marker {
+  color: #eb5505;
+  margin-right: 4px;
+}
+.excluded-brand-link {
+  color: #eb5505;
+  text-decoration: underline;
 }
 .tenpo-container {
   display: block;
@@ -2736,6 +3056,16 @@ export const exportProjectToZip = async (
       filenameMap
     );
     htmlWithCss = replaceDefaultFooterUrls(htmlWithCss, footerDefaultUrlMap);
+    const externalUrls = collectUrlsFromHtmlCss(htmlWithCss, composedCss);
+    const externalUrlMap = await collectExternalAssets(
+      zip,
+      externalUrls,
+      warnings
+    );
+    if (externalUrlMap.size > 0) {
+      htmlWithCss = replaceExternalUrls(htmlWithCss, externalUrlMap);
+      exportCss = replaceExternalUrls(exportCss, externalUrlMap);
+    }
     if (storesEmbed) {
       const storesScript =
         `<script type="application/json" id="stores-data">` +
@@ -2792,12 +3122,17 @@ export const exportProjectToZip = async (
 
   zip.file("dist/index.html", exportHtml);
   logStep("dist index.html added", { ok: true, generated: distGenerated });
+  zip.file("index.html", exportHtml);
+  logStep("root index.html added", { ok: true, generated: distGenerated });
 
   if (distGenerated) {
     zip.file("dist/assets/styles.css", exportCss);
     zip.file("dist/assets/app.js", exportJs);
+    zip.file("assets/styles.css", exportCss);
+    zip.file("assets/app.js", exportJs);
   } else {
     zip.file("dist/README.txt", buildDistFailureReadme(distError));
+    zip.file("README.txt", buildDistFailureReadme(distError));
   }
 
   logStep("assets images collected", {

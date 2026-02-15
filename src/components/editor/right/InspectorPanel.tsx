@@ -43,6 +43,7 @@ import PageStyleColors from "@/src/components/editor/right/groups/PageStyleColor
 import PageStyleSpacing from "@/src/components/editor/right/groups/PageStyleSpacing";
 import PageStyleLayout from "@/src/components/editor/right/groups/PageStyleLayout";
 import PageStyleBackground from "@/src/components/editor/right/groups/PageStyleBackground";
+import PageStyleSectionAnimation from "@/src/components/editor/right/groups/PageStyleSectionAnimation";
 import Accordion from "@/src/components/editor/right/primitives/Accordion";
 import SectionCardPresetGallery from "@/src/components/editor/right/section/SectionCardPresetGallery";
 import SectionStylePanel from "@/src/components/editor/right/section/SectionStylePanel";
@@ -82,6 +83,12 @@ const DEFAULT_PAGE_STYLE: PageBaseStyle = {
     lineHeight: 1.6,
     letterSpacing: 0,
     fontWeight: 400,
+  },
+  sectionAnimation: {
+    type: "none",
+    trigger: "onView",
+    speed: 500,
+    easing: "ease-out",
   },
   colors: {
     background: "#ffffff",
@@ -128,6 +135,48 @@ type RankingColumn = {
   label: string;
 };
 
+type TabbedNotesItem = {
+  id: string;
+  text: string;
+  bullet: "none" | "disc";
+  tone: "normal" | "accent";
+  bold: boolean;
+  subItems: string[];
+};
+
+type TabbedNotesTab = {
+  id: string;
+  labelTop: string;
+  labelBottom: string;
+  intro: string;
+  items: TabbedNotesItem[];
+  footnote: string;
+  ctaText: string;
+  ctaLinkText: string;
+  ctaLinkUrl: string;
+  ctaTargetKind: "section" | "url";
+  ctaSectionId: string;
+  ctaImageUrl: string;
+  ctaImageAlt: string;
+  ctaImageAssetId: string;
+  buttonText: string;
+  buttonTargetKind: "section" | "url";
+  buttonUrl: string;
+  buttonSectionId: string;
+};
+
+type TabbedNotesStyle = {
+  variant: "simple" | "sticky" | "underline" | "popout";
+  inactiveBg: string;
+  inactiveText: string;
+  activeBg: string;
+  activeText: string;
+  border: string;
+  contentBg: string;
+  contentBorder: string;
+  accent: string;
+};
+
 const isTruthyStoreFlag = (value: string) => {
   const normalized = value
     .normalize("NFKC")
@@ -158,6 +207,7 @@ export default function InspectorPanel() {
     setPageColors,
     setPageSpacing,
     setPageLayout,
+    setPageSectionAnimation,
     setPageBackground,
     setMvBackground,
     updateSectionContent,
@@ -207,6 +257,7 @@ export default function InspectorPanel() {
       setPageColors: state.setPageColors,
       setPageSpacing: state.setPageSpacing,
       setPageLayout: state.setPageLayout,
+      setPageSectionAnimation: state.setPageSectionAnimation,
       setPageBackground: state.setPageBackground,
       setMvBackground: state.setMvBackground,
       updateSectionContent: state.updateSectionContent,
@@ -284,6 +335,8 @@ export default function InspectorPanel() {
   const isBrandBar = sectionType === "brandBar";
   const isHeroImage = sectionType === "heroImage";
   const isTargetStores = sectionType === "targetStores";
+  const isExcludedStoresList = sectionType === "excludedStoresList";
+  const isExcludedBrandsList = sectionType === "excludedBrandsList";
   const isLegalNotes = sectionType === "legalNotes";
   const isInquiry = sectionType === "footerHtml";
   const isCampaignPeriodBar = sectionType === "campaignPeriodBar";
@@ -291,6 +344,9 @@ export default function InspectorPanel() {
   const isCouponFlow = sectionType === "couponFlow";
   const isRankingTable = sectionType === "rankingTable";
   const isPaymentHistoryGuide = sectionType === "paymentHistoryGuide";
+  const isTabbedNotes = sectionType === "tabbedNotes";
+  const isStoreCsvSection =
+    isTargetStores || isExcludedStoresList || isExcludedBrandsList;
   const isItemlessSection =
     isBrandBar || isHeroImage || isCampaignPeriodBar;
   const hideStyleTab = isBrandBar || isHeroImage;
@@ -692,6 +748,143 @@ export default function InspectorPanel() {
       imageAlt: typeof data.imageAlt === "string" ? data.imageAlt : "",
       imageAssetId:
         typeof data.imageAssetId === "string" ? data.imageAssetId : "",
+    };
+  }, [selectedSection?.data]);
+  const tabbedNotesData = useMemo(() => {
+    const data = selectedSection?.data ?? {};
+    const rawTabs = Array.isArray(data.tabs) ? data.tabs : [];
+    const tabs: TabbedNotesTab[] = rawTabs.map((tab, index) => {
+      const entry = tab && typeof tab === "object"
+        ? (tab as Record<string, unknown>)
+        : {};
+      const rawItems = Array.isArray(entry.items) ? entry.items : [];
+      const items: TabbedNotesItem[] = rawItems.map((item, itemIndex) => {
+        const itemEntry = item && typeof item === "object"
+          ? (item as Record<string, unknown>)
+          : {};
+        const subItems = Array.isArray(itemEntry.subItems)
+          ? itemEntry.subItems.map((value) => String(value))
+          : [];
+        return {
+          id:
+            typeof itemEntry.id === "string" && itemEntry.id.trim()
+              ? itemEntry.id
+              : `tab_item_${index + 1}_${itemIndex + 1}`,
+          text: typeof itemEntry.text === "string" ? itemEntry.text : "",
+          bullet: itemEntry.bullet === "none" ? "none" : "disc",
+          tone: itemEntry.tone === "accent" ? "accent" : "normal",
+          bold: Boolean(itemEntry.bold),
+          subItems,
+        };
+      });
+      return {
+        id:
+          typeof entry.id === "string" && entry.id.trim()
+            ? entry.id
+            : `tab_${index + 1}`,
+        labelTop: typeof entry.labelTop === "string" ? entry.labelTop : "",
+        labelBottom:
+          typeof entry.labelBottom === "string" ? entry.labelBottom : "注意事項",
+        intro: typeof entry.intro === "string" ? entry.intro : "",
+        items,
+        footnote: typeof entry.footnote === "string" ? entry.footnote : "",
+        ctaText: typeof entry.ctaText === "string" ? entry.ctaText : "",
+        ctaLinkText:
+          typeof entry.ctaLinkText === "string" ? entry.ctaLinkText : "",
+        ctaLinkUrl:
+          typeof entry.ctaLinkUrl === "string" ? entry.ctaLinkUrl : "",
+        ctaTargetKind:
+          entry.ctaTargetKind === "section" ? "section" : "url",
+        ctaSectionId:
+          typeof entry.ctaSectionId === "string" ? entry.ctaSectionId : "",
+        ctaImageUrl:
+          typeof entry.ctaImageUrl === "string" ? entry.ctaImageUrl : "",
+        ctaImageAlt:
+          typeof entry.ctaImageAlt === "string" ? entry.ctaImageAlt : "",
+        ctaImageAssetId:
+          typeof entry.ctaImageAssetId === "string" ? entry.ctaImageAssetId : "",
+        buttonText:
+          typeof entry.buttonText === "string" ? entry.buttonText : "",
+        buttonTargetKind:
+          entry.buttonTargetKind === "section" ? "section" : "url",
+        buttonUrl: typeof entry.buttonUrl === "string" ? entry.buttonUrl : "",
+        buttonSectionId:
+          typeof entry.buttonSectionId === "string" ? entry.buttonSectionId : "",
+      };
+    });
+    const fallbackTabs: TabbedNotesTab[] = [
+      {
+        id: "tab_1",
+        labelTop: "タブ1",
+        labelBottom: "注意事項",
+        intro: "",
+        items: [],
+        footnote: "",
+        ctaText: "",
+        ctaLinkText: "",
+        ctaLinkUrl: "",
+        ctaTargetKind: "url",
+        ctaSectionId: "",
+        ctaImageUrl: "",
+        ctaImageAlt: "",
+        ctaImageAssetId: "",
+        buttonText: "",
+        buttonTargetKind: "url",
+        buttonUrl: "",
+        buttonSectionId: "",
+      },
+      {
+        id: "tab_2",
+        labelTop: "タブ2",
+        labelBottom: "注意事項",
+        intro: "",
+        items: [],
+        footnote: "",
+        ctaText: "",
+        ctaLinkText: "",
+        ctaLinkUrl: "",
+        ctaTargetKind: "url",
+        ctaSectionId: "",
+        ctaImageUrl: "",
+        ctaImageAlt: "",
+        ctaImageAssetId: "",
+        buttonText: "",
+        buttonTargetKind: "url",
+        buttonUrl: "",
+        buttonSectionId: "",
+      },
+    ];
+    const style =
+      data.tabStyle && typeof data.tabStyle === "object"
+        ? (data.tabStyle as Record<string, unknown>)
+        : {};
+    const rawVariant = typeof style.variant === "string" ? style.variant : "simple";
+    const variant =
+      rawVariant === "sticky" ||
+      rawVariant === "underline" ||
+      rawVariant === "popout"
+        ? rawVariant
+        : "simple";
+    const tabStyle: TabbedNotesStyle = {
+      variant,
+      inactiveBg: typeof style.inactiveBg === "string" ? style.inactiveBg : "#DDDDDD",
+      inactiveText:
+        typeof style.inactiveText === "string" ? style.inactiveText : "#000000",
+      activeBg: typeof style.activeBg === "string" ? style.activeBg : "#000000",
+      activeText: typeof style.activeText === "string" ? style.activeText : "#FFFFFF",
+      border: typeof style.border === "string" ? style.border : "#000000",
+      contentBg:
+        typeof style.contentBg === "string" ? style.contentBg : "#FFFFFF",
+      contentBorder:
+        typeof style.contentBorder === "string"
+          ? style.contentBorder
+          : "#000000",
+      accent: typeof style.accent === "string" ? style.accent : "#EB5505",
+    };
+    return {
+      title: typeof data.title === "string" ? data.title : "注意事項",
+      tabs: tabs.length > 0 ? tabs : fallbackTabs,
+      tabStyle,
     };
   }, [selectedSection?.data]);
   const designTargetSection = useMemo(() => {
@@ -1103,6 +1296,10 @@ export default function InspectorPanel() {
   );
   const createNoticeId = () =>
     `notice_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const createTabId = () =>
+    `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const createTabItemId = () =>
+    `tab_item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const createRankingRowId = () =>
     `rank_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const createImageIdLocal = () =>
@@ -1348,6 +1545,46 @@ export default function InspectorPanel() {
       align: "left",
     },
   };
+  const tabbedNotesBandPresets = [
+    {
+      id: "classic",
+      label: "クラシック",
+      activeBg: "#111111",
+      inactiveBg: "#dddddd",
+      activeText: "#ffffff",
+      inactiveText: "#111111",
+    },
+    {
+      id: "ocean",
+      label: "オーシャン",
+      activeBg: "#0f4c81",
+      inactiveBg: "#d9e8f5",
+      activeText: "#ffffff",
+      inactiveText: "#0f4c81",
+    },
+    {
+      id: "sunset",
+      label: "サンセット",
+      activeBg: "#ef6c00",
+      inactiveBg: "#ffe3cc",
+      activeText: "#ffffff",
+      inactiveText: "#8a3d00",
+    },
+    {
+      id: "forest",
+      label: "フォレスト",
+      activeBg: "#1b5e20",
+      inactiveBg: "#dcedc8",
+      activeText: "#ffffff",
+      inactiveText: "#1b5e20",
+    },
+  ];
+  const tabbedNotesDesignPresets = [
+    { id: "simple", label: "シンプル" },
+    { id: "sticky", label: "付箋風" },
+    { id: "underline", label: "下線あり" },
+    { id: "popout", label: "吹き出し風" },
+  ] as const;
   const couponFlowImageItems = isCouponFlow
     ? contentItems.filter(
         (item): item is ImageContentItem => item.type === "image"
@@ -2156,6 +2393,10 @@ export default function InspectorPanel() {
                       value={pageStyle.layout}
                       onChange={setPageLayout}
                     />
+                    <PageStyleSectionAnimation
+                      value={pageStyle.sectionAnimation}
+                      onChange={setPageSectionAnimation}
+                    />
                   </>
                 ) : isSection ? (
                   <SectionStylePanel
@@ -2165,6 +2406,222 @@ export default function InspectorPanel() {
                       DEFAULT_SECTION_CARD_STYLE
                     }
                     showSectionDesign={!isInquiry}
+                    hideGradient={isTabbedNotes}
+                    hideTitleBand={isTabbedNotes}
+                    surfaceExtras={
+                      isTabbedNotes ? (
+                        <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
+                          <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
+                            付箋タブ帯
+                          </div>
+                          <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
+                            デザイン
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {tabbedNotesDesignPresets.map((preset) => {
+                              const isActivePreset =
+                                tabbedNotesData.tabStyle.variant === preset.id;
+                              return (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  className={
+                                    "rounded-full border px-3 py-1 text-[11px] transition " +
+                                    (isActivePreset
+                                      ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
+                                      : "border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 hover:border-[var(--ui-border)]")
+                                  }
+                                  onClick={() =>
+                                    updateSectionData(selectedSection.id, {
+                                      tabStyle: {
+                                        ...tabbedNotesData.tabStyle,
+                                        variant: preset.id,
+                                      },
+                                    })
+                                  }
+                                >
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
+                            プリセット
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {tabbedNotesBandPresets.map((preset) => {
+                              const isActivePreset =
+                                tabbedNotesData.tabStyle.activeBg === preset.activeBg &&
+                                tabbedNotesData.tabStyle.inactiveBg ===
+                                  preset.inactiveBg &&
+                                tabbedNotesData.tabStyle.activeText ===
+                                  preset.activeText &&
+                                tabbedNotesData.tabStyle.inactiveText ===
+                                  preset.inactiveText;
+                              return (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  className={
+                                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] transition " +
+                                    (isActivePreset
+                                      ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
+                                      : "border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 hover:border-[var(--ui-border)]")
+                                  }
+                                  onClick={() =>
+                                    updateSectionData(selectedSection.id, {
+                                      tabStyle: {
+                                        ...tabbedNotesData.tabStyle,
+                                        activeBg: preset.activeBg,
+                                        inactiveBg: preset.inactiveBg,
+                                        activeText: preset.activeText,
+                                        inactiveText: preset.inactiveText,
+                                      },
+                                    })
+                                  }
+                                >
+                                  <span className="font-semibold text-[var(--ui-text)]">
+                                    {preset.label}
+                                  </span>
+                                  <span className="inline-flex overflow-hidden rounded-full border border-[var(--ui-border)]/60">
+                                    <span
+                                      className="px-2 py-0.5 text-[10px] font-semibold"
+                                      style={{
+                                        background: preset.activeBg,
+                                        color: preset.activeText,
+                                      }}
+                                    >
+                                      タブ
+                                    </span>
+                                    <span
+                                      className="px-2 py-0.5 text-[10px] font-semibold"
+                                      style={{
+                                        background: preset.inactiveBg,
+                                        color: preset.inactiveText,
+                                      }}
+                                    >
+                                      タブ
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <FieldRow label="帯背景1">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.activeBg}
+                              ariaLabel="帯背景1"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    activeBg: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="帯背景2">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.inactiveBg}
+                              ariaLabel="帯背景2"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    inactiveBg: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="帯文字1">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.activeText}
+                              ariaLabel="帯文字1"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    activeText: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="帯文字2">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.inactiveText}
+                              ariaLabel="帯文字2"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    inactiveText: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="境界線">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.border}
+                              ariaLabel="境界線"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    border: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="本文背景">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.contentBg}
+                              ariaLabel="本文背景"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    contentBg: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="本文枠線">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.contentBorder}
+                              ariaLabel="本文枠線"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    contentBorder: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                          <FieldRow label="強調文字色">
+                            <ColorField
+                              value={tabbedNotesData.tabStyle.accent}
+                              ariaLabel="強調文字色"
+                              onChange={(next) =>
+                                updateSectionData(selectedSection.id, {
+                                  tabStyle: {
+                                    ...tabbedNotesData.tabStyle,
+                                    accent: next,
+                                  },
+                                })
+                              }
+                            />
+                          </FieldRow>
+                        </div>
+                      ) : null
+                    }
                     onStyleChange={(patch) =>
                       updateSectionStyle(selectedSection.id, patch)
                     }
@@ -2614,10 +3071,73 @@ export default function InspectorPanel() {
                             )}
                           </div>
                         ) : null}
-                        {isTargetStores ? (
+                        {isExcludedStoresList || isExcludedBrandsList ? (
+                          <div className="flex flex-col gap-2">
+                            <FieldRow label="タイトル">
+                              <input
+                                type="text"
+                                className="ui-input h-7 w-full text-[12px]"
+                                value={String(selectedSection.data.title ?? "")}
+                                onChange={(event) =>
+                                  updateSectionData(selectedSection.id, {
+                                    title: event.target.value,
+                                  })
+                                }
+                                disabled={isLocked}
+                              />
+                            </FieldRow>
+                            <FieldRow label="強調ラベル">
+                              <input
+                                type="text"
+                                className="ui-input h-7 w-full text-[12px]"
+                                value={String(
+                                  selectedSection.data.highlightLabel ?? ""
+                                )}
+                                onChange={(event) =>
+                                  updateSectionData(selectedSection.id, {
+                                    highlightLabel: event.target.value,
+                                  })
+                                }
+                                disabled={isLocked}
+                              />
+                            </FieldRow>
+                            <FieldRow label="戻るボタンURL">
+                              <input
+                                type="text"
+                                className="ui-input h-7 w-full text-[12px]"
+                                value={String(selectedSection.data.returnUrl ?? "")}
+                                onChange={(event) =>
+                                  updateSectionData(selectedSection.id, {
+                                    returnUrl: event.target.value,
+                                  })
+                                }
+                                placeholder="https://example.com"
+                                disabled={isLocked}
+                              />
+                            </FieldRow>
+                            <FieldRow label="戻るボタン文言">
+                              <input
+                                type="text"
+                                className="ui-input h-7 w-full text-[12px]"
+                                value={String(selectedSection.data.returnLabel ?? "")}
+                                onChange={(event) =>
+                                  updateSectionData(selectedSection.id, {
+                                    returnLabel: event.target.value,
+                                  })
+                                }
+                                placeholder="キャンペーンページに戻る"
+                                disabled={isLocked}
+                              />
+                            </FieldRow>
+                          </div>
+                        ) : null}
+                        {isStoreCsvSection ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
-                              CSV取り込み
+                              店舗リスト(CSV)
+                            </div>
+                            <div className="text-[11px] text-[var(--ui-muted)]">
+                              必須列: 店舗ID / 店舗名 / 郵便番号 / 住所 / 都道府県
                             </div>
                             <input
                               ref={csvInputRef}
@@ -3081,6 +3601,664 @@ export default function InspectorPanel() {
                                 disabled={isLocked}
                               />
                             </FieldRow>
+                          </div>
+                        ) : null}
+                        {isTabbedNotes ? (
+                          <div className="flex flex-col gap-3">
+                            <div className="text-[11px] text-[var(--ui-muted)]">
+                              タブ
+                            </div>
+                            <div className="flex flex-col gap-3">
+                              {tabbedNotesData.tabs.map((tab, tabIndex) => (
+                                <div
+                                  key={tab.id}
+                                  className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 p-2"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.labelTop}
+                                      placeholder="タブラベル（上）"
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, labelTop: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.labelBottom}
+                                      placeholder="タブラベル（下）"
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, labelBottom: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="ui-button h-7 w-7 px-0"
+                                      onClick={() => {
+                                        if (tabbedNotesData.tabs.length <= 1) {
+                                          return;
+                                        }
+                                        const nextTabs = tabbedNotesData.tabs.filter(
+                                          (_entry, idx) => idx !== tabIndex
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked || tabbedNotesData.tabs.length <= 1}
+                                      aria-label={t.inspector.section.buttons.deleteItem}
+                                      title={t.inspector.section.buttons.deleteItem}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                  <label className="ui-field mt-2">
+                                    <span className="ui-field-label">説明文</span>
+                                    <textarea
+                                      className="ui-textarea min-h-[70px] text-[12px]"
+                                      value={tab.intro}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, intro: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </label>
+                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                    注意文言
+                                  </div>
+                                  <div className="mt-2 flex flex-col gap-2">
+                                    {tab.items.map((item, itemIndex) => (
+                                      <div
+                                        key={item.id}
+                                        className="rounded-md border border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/70 p-2"
+                                      >
+                                        <input
+                                          type="text"
+                                          className="ui-input h-7 w-full text-[12px]"
+                                          value={item.text}
+                                          placeholder="注意文言"
+                                          onChange={(event) => {
+                                            const nextTabs = tabbedNotesData.tabs.map(
+                                              (entry, idx) => {
+                                                if (idx !== tabIndex) {
+                                                  return entry;
+                                                }
+                                                const nextItems = entry.items.map(
+                                                  (itemEntry, itemIdx) =>
+                                                    itemIdx === itemIndex
+                                                      ? {
+                                                          ...itemEntry,
+                                                          text: event.target.value,
+                                                        }
+                                                      : itemEntry
+                                                );
+                                                return { ...entry, items: nextItems };
+                                              }
+                                            );
+                                            updateSectionData(selectedSection.id, {
+                                              tabs: nextTabs,
+                                            });
+                                          }}
+                                          disabled={isLocked}
+                                        />
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                          <SelectField
+                                            value={item.bullet}
+                                            ariaLabel="記号"
+                                            onChange={(next) => {
+                                              const nextTabs = tabbedNotesData.tabs.map(
+                                                (entry, idx) => {
+                                                  if (idx !== tabIndex) {
+                                                    return entry;
+                                                  }
+                                                  const nextItems = entry.items.map(
+                                                    (itemEntry, itemIdx) =>
+                                                      itemIdx === itemIndex
+                                                        ? {
+                                                            ...itemEntry,
+                                                            bullet:
+                                                              String(next) === "none"
+                                                                ? "none"
+                                                                : "disc",
+                                                          }
+                                                        : itemEntry
+                                                  );
+                                                  return { ...entry, items: nextItems };
+                                                }
+                                              );
+                                              updateSectionData(selectedSection.id, {
+                                                tabs: nextTabs,
+                                              });
+                                            }}
+                                          >
+                                            <option value="disc">・</option>
+                                            <option value="none">なし</option>
+                                          </SelectField>
+                                          <SegmentedField
+                                            value={item.tone}
+                                            ariaLabel="強調"
+                                            options={[
+                                              { value: "normal", label: "通常" },
+                                              { value: "accent", label: "強調" },
+                                            ]}
+                                            onChange={(next) => {
+                                              const nextTabs = tabbedNotesData.tabs.map(
+                                                (entry, idx) => {
+                                                  if (idx !== tabIndex) {
+                                                    return entry;
+                                                  }
+                                                  const nextItems = entry.items.map(
+                                                    (itemEntry, itemIdx) =>
+                                                      itemIdx === itemIndex
+                                                        ? {
+                                                            ...itemEntry,
+                                                            tone:
+                                                              next === "accent"
+                                                                ? "accent"
+                                                                : "normal",
+                                                          }
+                                                        : itemEntry
+                                                  );
+                                                  return { ...entry, items: nextItems };
+                                                }
+                                              );
+                                              updateSectionData(selectedSection.id, {
+                                                tabs: nextTabs,
+                                              });
+                                            }}
+                                          />
+                                          <ToggleField
+                                            value={item.bold}
+                                            ariaLabel="太字"
+                                            onChange={(next) => {
+                                              const nextTabs = tabbedNotesData.tabs.map(
+                                                (entry, idx) => {
+                                                  if (idx !== tabIndex) {
+                                                    return entry;
+                                                  }
+                                                  const nextItems = entry.items.map(
+                                                    (itemEntry, itemIdx) =>
+                                                      itemIdx === itemIndex
+                                                        ? { ...itemEntry, bold: next }
+                                                        : itemEntry
+                                                  );
+                                                  return { ...entry, items: nextItems };
+                                                }
+                                              );
+                                              updateSectionData(selectedSection.id, {
+                                                tabs: nextTabs,
+                                              });
+                                            }}
+                                          />
+                                          <button
+                                            type="button"
+                                            className="ui-button h-7 w-7 px-0"
+                                            onClick={() => {
+                                              const nextTabs = tabbedNotesData.tabs.map(
+                                                (entry, idx) => {
+                                                  if (idx !== tabIndex) {
+                                                    return entry;
+                                                  }
+                                                  const nextItems = entry.items.filter(
+                                                    (_itemEntry, itemIdx) =>
+                                                      itemIdx !== itemIndex
+                                                  );
+                                                  return { ...entry, items: nextItems };
+                                                }
+                                              );
+                                              updateSectionData(selectedSection.id, {
+                                                tabs: nextTabs,
+                                              });
+                                            }}
+                                            disabled={isLocked}
+                                            aria-label={t.inspector.section.buttons.deleteItem}
+                                            title={t.inspector.section.buttons.deleteItem}
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </div>
+                                        <label className="ui-field mt-2">
+                                          <span className="ui-field-label">子項目</span>
+                                          <textarea
+                                            className="ui-textarea min-h-[60px] text-[12px]"
+                                            value={item.subItems.join("\n")}
+                                            onChange={(event) => {
+                                              const nextSubItems = event.target.value
+                                                .split("\n")
+                                                .map((line) => line.trim())
+                                                .filter((line) => line.length > 0);
+                                              const nextTabs = tabbedNotesData.tabs.map(
+                                                (entry, idx) => {
+                                                  if (idx !== tabIndex) {
+                                                    return entry;
+                                                  }
+                                                  const nextItems = entry.items.map(
+                                                    (itemEntry, itemIdx) =>
+                                                      itemIdx === itemIndex
+                                                        ? {
+                                                            ...itemEntry,
+                                                            subItems: nextSubItems,
+                                                          }
+                                                        : itemEntry
+                                                  );
+                                                  return { ...entry, items: nextItems };
+                                                }
+                                              );
+                                              updateSectionData(selectedSection.id, {
+                                                tabs: nextTabs,
+                                              });
+                                            }}
+                                            disabled={isLocked}
+                                          />
+                                        </label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="ui-button mt-2 h-7 px-2 text-[11px]"
+                                    onClick={() => {
+                                      const nextTabs = tabbedNotesData.tabs.map(
+                                        (entry, idx) => {
+                                          if (idx !== tabIndex) {
+                                            return entry;
+                                          }
+                                          return {
+                                            ...entry,
+                                            items: [
+                                              ...entry.items,
+                                              {
+                                                id: createTabItemId(),
+                                                text: "",
+                                                bullet: "disc",
+                                                tone: "normal",
+                                                bold: false,
+                                                subItems: [],
+                                              },
+                                            ],
+                                          };
+                                        }
+                                      );
+                                      updateSectionData(selectedSection.id, {
+                                        tabs: nextTabs,
+                                      });
+                                    }}
+                                    disabled={isLocked}
+                                  >
+                                    注意文言を追加
+                                  </button>
+                                  <FieldRow label="脚注">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.footnote}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, footnote: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </FieldRow>
+                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                    CTA
+                                  </div>
+                                  <FieldRow label="CTA文">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.ctaText}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, ctaText: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label="リンクテキスト">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.ctaLinkText}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, ctaLinkText: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label="リンク先">
+                                    <SegmentedField
+                                      value={tab.ctaTargetKind}
+                                      ariaLabel="リンク先"
+                                      options={[
+                                        { value: "section", label: "セクション" },
+                                        { value: "url", label: "URL" },
+                                      ]}
+                                      onChange={(next) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) => {
+                                            if (idx !== tabIndex) {
+                                              return entry;
+                                            }
+                                            if (next === "section") {
+                                              const firstSectionId =
+                                                project.sections[0]?.id ?? "";
+                                              return {
+                                                ...entry,
+                                                ctaTargetKind: "section",
+                                                ctaSectionId: firstSectionId,
+                                              };
+                                            }
+                                            return { ...entry, ctaTargetKind: "url" };
+                                          }
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                    />
+                                  </FieldRow>
+                                  {tab.ctaTargetKind === "section" ? (
+                                    <FieldRow label="リンク先セクション">
+                                      <SelectField
+                                        value={tab.ctaSectionId}
+                                        ariaLabel="リンク先セクション"
+                                        onChange={(next) => {
+                                          const nextTabs = tabbedNotesData.tabs.map(
+                                            (entry, idx) =>
+                                              idx === tabIndex
+                                                ? { ...entry, ctaSectionId: String(next) }
+                                                : entry
+                                          );
+                                          updateSectionData(selectedSection.id, {
+                                            tabs: nextTabs,
+                                          });
+                                        }}
+                                      >
+                                        {project.sections.map((section: SectionBase) => (
+                                          <option key={section.id} value={section.id}>
+                                            {section.name ?? section.type}
+                                          </option>
+                                        ))}
+                                      </SelectField>
+                                    </FieldRow>
+                                  ) : (
+                                    <FieldRow label="リンクURL">
+                                      <input
+                                        type="text"
+                                        className="ui-input h-7 w-full text-[12px]"
+                                        value={tab.ctaLinkUrl}
+                                        onChange={(event) => {
+                                          const nextTabs = tabbedNotesData.tabs.map(
+                                            (entry, idx) =>
+                                              idx === tabIndex
+                                                ? { ...entry, ctaLinkUrl: event.target.value }
+                                                : entry
+                                          );
+                                          updateSectionData(selectedSection.id, {
+                                            tabs: nextTabs,
+                                          });
+                                        }}
+                                        disabled={isLocked}
+                                      />
+                                    </FieldRow>
+                                  )}
+                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                    CTA画像
+                                  </div>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="ui-input h-7 text-[12px]"
+                                    onChange={(event) => {
+                                      const file = event.target.files?.[0];
+                                      if (!file) {
+                                        return;
+                                      }
+                                      handleImageImport(file, (assetId, dataUrl) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? {
+                                                  ...entry,
+                                                  ctaImageAssetId: assetId,
+                                                  ctaImageUrl: dataUrl,
+                                                  ctaImageAlt: entry.ctaImageAlt || file.name,
+                                                }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      });
+                                      event.target.value = "";
+                                    }}
+                                    disabled={isLocked}
+                                  />
+                                  <FieldRow label="CTA画像URL">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.ctaImageUrl}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, ctaImageUrl: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label="CTA代替テキスト">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.ctaImageAlt}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, ctaImageAlt: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </FieldRow>
+                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                    ボタン
+                                  </div>
+                                  <FieldRow label="ボタン文言">
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-full text-[12px]"
+                                      value={tab.buttonText}
+                                      onChange={(event) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) =>
+                                            idx === tabIndex
+                                              ? { ...entry, buttonText: event.target.value }
+                                              : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label="ボタンリンク先">
+                                    <SegmentedField
+                                      value={tab.buttonTargetKind}
+                                      ariaLabel="ボタンリンク先"
+                                      options={[
+                                        { value: "section", label: "セクション" },
+                                        { value: "url", label: "URL" },
+                                      ]}
+                                      onChange={(next) => {
+                                        const nextTabs = tabbedNotesData.tabs.map(
+                                          (entry, idx) => {
+                                            if (idx !== tabIndex) {
+                                              return entry;
+                                            }
+                                            if (next === "section") {
+                                              const firstSectionId =
+                                                project.sections[0]?.id ?? "";
+                                              return {
+                                                ...entry,
+                                                buttonTargetKind: "section",
+                                                buttonSectionId: firstSectionId,
+                                              };
+                                            }
+                                            return { ...entry, buttonTargetKind: "url" };
+                                          }
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          tabs: nextTabs,
+                                        });
+                                      }}
+                                    />
+                                  </FieldRow>
+                                  {tab.buttonTargetKind === "section" ? (
+                                    <FieldRow label="ボタン先セクション">
+                                      <SelectField
+                                        value={tab.buttonSectionId}
+                                        ariaLabel="ボタン先セクション"
+                                        onChange={(next) => {
+                                          const nextTabs = tabbedNotesData.tabs.map(
+                                            (entry, idx) =>
+                                              idx === tabIndex
+                                                ? { ...entry, buttonSectionId: String(next) }
+                                                : entry
+                                          );
+                                          updateSectionData(selectedSection.id, {
+                                            tabs: nextTabs,
+                                          });
+                                        }}
+                                      >
+                                        {project.sections.map((section: SectionBase) => (
+                                          <option key={section.id} value={section.id}>
+                                            {section.name ?? section.type}
+                                          </option>
+                                        ))}
+                                      </SelectField>
+                                    </FieldRow>
+                                  ) : (
+                                    <FieldRow label="ボタンURL">
+                                      <input
+                                        type="text"
+                                        className="ui-input h-7 w-full text-[12px]"
+                                        value={tab.buttonUrl}
+                                        onChange={(event) => {
+                                          const nextTabs = tabbedNotesData.tabs.map(
+                                            (entry, idx) =>
+                                              idx === tabIndex
+                                                ? { ...entry, buttonUrl: event.target.value }
+                                                : entry
+                                          );
+                                          updateSectionData(selectedSection.id, {
+                                            tabs: nextTabs,
+                                          });
+                                        }}
+                                        disabled={isLocked}
+                                      />
+                                    </FieldRow>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              className="ui-button h-7 px-2 text-[11px]"
+                              onClick={() => {
+                                const nextTabs = [
+                                  ...tabbedNotesData.tabs,
+                                  {
+                                    id: createTabId(),
+                                    labelTop: `タブ${tabbedNotesData.tabs.length + 1}`,
+                                    labelBottom: "注意事項",
+                                    intro: "",
+                                    items: [],
+                                    footnote: "",
+                                    ctaText: "",
+                                    ctaLinkText: "",
+                                    ctaLinkUrl: "",
+                                    ctaTargetKind: "url",
+                                    ctaSectionId: "",
+                                    ctaImageUrl: "",
+                                    ctaImageAlt: "",
+                                    ctaImageAssetId: "",
+                                    buttonText: "",
+                                    buttonTargetKind: "url",
+                                    buttonUrl: "",
+                                    buttonSectionId: "",
+                                  },
+                                ];
+                                updateSectionData(selectedSection.id, {
+                                  tabs: nextTabs,
+                                });
+                              }}
+                              disabled={isLocked}
+                            >
+                              タブを追加
+                            </button>
                           </div>
                         ) : null}
                         {isRankingTable ? (
@@ -3765,7 +4943,8 @@ export default function InspectorPanel() {
                         !isLegalNotes &&
                         !isCouponFlow &&
                         !isRankingTable &&
-                        !isPaymentHistoryGuide ? (
+                        !isPaymentHistoryGuide &&
+                        !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
                               {t.inspector.section.labels.itemList}
@@ -3836,7 +5015,8 @@ export default function InspectorPanel() {
                         !isBrandBar &&
                         !isHeroImage &&
                         !isRankingTable &&
-                        !isPaymentHistoryGuide ? (
+                        !isPaymentHistoryGuide &&
+                        !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
                               {t.inspector.section.labels.textLines}
@@ -3889,7 +5069,8 @@ export default function InspectorPanel() {
                         {selectedImageItem &&
                         !isLegalNotes &&
                         !isRankingTable &&
-                        !isPaymentHistoryGuide ? (
+                        !isPaymentHistoryGuide &&
+                        !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
                               {t.inspector.section.labels.imageItems}
@@ -4039,7 +5220,7 @@ export default function InspectorPanel() {
                             ) : null}
                           </div>
                         ) : null}
-                        {selectedButtonItem && !isLegalNotes && !isRankingTable ? (
+                        {selectedButtonItem && !isLegalNotes && !isRankingTable && !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
                               {t.inspector.section.labels.button}

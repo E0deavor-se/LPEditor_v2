@@ -8,6 +8,12 @@ import { useEditorStore } from "@/src/store/editorStore";
 
 const PRESET_CHIPS = ["短く", "わかりやすく", "より丁寧に", "親しみやすく"];
 
+const parseForbiddenWords = (value: string) =>
+  value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
 type AiAssistPanelProps = {
   open: boolean;
   targetLabel: string;
@@ -52,6 +58,10 @@ export default function AiAssistPanel({
   onClose,
 }: AiAssistPanelProps) {
   const setPreviewBusy = useEditorStore((state) => state.setPreviewBusy);
+  const aiDefaultInstruction = useEditorStore(
+    (state) => state.aiDefaultInstruction
+  );
+  const aiForbiddenWords = useEditorStore((state) => state.aiForbiddenWords);
   const [instruction, setInstruction] = useState("");
   const [proposal, setProposal] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -59,11 +69,11 @@ export default function AiAssistPanel({
 
   useEffect(() => {
     if (open) {
-      setInstruction("");
+      setInstruction(aiDefaultInstruction || "");
       setProposal("");
       setError(null);
     }
-  }, [open, originalText, targetLabel]);
+  }, [open, originalText, targetLabel, aiDefaultInstruction]);
 
   const diffTokens = useMemo(() => {
     if (!proposal) {
@@ -86,6 +96,15 @@ export default function AiAssistPanel({
         instruction,
         context: { fieldLabel: targetLabel },
       });
+      const forbiddenWords = parseForbiddenWords(aiForbiddenWords);
+      const forbiddenHit = forbiddenWords.find((word) =>
+        response.text.includes(word)
+      );
+      if (forbiddenHit) {
+        setProposal("");
+        setError(`禁止語「${forbiddenHit}」が含まれています。`);
+        return;
+      }
       const guard = guardAiRewrite(originalText, response.text);
       if (!guard.ok) {
         setProposal("");

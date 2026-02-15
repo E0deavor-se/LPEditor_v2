@@ -27,6 +27,26 @@ type PreviewTargetStoresFiltersUpdate = {
 export default function PreviewPane() {
   const previewMode = useEditorStore((state) => state.previewMode);
   const previewAspect = useEditorStore((state) => state.previewAspect);
+  const previewDesktopWidth = useEditorStore(
+    (state) => state.previewDesktopWidth
+  );
+  const previewMobileWidth = useEditorStore((state) => state.previewMobileWidth);
+  const previewGuidesEnabled = useEditorStore(
+    (state) => state.previewGuidesEnabled
+  );
+  const previewSafeAreaEnabled = useEditorStore(
+    (state) => state.previewSafeAreaEnabled
+  );
+  const previewSectionBoundsEnabled = useEditorStore(
+    (state) => state.previewSectionBoundsEnabled
+  );
+  const previewScrollSnapEnabled = useEditorStore(
+    (state) => state.previewScrollSnapEnabled
+  );
+  const previewFontScale = useEditorStore((state) => state.previewFontScale);
+  const previewContrastWarningsEnabled = useEditorStore(
+    (state) => state.previewContrastWarningsEnabled
+  );
   const isPreviewBusy = useEditorStore((state) => state.isPreviewBusy);
   const previewBusyReason = useEditorStore((state) => state.previewBusyReason);
   const project = useEditorStore((state) => state.project);
@@ -123,6 +143,12 @@ export default function PreviewPane() {
             ui: {
               previewMode,
               previewAspect,
+              showGuides: previewGuidesEnabled,
+              showSafeArea: previewSafeAreaEnabled,
+              showSectionBounds: previewSectionBoundsEnabled,
+              showScrollSnap: previewScrollSnapEnabled,
+              fontScale: previewFontScale,
+              showContrastWarnings: previewContrastWarningsEnabled,
             },
             project,
           },
@@ -130,7 +156,18 @@ export default function PreviewPane() {
         window.location.origin
       );
     }, 50);
-  }, [isPreviewReady, previewMode, previewAspect, project]);
+  }, [
+    isPreviewReady,
+    previewMode,
+    previewAspect,
+    previewGuidesEnabled,
+    previewSafeAreaEnabled,
+    previewSectionBoundsEnabled,
+    previewScrollSnapEnabled,
+    previewFontScale,
+    previewContrastWarningsEnabled,
+    project,
+  ]);
 
   useEffect(() => {
     if (!isPreviewReady || !iframeRef.current?.contentWindow) {
@@ -165,26 +202,39 @@ export default function PreviewPane() {
       return;
     }
     const scrollEl = iframeRef.current?.contentDocument?.scrollingElement;
+    if (scrollEl instanceof HTMLElement) {
+      previewScrollRef.current = scrollEl;
+      return;
+    }
+    const frameDoc = iframeRef.current?.contentDocument;
+    const fallback = frameDoc?.documentElement ?? frameDoc?.body ?? null;
     previewScrollRef.current =
-      scrollEl instanceof HTMLElement ? scrollEl : null;
+      fallback instanceof HTMLElement ? fallback : null;
   }, [isPreviewReady, previewKey]);
 
   const scrollToSection = (id: string, behavior: ScrollBehavior) => {
-    const container = previewScrollRef.current;
     const frameDoc = iframeRef.current?.contentDocument;
-    if (!container || !frameDoc) {
+    if (!frameDoc) {
       return;
     }
     const target = frameDoc.getElementById(`sec-${id}`);
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
+    const container = previewScrollRef.current;
     const offset = stickyTopRef.current + 12;
-    const nextTop =
-      container.scrollTop + (targetRect.top - containerRect.top) - offset;
-    container.scrollTo({ top: Math.max(0, nextTop), behavior });
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const nextTop =
+        container.scrollTop + (targetRect.top - containerRect.top) - offset;
+      container.scrollTo({ top: Math.max(0, nextTop), behavior });
+      return;
+    }
+    target.scrollIntoView({ behavior, block: "start" });
+    if (frameDoc.defaultView) {
+      frameDoc.defaultView.scrollBy({ top: -offset, behavior });
+    }
   };
 
   useEffect(() => {
@@ -301,14 +351,15 @@ export default function PreviewPane() {
       }
 
       if (previewAspect === "free") {
+        const width = Math.min(availW, previewDesktopWidth);
         setFrameSize({
-          width: Math.floor(availW),
+          width: Math.floor(width),
           height: Math.floor(availH),
         });
         return;
       }
 
-      const maxWidth = 1100;
+      const maxWidth = previewDesktopWidth;
       const ratio = aspectMap[previewAspect];
       let width = Math.min(availW, maxWidth);
       let height = width / ratio;
@@ -329,7 +380,7 @@ export default function PreviewPane() {
     observer.observe(container);
 
     return () => observer.disconnect();
-  }, [previewAspect, previewMode]);
+  }, [previewAspect, previewMode, previewDesktopWidth, previewMobileWidth]);
 
   const frameStyle = { width: frameSize.width, height: frameSize.height };
   const isDev =
@@ -355,7 +406,10 @@ export default function PreviewPane() {
       <div className="flex min-h-0 flex-1 items-center justify-center p-3">
         {previewMode === "mobile" ? (
           <div className="flex min-h-0 h-full w-full items-center justify-center">
-            <div className="flex min-h-0 h-full max-h-[calc(100vh-56px-16px)] w-[390px] max-w-full flex-col rounded-[32px] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] shadow-[var(--ui-shadow-sm)]">
+            <div
+              className="flex min-h-0 h-full max-h-[calc(100vh-56px-16px)] max-w-full flex-col rounded-[32px] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] shadow-[var(--ui-shadow-sm)]"
+              style={{ width: previewMobileWidth }}
+            >
               <div className="flex items-center justify-center px-6 py-3">
                 <div className="h-1.5 w-16 rounded-full bg-slate-300" />
               </div>
@@ -373,7 +427,7 @@ export default function PreviewPane() {
                         key={`preview-${previewKey}-${previewMode}`}
                         ref={iframeRef}
                         onLoad={handleIframeLoad}
-                        title="繝励Ξ繝薙Η繝ｼ"
+                        title="プレビュー"
                         className={iframeClassName}
                         src="/preview"
                       />
@@ -421,7 +475,7 @@ export default function PreviewPane() {
                       key={`preview-${previewKey}-${previewMode}`}
                       ref={iframeRef}
                       onLoad={handleIframeLoad}
-                      title="繝励Ξ繝薙Η繝ｼ"
+                      title="プレビュー"
                       className={iframeClassName}
                       src="/preview"
                     />

@@ -17,6 +17,12 @@ type PreviewPayload = {
     previewAspect?: string;
     isPreviewBusy?: boolean;
     previewBusyReason?: string;
+    showGuides?: boolean;
+    showSafeArea?: boolean;
+    showSectionBounds?: boolean;
+    showScrollSnap?: boolean;
+    fontScale?: number;
+    showContrastWarnings?: boolean;
   };
   project?: ProjectState;
 };
@@ -83,6 +89,31 @@ export default function PreviewPage() {
   }, [project?.sections]);
 
   useEffect(() => {
+    if (!selectedSectionId) {
+      return;
+    }
+    const targetId = `sec-${selectedSectionId}`;
+    const runScroll = () => {
+      const node = document.getElementById(targetId);
+      if (!node) {
+        return;
+      }
+      const scrollRoot =
+        document.scrollingElement || document.documentElement || document.body;
+      const rect = node.getBoundingClientRect();
+      const offset = 12;
+      const nextTop = Math.max(0, rect.top + scrollRoot.scrollTop - offset);
+      scrollRoot.scrollTo({ top: nextTop, behavior: "smooth" });
+    };
+    const raf = window.requestAnimationFrame(runScroll);
+    const retry = window.setTimeout(runScroll, 120);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(retry);
+    };
+  }, [selectedSectionId, project?.sections?.length]);
+
+  useEffect(() => {
     if (!rootRef.current) {
       return;
     }
@@ -94,6 +125,17 @@ export default function PreviewPage() {
       node.dataset.previewFlash = id && flashIds.includes(id) ? "true" : "false";
     });
   }, [hoveredSectionId, selectedSectionId, flashIds, project?.sections?.length]);
+
+  useEffect(() => {
+    const enabled = Boolean(uiState?.showScrollSnap);
+    const snapValue = enabled ? "y proximity" : "";
+    document.documentElement.style.scrollSnapType = snapValue;
+    document.body.style.scrollSnapType = snapValue;
+    return () => {
+      document.documentElement.style.scrollSnapType = "";
+      document.body.style.scrollSnapType = "";
+    };
+  }, [uiState?.showScrollSnap]);
 
   useEffect(() => {
     window.parent.postMessage(
@@ -130,6 +172,12 @@ export default function PreviewPage() {
   return (
     <div
       ref={rootRef}
+      className="relative min-h-screen"
+      data-preview-guides={uiState?.showGuides ? "true" : "false"}
+      data-preview-safe-area={uiState?.showSafeArea ? "true" : "false"}
+      data-preview-bounds={uiState?.showSectionBounds ? "true" : "false"}
+      data-preview-snap={uiState?.showScrollSnap ? "true" : "false"}
+      data-preview-contrast={uiState?.showContrastWarnings ? "true" : "false"}
       onMouseMove={handlePointerMove}
       onMouseLeave={handlePointerLeave}
       onClick={handleClick}
@@ -148,6 +196,50 @@ export default function PreviewPage() {
             [data-preview-flash="true"] {
               animation: lpPreviewFlash 150ms ease-out;
             }
+            [data-preview-bounds="true"] [data-section-id] {
+              outline: 1px dashed rgba(100, 116, 139, 0.35);
+              outline-offset: -1px;
+            }
+            [data-preview-contrast="true"] [data-contrast-warning="true"] {
+              box-shadow: inset 0 0 0 2px rgba(244, 63, 94, 0.7);
+            }
+            [data-preview-snap="true"] [data-section-id] {
+              scroll-snap-align: start;
+            }
+            .lp-preview-guides {
+              position: fixed;
+              inset: 0;
+              pointer-events: none;
+              opacity: 0;
+              background-image:
+                linear-gradient(
+                  to right,
+                  rgba(37, 99, 235, 0.08) 1px,
+                  transparent 1px
+                ),
+                linear-gradient(
+                  to bottom,
+                  rgba(37, 99, 235, 0.08) 1px,
+                  transparent 1px
+                );
+              background-size: 24px 24px;
+              mix-blend-mode: multiply;
+              z-index: 10;
+            }
+            [data-preview-guides="true"] .lp-preview-guides {
+              opacity: 1;
+            }
+            .lp-preview-safearea {
+              position: fixed;
+              inset: 16px;
+              border: 1px dashed rgba(248, 113, 113, 0.7);
+              pointer-events: none;
+              opacity: 0;
+              z-index: 11;
+            }
+            [data-preview-safe-area="true"] .lp-preview-safearea {
+              opacity: 1;
+            }
             @keyframes lpPreviewFlash {
               from { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5); }
               to { box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
@@ -155,6 +247,8 @@ export default function PreviewPage() {
           `,
         }}
       />
+      <div className="lp-preview-guides" aria-hidden="true" />
+      <div className="lp-preview-safearea" aria-hidden="true" />
       {project ? (
         <PreviewSsr
           project={project}

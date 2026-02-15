@@ -232,6 +232,77 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
       base.data.imageAlt = str(base.data.imageAlt ?? "");
       base.data.imageAssetId = str(base.data.imageAssetId ?? "");
       break;
+    case "tabbedNotes": {
+      base.data.title = str(base.data.title ?? "注意事項");
+      const rawTabs = Array.isArray(base.data.tabs) ? base.data.tabs : [];
+      const tabs = rawTabs.map((tab: unknown, index: number) => {
+        const entry = tab && typeof tab === "object"
+          ? (tab as Record<string, unknown>)
+          : {};
+        const rawItems = Array.isArray(entry.items) ? entry.items : [];
+        const items = rawItems.map((item: unknown, itemIndex: number) => {
+          const itemEntry = item && typeof item === "object"
+            ? (item as Record<string, unknown>)
+            : {};
+          const subItems = Array.isArray(itemEntry.subItems)
+            ? itemEntry.subItems.map((value) => str(value)).filter(Boolean)
+            : [];
+          return {
+            id: str(itemEntry.id ?? `tab_item_${index + 1}_${itemIndex + 1}`),
+            text: str(itemEntry.text ?? ""),
+            bullet: itemEntry.bullet === "none" ? "none" : "disc",
+            tone: itemEntry.tone === "accent" ? "accent" : "normal",
+            bold: Boolean(itemEntry.bold),
+            subItems,
+          };
+        });
+        return {
+          id: str(entry.id ?? `tab_${index + 1}`),
+          labelTop: str(entry.labelTop ?? `タブ${index + 1}`),
+          labelBottom: str(entry.labelBottom ?? "注意事項"),
+          intro: str(entry.intro ?? ""),
+          items,
+          footnote: str(entry.footnote ?? ""),
+          ctaText: str(entry.ctaText ?? ""),
+          ctaLinkText: str(entry.ctaLinkText ?? ""),
+          ctaLinkUrl: str(entry.ctaLinkUrl ?? ""),
+          ctaTargetKind: entry.ctaTargetKind === "section" ? "section" : "url",
+          ctaSectionId: str(entry.ctaSectionId ?? ""),
+          ctaImageUrl: str(entry.ctaImageUrl ?? ""),
+          ctaImageAlt: str(entry.ctaImageAlt ?? ""),
+          ctaImageAssetId: str(entry.ctaImageAssetId ?? ""),
+          buttonText: str(entry.buttonText ?? ""),
+          buttonTargetKind:
+            entry.buttonTargetKind === "section" ? "section" : "url",
+          buttonUrl: str(entry.buttonUrl ?? ""),
+          buttonSectionId: str(entry.buttonSectionId ?? ""),
+        };
+      });
+      base.data.tabs = tabs;
+      const rawStyle =
+        base.data.tabStyle && typeof base.data.tabStyle === "object"
+          ? (base.data.tabStyle as Record<string, unknown>)
+          : {};
+      const rawVariant = str(rawStyle.variant ?? "simple");
+      const variant =
+        rawVariant === "sticky" ||
+        rawVariant === "underline" ||
+        rawVariant === "popout"
+          ? rawVariant
+          : "simple";
+      base.data.tabStyle = {
+        variant,
+        inactiveBg: str(rawStyle.inactiveBg ?? "#DDDDDD"),
+        inactiveText: str(rawStyle.inactiveText ?? "#000000"),
+        activeBg: str(rawStyle.activeBg ?? "#000000"),
+        activeText: str(rawStyle.activeText ?? "#FFFFFF"),
+        border: str(rawStyle.border ?? "#000000"),
+        contentBg: str(rawStyle.contentBg ?? "#FFFFFF"),
+        contentBorder: str(rawStyle.contentBorder ?? "#000000"),
+        accent: str(rawStyle.accent ?? "#EB5505"),
+      };
+      break;
+    }
     default:
       break;
   }

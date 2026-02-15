@@ -46,6 +46,7 @@ export default function LeftPanel({ width, onWidthPreset }: LeftPanelProps) {
                 key={preset.label}
                 type="button"
                 className="ui-button h-7 px-2 text-[11px]"
+                aria-label={`パネル幅 ${preset.label}`}
                 onClick={() => onWidthPreset?.(preset.value)}
               >
                 {preset.label}

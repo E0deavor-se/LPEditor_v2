@@ -9,6 +9,12 @@ import { useThemeStore } from "@/src/store/themeStore";
 
 const PRESET_CHIPS = ["短く", "わかりやすく", "より丁寧に", "訴求力を上げる"];
 
+const parseForbiddenWords = (value: string) =>
+  value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
 type AiAssistDrawerProps = {
   open: boolean;
   targetLabel: string;
@@ -51,6 +57,10 @@ export default function AiAssistDrawer({
 }: AiAssistDrawerProps) {
   const surfaceStyle = useThemeStore((state) => state.surfaceStyle);
   const setPreviewBusy = useEditorStore((state) => state.setPreviewBusy);
+  const aiDefaultInstruction = useEditorStore(
+    (state) => state.aiDefaultInstruction
+  );
+  const aiForbiddenWords = useEditorStore((state) => state.aiForbiddenWords);
   const [instruction, setInstruction] = useState("");
   const [proposal, setProposal] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -61,11 +71,11 @@ export default function AiAssistDrawer({
 
   useEffect(() => {
     if (open) {
-      setInstruction("");
+      setInstruction(aiDefaultInstruction || "");
       setProposal("");
       setError(null);
     }
-  }, [open, originalText, targetLabel]);
+  }, [open, originalText, targetLabel, aiDefaultInstruction]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -96,6 +106,15 @@ export default function AiAssistDrawer({
         text: originalText,
         instruction,
       });
+      const forbiddenWords = parseForbiddenWords(aiForbiddenWords);
+      const forbiddenHit = forbiddenWords.find((word) =>
+        response.text.includes(word)
+      );
+      if (forbiddenHit) {
+        setProposal("");
+        setError(`禁止語「${forbiddenHit}」が含まれています。`);
+        return;
+      }
       const validation = validateProposal(originalText, response.text);
       if (!validation.ok) {
         setProposal("");

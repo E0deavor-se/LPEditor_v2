@@ -1,4 +1,8 @@
 import type { BackgroundSpec } from "@/src/types/project";
+import {
+  buildPatternStyle,
+  normalizePatternSpec,
+} from "@/src/lib/backgroundPatterns";
 
 export type BackgroundStyleResult = {
   style: Record<string, string>;
@@ -17,6 +21,7 @@ const DEFAULT_IMAGE_SIZE = "cover";
 const DEFAULT_IMAGE_POSITION = "center";
 const DEFAULT_IMAGE_ATTACHMENT = "scroll";
 const DEFAULT_IMAGE_OPACITY = 1;
+const MAX_LAYER_COUNT = 5;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -78,6 +83,22 @@ const normalizeSpec = (
       };
     case "video":
       return spec;
+    case "pattern":
+      return normalizePatternSpec(spec, fallbackColor);
+    case "layers": {
+      const rawLayers = Array.isArray(spec.layers) ? spec.layers : [];
+      const layers = rawLayers
+        .filter((layer) => layer && typeof layer === "object" && "type" in layer)
+        .slice(0, MAX_LAYER_COUNT) as BackgroundSpec[];
+      return {
+        type: "layers",
+        layers,
+        backgroundColor:
+          typeof spec.backgroundColor === "string"
+            ? spec.backgroundColor
+            : fallbackColor,
+      };
+    }
     case "preset":
       return spec;
     default:
@@ -164,6 +185,55 @@ export const buildBackgroundStyle = (
       style.backgroundPosition = normalized.position;
       style.backgroundAttachment = normalized.attachment;
       style.backgroundColor = fallbackColor;
+      break;
+    }
+    case "pattern": {
+      const patternStyle = buildPatternStyle(normalized);
+      Object.assign(style, patternStyle);
+      break;
+    }
+    case "layers": {
+      const layerImages: string[] = [];
+      const layerRepeats: string[] = [];
+      const layerSizes: string[] = [];
+      const layerPositions: string[] = [];
+      const layerAttachments: string[] = [];
+      let baseColor = normalized.backgroundColor || fallbackColor;
+
+      const layers = Array.isArray(normalized.layers) ? normalized.layers : [];
+      for (let index = layers.length - 1; index >= 0; index -= 1) {
+        const layerSpec = layers[index];
+        const layerResolved = resolvePresetSpec(layerSpec, options);
+        if (!layerResolved || layerResolved.type === "video") {
+          continue;
+        }
+        const layerResult = buildBackgroundStyle(layerResolved, options);
+        const layerImage = layerResult.style.backgroundImage;
+        if (layerImage && layerImage !== "none") {
+          layerImages.unshift(layerImage);
+          layerRepeats.unshift(layerResult.style.backgroundRepeat ?? "repeat");
+          layerSizes.unshift(layerResult.style.backgroundSize ?? "auto");
+          layerPositions.unshift(layerResult.style.backgroundPosition ?? "0% 0%");
+          layerAttachments.unshift(
+            layerResult.style.backgroundAttachment ?? "scroll"
+          );
+        }
+        const layerColor = layerResult.style.backgroundColor;
+        if (layerColor && layerColor !== "transparent") {
+          baseColor = layerColor;
+        }
+      }
+
+      style.backgroundImage = layerImages.length
+        ? layerImages.join(", ")
+        : "none";
+      style.backgroundColor = baseColor;
+      if (layerImages.length > 0) {
+        style.backgroundRepeat = layerRepeats.join(", ");
+        style.backgroundSize = layerSizes.join(", ");
+        style.backgroundPosition = layerPositions.join(", ");
+        style.backgroundAttachment = layerAttachments.join(", ");
+      }
       break;
     }
     case "video":

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import SectionCard from "@/src/components/preview/SectionCard";
 import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
+import { resolveBackgroundPreset } from "@/src/lib/backgroundPresets";
 import { normalizeSectionCardStyle } from "@/src/lib/sections/sectionCardPresets";
 import { buildFooterHtml } from "@/src/lib/footerTemplate";
 import {
@@ -17,6 +18,7 @@ import type {
   ImageContentItem,
   LineMarks,
   ProjectState,
+  SectionAnimation,
   SectionBase,
   SectionStyle,
   StoreCsvData,
@@ -29,6 +31,12 @@ type PreviewUiState = {
   previewAspect?: string;
   isPreviewBusy?: boolean;
   previewBusyReason?: string;
+  showGuides?: boolean;
+  showSafeArea?: boolean;
+  showSectionBounds?: boolean;
+  showScrollSnap?: boolean;
+  fontScale?: number;
+  showContrastWarnings?: boolean;
 };
 
 type PreviewSsrProps = {
@@ -52,6 +60,54 @@ type TargetStoresSectionProps = {
 };
 
 type SlideshowImage = ImageItem & { w?: number; h?: number };
+
+const parseHexColor = (value: string) => {
+  const cleaned = value.replace("#", "").trim();
+  if (cleaned.length === 3) {
+    const r = parseInt(cleaned[0] + cleaned[0], 16);
+    const g = parseInt(cleaned[1] + cleaned[1], 16);
+    const b = parseInt(cleaned[2] + cleaned[2], 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+      return undefined;
+    }
+    return { r, g, b };
+  }
+  if (cleaned.length === 6) {
+    const r = parseInt(cleaned.slice(0, 2), 16);
+    const g = parseInt(cleaned.slice(2, 4), 16);
+    const b = parseInt(cleaned.slice(4, 6), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+      return undefined;
+    }
+    return { r, g, b };
+  }
+  return undefined;
+};
+
+const toLinear = (value: number) => {
+  const channel = value / 255;
+  return channel <= 0.03928
+    ? channel / 12.92
+    : Math.pow((channel + 0.055) / 1.055, 2.4);
+};
+
+const getLuminance = (rgb: { r: number; g: number; b: number }) =>
+  0.2126 * toLinear(rgb.r) +
+  0.7152 * toLinear(rgb.g) +
+  0.0722 * toLinear(rgb.b);
+
+const getContrastRatio = (a: string, b: string) => {
+  const rgbA = parseHexColor(a);
+  const rgbB = parseHexColor(b);
+  if (!rgbA || !rgbB) {
+    return undefined;
+  }
+  const lumA = getLuminance(rgbA);
+  const lumB = getLuminance(rgbB);
+  const lighter = Math.max(lumA, lumB);
+  const darker = Math.min(lumA, lumB);
+  return (lighter + 0.05) / (darker + 0.05);
+};
 
 const BUTTON_PRESETS: Record<
   string,
@@ -285,6 +341,234 @@ const CouponFlowSlider = ({
   );
 };
 
+const TabbedNotesSection = ({
+  section,
+  project,
+  cardTextColor,
+}: {
+  section: SectionBase;
+  project: ProjectState;
+  cardTextColor: string | undefined;
+}) => {
+  const data = section.data ?? {};
+  const rawTabs = Array.isArray(data.tabs) ? data.tabs : [];
+  const tabs = rawTabs.map((tab, index) => {
+    const entry = tab && typeof tab === "object"
+      ? (tab as Record<string, unknown>)
+      : {};
+    const rawItems = Array.isArray(entry.items) ? entry.items : [];
+    const items = rawItems.map((item, itemIndex) => {
+      const itemEntry = item && typeof item === "object"
+        ? (item as Record<string, unknown>)
+        : {};
+      return {
+        id:
+          typeof itemEntry.id === "string" && itemEntry.id.trim()
+            ? itemEntry.id
+            : `tab_item_${index + 1}_${itemIndex + 1}`,
+        text: typeof itemEntry.text === "string" ? itemEntry.text : "",
+        bullet: itemEntry.bullet === "none" ? "none" : "disc",
+        tone: itemEntry.tone === "accent" ? "accent" : "normal",
+        bold: Boolean(itemEntry.bold),
+        subItems: Array.isArray(itemEntry.subItems)
+          ? itemEntry.subItems.map((value) => String(value))
+          : [],
+      };
+    });
+    return {
+      id: typeof entry.id === "string" && entry.id.trim()
+        ? entry.id
+        : `tab_${index + 1}`,
+      labelTop: typeof entry.labelTop === "string" ? entry.labelTop : "",
+      labelBottom:
+        typeof entry.labelBottom === "string" ? entry.labelBottom : "注意事項",
+      intro: typeof entry.intro === "string" ? entry.intro : "",
+      items,
+      footnote: typeof entry.footnote === "string" ? entry.footnote : "",
+      ctaText: typeof entry.ctaText === "string" ? entry.ctaText : "",
+      ctaLinkText:
+        typeof entry.ctaLinkText === "string" ? entry.ctaLinkText : "",
+      ctaLinkUrl:
+        typeof entry.ctaLinkUrl === "string" ? entry.ctaLinkUrl : "",
+      ctaTargetKind: entry.ctaTargetKind === "section" ? "section" : "url",
+      ctaSectionId:
+        typeof entry.ctaSectionId === "string" ? entry.ctaSectionId : "",
+      ctaImageUrl:
+        typeof entry.ctaImageUrl === "string" ? entry.ctaImageUrl : "",
+      ctaImageAlt:
+        typeof entry.ctaImageAlt === "string" ? entry.ctaImageAlt : "",
+      ctaImageAssetId:
+        typeof entry.ctaImageAssetId === "string" ? entry.ctaImageAssetId : "",
+      buttonText:
+        typeof entry.buttonText === "string" ? entry.buttonText : "",
+      buttonTargetKind:
+        entry.buttonTargetKind === "section" ? "section" : "url",
+      buttonUrl: typeof entry.buttonUrl === "string" ? entry.buttonUrl : "",
+      buttonSectionId:
+        typeof entry.buttonSectionId === "string" ? entry.buttonSectionId : "",
+    };
+  });
+  const style = data.tabStyle && typeof data.tabStyle === "object"
+    ? (data.tabStyle as Record<string, unknown>)
+    : {};
+  const rawVariant = typeof style.variant === "string" ? style.variant : "simple";
+  const variant =
+    rawVariant === "sticky" || rawVariant === "underline" || rawVariant === "popout"
+      ? rawVariant
+      : "simple";
+  const tabStyle = {
+    variant,
+    inactiveBg: typeof style.inactiveBg === "string" ? style.inactiveBg : "#DDDDDD",
+    inactiveText:
+      typeof style.inactiveText === "string" ? style.inactiveText : "#000000",
+    activeBg: typeof style.activeBg === "string" ? style.activeBg : "#000000",
+    activeText:
+      typeof style.activeText === "string" ? style.activeText : "#FFFFFF",
+    border: typeof style.border === "string" ? style.border : "#000000",
+    contentBg:
+      typeof style.contentBg === "string" ? style.contentBg : "#FFFFFF",
+    contentBorder:
+      typeof style.contentBorder === "string" ? style.contentBorder : "#000000",
+    accent: typeof style.accent === "string" ? style.accent : "#EB5505",
+  };
+  const [activeTabId, setActiveTabId] = useState(tabs[0]?.id ?? "");
+  useEffect(() => {
+    if (tabs.length === 0) {
+      return;
+    }
+    if (!tabs.find((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabs[0]?.id ?? "");
+    }
+  }, [activeTabId, tabs]);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  const textColor = cardTextColor ?? section.style.typography.textColor;
+  const baseStyle: CSSProperties = {
+    fontFamily: section.style.typography.fontFamily,
+    fontSize: `calc(${section.style.typography.fontSize}px * var(--lp-font-scale, 1))`,
+    fontWeight: section.style.typography.fontWeight,
+    letterSpacing: `${section.style.typography.letterSpacing}px`,
+    lineHeight: section.style.typography.lineHeight,
+    color: textColor,
+    ["--lp-tab-inactive-bg" as string]: tabStyle.inactiveBg,
+    ["--lp-tab-inactive-text" as string]: tabStyle.inactiveText,
+    ["--lp-tab-active-bg" as string]: tabStyle.activeBg,
+    ["--lp-tab-active-text" as string]: tabStyle.activeText,
+    ["--lp-tab-border" as string]: tabStyle.border,
+    ["--lp-tab-content-bg" as string]: tabStyle.contentBg,
+    ["--lp-tab-content-border" as string]: tabStyle.contentBorder,
+    ["--lp-tab-accent" as string]: tabStyle.accent,
+  };
+  const resolveLink = (kind: string, sectionId: string, url: string) =>
+    kind === "section" && sectionId ? `#sec-${sectionId}` : url;
+  const resolvedCtaUrl = resolveLink(
+    activeTab?.ctaTargetKind ?? "url",
+    activeTab?.ctaSectionId ?? "",
+    activeTab?.ctaLinkUrl ?? ""
+  );
+  const resolvedButtonUrl = resolveLink(
+    activeTab?.buttonTargetKind ?? "url",
+    activeTab?.buttonSectionId ?? "",
+    activeTab?.buttonUrl ?? ""
+  );
+  const assets = project?.assets ?? {};
+  const resolvedCtaImage = activeTab?.ctaImageAssetId
+    ? assets?.[activeTab.ctaImageAssetId]?.data || activeTab.ctaImageUrl
+    : activeTab?.ctaImageUrl;
+  return (
+    <section
+      className={`lp-tabbed-notes lp-tabbed-notes--${tabStyle.variant}`}
+      style={baseStyle}
+    >
+      <div className="lp-tabbed-notes__shell">
+        <div className="lp-tabbed-notes__card">
+          <div className="lp-tabbed-notes__tabs">
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={
+                    "lp-tabbed-notes__tab" + (isActive ? " is-active" : "")
+                  }
+                  onClick={() => setActiveTabId(tab.id)}
+                >
+                  {tab.labelTop ? (
+                    <span className="lp-tabbed-notes__tab-top">{tab.labelTop}</span>
+                  ) : null}
+                  <span className="lp-tabbed-notes__tab-bottom">
+                    {tab.labelBottom || "注意事項"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="lp-tabbed-notes__panel">
+            {activeTab?.intro ? (
+              <p className="lp-tabbed-notes__intro">{activeTab.intro}</p>
+            ) : null}
+            <ul className="lp-tabbed-notes__list">
+              {(activeTab?.items ?? []).map((item) => (
+                <li
+                  key={item.id}
+                  className={
+                    "lp-tabbed-notes__item" +
+                    (item.bullet === "disc" ? " is-disc" : "") +
+                    (item.tone === "accent" ? " is-accent" : "") +
+                    (item.bold ? " is-bold" : "")
+                  }
+                >
+                  {item.text}
+                  {item.subItems.length > 0 ? (
+                    <ul className="lp-tabbed-notes__sublist">
+                      {item.subItems.map((subItem, index) => (
+                        <li key={`${item.id}_sub_${index}`}>{subItem}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {activeTab?.footnote ? (
+              <p className="lp-tabbed-notes__footnote">{activeTab.footnote}</p>
+            ) : null}
+            {activeTab?.ctaText || activeTab?.ctaLinkText || resolvedCtaImage ? (
+              <div className="lp-tabbed-notes__cta">
+                {activeTab?.ctaText ? (
+                  <p className="lp-tabbed-notes__cta-text">{activeTab.ctaText}</p>
+                ) : null}
+                {activeTab?.ctaLinkText && resolvedCtaUrl ? (
+                  <a className="lp-tabbed-notes__cta-link" href={resolvedCtaUrl}>
+                    {activeTab.ctaLinkText}
+                  </a>
+                ) : null}
+                {resolvedCtaImage ? (
+                  <a
+                    className="lp-tabbed-notes__cta-image"
+                    href={resolvedCtaUrl || "#"}
+                  >
+                    <img src={resolvedCtaImage} alt={activeTab?.ctaImageAlt ?? ""} />
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+            {activeTab?.buttonText && resolvedButtonUrl ? (
+              <div className="lp-tabbed-notes__button">
+                <a
+                  className="lp-tabbed-notes__button-link"
+                  href={resolvedButtonUrl}
+                >
+                  {activeTab.buttonText}
+                </a>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const ImageSlideshow = ({
   images,
   assets,
@@ -417,6 +701,225 @@ const resolveStoreCsv = (
     };
   }
   return undefined;
+};
+
+const REGION_GROUPS = [
+  {
+    region: "北海道",
+    items: [{ name: "北海道", label: "北海道", id: "hokkaido" }],
+  },
+  {
+    region: "東北",
+    items: [
+      { name: "青森県", label: "青森", id: "aomori" },
+      { name: "岩手県", label: "岩手", id: "iwate" },
+      { name: "宮城県", label: "宮城", id: "miyagi" },
+      { name: "秋田県", label: "秋田", id: "akita" },
+      { name: "山形県", label: "山形", id: "yamagata" },
+      { name: "福島県", label: "福島", id: "fukushima" },
+    ],
+  },
+  {
+    region: "関東",
+    items: [
+      { name: "茨城県", label: "茨城", id: "ibaraki" },
+      { name: "栃木県", label: "栃木", id: "tochigi" },
+      { name: "群馬県", label: "群馬", id: "gunma" },
+      { name: "埼玉県", label: "埼玉", id: "saitama" },
+      { name: "千葉県", label: "千葉", id: "chiba" },
+      { name: "東京都", label: "東京", id: "tokyo" },
+      { name: "神奈川県", label: "神奈川", id: "kanagawa" },
+    ],
+  },
+  {
+    region: "中部",
+    items: [
+      { name: "新潟県", label: "新潟", id: "niigata" },
+      { name: "富山県", label: "富山", id: "toyama" },
+      { name: "石川県", label: "石川", id: "ishikawa" },
+      { name: "福井県", label: "福井", id: "fukui" },
+      { name: "山梨県", label: "山梨", id: "yamanashi" },
+      { name: "長野県", label: "長野", id: "nagano" },
+      { name: "岐阜県", label: "岐阜", id: "gifu" },
+      { name: "静岡県", label: "静岡", id: "shizuoka" },
+      { name: "愛知県", label: "愛知", id: "aichi" },
+    ],
+  },
+  {
+    region: "近畿",
+    items: [
+      { name: "三重県", label: "三重", id: "mie" },
+      { name: "滋賀県", label: "滋賀", id: "shiga" },
+      { name: "京都府", label: "京都", id: "kyoto" },
+      { name: "大阪府", label: "大阪", id: "osaka" },
+      { name: "兵庫県", label: "兵庫", id: "hyogo" },
+      { name: "奈良県", label: "奈良", id: "nara" },
+      { name: "和歌山県", label: "和歌山", id: "wakayama" },
+    ],
+  },
+  {
+    region: "中国",
+    items: [
+      { name: "鳥取県", label: "鳥取", id: "tottori" },
+      { name: "島根県", label: "島根", id: "shimane" },
+      { name: "岡山県", label: "岡山", id: "okayama" },
+      { name: "広島県", label: "広島", id: "hiroshima" },
+      { name: "山口県", label: "山口", id: "yamaguchi" },
+    ],
+  },
+  {
+    region: "四国",
+    items: [
+      { name: "徳島県", label: "徳島", id: "tokushima" },
+      { name: "香川県", label: "香川", id: "kagawa" },
+      { name: "愛媛県", label: "愛媛", id: "ehime" },
+      { name: "高知県", label: "高知", id: "kouchi" },
+    ],
+  },
+  {
+    region: "九州・沖縄",
+    items: [
+      { name: "福岡県", label: "福岡", id: "fukuoka" },
+      { name: "佐賀県", label: "佐賀", id: "saga" },
+      { name: "長崎県", label: "長崎", id: "nagasaki" },
+      { name: "熊本県", label: "熊本", id: "kumamoto" },
+      { name: "大分県", label: "大分", id: "oita" },
+      { name: "宮崎県", label: "宮崎", id: "miyazaki" },
+      { name: "鹿児島県", label: "鹿児島", id: "kagoshima" },
+      { name: "沖縄県", label: "沖縄", id: "okinawa" },
+    ],
+  },
+];
+
+const PREFECTURE_ORDER = REGION_GROUPS.flatMap((group) =>
+  group.items.map((item) => item.name)
+);
+
+const PREFECTURE_ID_MAP = new Map(
+  REGION_GROUPS.flatMap((group) =>
+    group.items.map((item) => [item.name, item.id] as const)
+  )
+);
+
+const resolvePrefectureId = (prefecture: string, fallbackIndex: number) =>
+  PREFECTURE_ID_MAP.get(prefecture) ?? `pref-${fallbackIndex}`;
+
+const buildExcludedStoreGroups = (storeCsv: StoreCsvData | undefined) => {
+  if (!storeCsv || storeCsv.rows.length === 0) {
+    return [] as Array<{
+      prefecture: string;
+      id: string;
+      entries: Array<{ name: string; address: string }>;
+    }>;
+  }
+  const headers = storeCsv.headers ?? [];
+  const storeNameKey = headers.find((entry) => entry === "店舗名") ?? "店舗名";
+  const addressKey = headers.find((entry) => entry === "住所") ?? "住所";
+  const prefectureKey =
+    headers.find((entry) => entry === "都道府県") ?? "都道府県";
+  const groups = new Map<string, Array<{ name: string; address: string }>>();
+  storeCsv.rows.forEach((row) => {
+    if (!row || typeof row !== "object") {
+      return;
+    }
+    const pref = str(row[prefectureKey]).trim();
+    const name = str(row[storeNameKey]).trim();
+    const address = str(row[addressKey]).trim();
+    if (!pref && !name && !address) {
+      return;
+    }
+    const key = pref || "未分類";
+    const list = groups.get(key) ?? [];
+    list.push({ name, address });
+    groups.set(key, list);
+  });
+  const orderMap = new Map(
+    PREFECTURE_ORDER.map((prefecture, index) => [prefecture, index])
+  );
+  return Array.from(groups.entries())
+    .map(([prefecture, entries]) => ({
+      prefecture,
+      entries,
+    }))
+    .sort((a, b) => {
+      const orderA = orderMap.get(a.prefecture) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = orderMap.get(b.prefecture) ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    })
+    .map((group, index) => ({
+      ...group,
+      id: resolvePrefectureId(group.prefecture, index + 1),
+    }));
+};
+
+const pickHeader = (headers: string[], candidates: string[]) =>
+  candidates.find((candidate) => headers.includes(candidate)) ?? "";
+
+const buildBrandAnchorId = (
+  label: string,
+  index: number,
+  used: Set<string>
+) => {
+  const trimmed = label.trim();
+  const base = trimmed ? trimmed.replace(/\s+/g, "-") : `brand-${index + 1}`;
+  let next = base;
+  let counter = 1;
+  while (used.has(next)) {
+    next = `${base}-${counter}`;
+    counter += 1;
+  }
+  used.add(next);
+  return next;
+};
+
+const buildExcludedBrandGroups = (storeCsv: StoreCsvData | undefined) => {
+  if (!storeCsv || storeCsv.rows.length === 0) {
+    return [] as Array<{
+      brand: string;
+      id: string;
+      entries: Array<{ name: string; address: string }>;
+    }>;
+  }
+  const headers = storeCsv.headers ?? [];
+  const brandKey = pickHeader(headers, [
+    "ブランド名",
+    "ブランド",
+    "グループ",
+    "チェーン名",
+  ]);
+  const storeNameKey =
+    pickHeader(headers, ["店舗名", "店名", "対象外店舗名", "加盟店名"]) ||
+    headers[0] ||
+    "店舗名";
+  const addressKey =
+    pickHeader(headers, ["住所", "所在地", "所在地住所"]) ||
+    headers[1] ||
+    "住所";
+  const order: string[] = [];
+  const groups = new Map<string, Array<{ name: string; address: string }>>();
+  storeCsv.rows.forEach((row) => {
+    if (!row || typeof row !== "object") {
+      return;
+    }
+    const brand = str(row[brandKey]).trim();
+    const name = str(row[storeNameKey]).trim();
+    const address = str(row[addressKey]).trim();
+    if (!brand && !name && !address) {
+      return;
+    }
+    const key = brand || "未分類";
+    if (!groups.has(key)) {
+      order.push(key);
+      groups.set(key, []);
+    }
+    groups.get(key)?.push({ name, address });
+  });
+  const usedIds = new Set<string>();
+  return order.map((brand, index) => ({
+    brand,
+    entries: groups.get(brand) ?? [],
+    id: buildBrandAnchorId(brand, index, usedIds),
+  }));
 };
 
 const resolveStoreLabels = (
@@ -1098,9 +1601,14 @@ const sectionLabels: Record<string, string> = {
   campaignPeriodBar: "キャンペーン期間",
   campaignOverview: "キャンペーン概要",
   couponFlow: "クーポン利用の流れ",
+  rankingTable: "ランキング表",
+  paymentHistoryGuide: "決済利用方法",
+  tabbedNotes: "付箋タブセクション",
+  excludedStoresList: "対象外店舗一覧",
+  excludedBrandsList: "対象外ブランド一覧",
   targetStores: "対象店舗",
   legalNotes: "注意事項",
-  footerHtml: "フッター",
+  footerHtml: "問い合わせ",
   textBlock: "テキストブロック",
   imageText: "画像+テキスト",
   cta: "CTA",
@@ -1283,6 +1791,65 @@ const buildAnimationStyle = (animation?: ContentItemAnimation): CSSProperties =>
   };
 };
 
+const buildSectionAnimationStyle = (
+  animation?: SectionAnimation
+): CSSProperties => {
+  if (!animation || animation.type === "none") {
+    return {};
+  }
+  const name =
+    animation.type === "slide"
+      ? "lpSlideUp"
+      : animation.type === "slideDown"
+      ? "lpSlideDown"
+      : animation.type === "slideLeft"
+      ? "lpSlideLeft"
+      : animation.type === "slideRight"
+      ? "lpSlideRight"
+      : animation.type === "zoom"
+      ? "lpZoomIn"
+      : animation.type === "bounce"
+      ? "lpBounceIn"
+      : animation.type === "flip"
+      ? "lpFlipIn"
+      : animation.type === "flipY"
+      ? "lpFlipYIn"
+      : animation.type === "rotate"
+      ? "lpRotateIn"
+      : animation.type === "blur"
+      ? "lpBlurIn"
+      : animation.type === "pop"
+      ? "lpPopIn"
+      : animation.type === "swing"
+      ? "lpSwingIn"
+      : animation.type === "float"
+      ? "lpFloatIn"
+      : animation.type === "pulse"
+      ? "lpPulseIn"
+      : animation.type === "shake"
+      ? "lpShakeIn"
+      : animation.type === "wobble"
+      ? "lpWobbleIn"
+      : animation.type === "skew"
+      ? "lpSkewIn"
+      : animation.type === "roll"
+      ? "lpRollIn"
+      : animation.type === "tilt"
+      ? "lpTiltIn"
+      : animation.type === "zoomOut"
+      ? "lpZoomOutIn"
+      : animation.type === "stretch"
+      ? "lpStretchIn"
+      : animation.type === "compress"
+      ? "lpCompressIn"
+      : animation.type === "glide"
+      ? "lpGlideIn"
+      : "lpFadeIn";
+  return {
+    animation: `${name} ${animation.speed}ms ${animation.easing} 0ms both`,
+  };
+};
+
 const buildScopedCustomCss = (css: string | undefined, sectionId: string) => {
   const raw = typeof css === "string" ? css.trim() : "";
   if (!raw) {
@@ -1337,9 +1904,100 @@ const animationStyleSheet = `
     from { opacity: 0; transform: translateY(16px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  @keyframes lpSlideDown {
+    from { opacity: 0; transform: translateY(-16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes lpSlideLeft {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes lpSlideRight {
+    from { opacity: 0; transform: translateX(-16px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
   @keyframes lpZoomIn {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes lpBounceIn {
+    0% { opacity: 0; transform: translateY(18px); }
+    60% { opacity: 1; transform: translateY(-6px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes lpFlipIn {
+    0% { opacity: 0; transform: rotateX(70deg); }
+    100% { opacity: 1; transform: rotateX(0deg); }
+  }
+  @keyframes lpFlipYIn {
+    0% { opacity: 0; transform: rotateY(70deg); }
+    100% { opacity: 1; transform: rotateY(0deg); }
+  }
+  @keyframes lpRotateIn {
+    from { opacity: 0; transform: rotate(-6deg) scale(0.98); }
+    to { opacity: 1; transform: rotate(0deg) scale(1); }
+  }
+  @keyframes lpBlurIn {
+    from { opacity: 0; filter: blur(12px); }
+    to { opacity: 1; filter: blur(0); }
+  }
+  @keyframes lpPopIn {
+    0% { opacity: 0; transform: scale(0.92); }
+    70% { opacity: 1; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes lpSwingIn {
+    0% { opacity: 0; transform: rotate(6deg) translateY(6px); }
+    100% { opacity: 1; transform: rotate(0deg) translateY(0); }
+  }
+  @keyframes lpFloatIn {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes lpPulseIn {
+    0% { opacity: 0; transform: scale(0.98); }
+    70% { opacity: 1; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes lpShakeIn {
+    0% { opacity: 0; transform: translateX(-10px); }
+    30% { opacity: 1; transform: translateX(8px); }
+    55% { transform: translateX(-6px); }
+    80% { transform: translateX(4px); }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes lpWobbleIn {
+    0% { opacity: 0; transform: rotate(-4deg) translateX(-8px); }
+    50% { opacity: 1; transform: rotate(3deg) translateX(6px); }
+    100% { opacity: 1; transform: rotate(0deg) translateX(0); }
+  }
+  @keyframes lpSkewIn {
+    0% { opacity: 0; transform: skewY(6deg) translateY(8px); }
+    100% { opacity: 1; transform: skewY(0deg) translateY(0); }
+  }
+  @keyframes lpRollIn {
+    0% { opacity: 0; transform: translateX(-18px) rotate(-12deg); }
+    100% { opacity: 1; transform: translateX(0) rotate(0deg); }
+  }
+  @keyframes lpTiltIn {
+    0% { opacity: 0; transform: rotate(-6deg) translateY(6px); }
+    100% { opacity: 1; transform: rotate(0deg) translateY(0); }
+  }
+  @keyframes lpZoomOutIn {
+    0% { opacity: 0; transform: scale(1.06); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes lpStretchIn {
+    0% { opacity: 0; transform: scaleX(0.92) scaleY(1.06); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes lpCompressIn {
+    0% { opacity: 0; transform: scaleX(1.06) scaleY(0.92); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes lpGlideIn {
+    0% { opacity: 0; transform: translateX(-14px); }
+    100% { opacity: 1; transform: translateX(0); }
   }
 `;
 
@@ -1990,6 +2648,15 @@ const renderSection = (
         </section>
       );
     }
+    case "tabbedNotes": {
+      return (
+        <TabbedNotesSection
+          section={section}
+          project={project}
+          cardTextColor={cardTextColor}
+        />
+      );
+    }
     case "rankingTable": {
       const data = section.data ?? {};
       const headers = data && typeof data.headers === "object"
@@ -2232,6 +2899,286 @@ const renderSection = (
           />
         </section>
       );
+    case "excludedStoresList": {
+      const storeCsv = resolveStoreCsv(section, project?.stores);
+      const groups = buildExcludedStoreGroups(storeCsv);
+      const returnUrl =
+        typeof section.data.returnUrl === "string" && section.data.returnUrl.trim()
+          ? section.data.returnUrl
+          : "#";
+      const returnLabel =
+        typeof section.data.returnLabel === "string" &&
+        section.data.returnLabel.trim()
+          ? section.data.returnLabel
+          : "キャンペーンページに戻る";
+      const footerCopy =
+        typeof section.data.footerCopy === "string" && section.data.footerCopy.trim()
+          ? section.data.footerCopy
+          : "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED.";
+      const footerLinks = Array.isArray(section.data.footerLinks)
+        ? section.data.footerLinks
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") {
+                return null;
+              }
+              const label =
+                "label" in entry && typeof entry.label === "string"
+                  ? entry.label
+                  : "";
+              const url =
+                "url" in entry && typeof entry.url === "string" ? entry.url : "";
+              if (!label || !url) {
+                return null;
+              }
+              return { label, url };
+            })
+            .filter(
+              (entry): entry is { label: string; url: string } => entry != null
+            )
+        : [];
+      const resolvedFooterLinks =
+        footerLinks.length > 0
+          ? footerLinks
+          : [
+              { label: "サイトポリシー", url: "#" },
+              { label: "会社概要", url: "#" },
+              { label: "動作環境", url: "#" },
+              { label: "Cookie情報の利用", url: "#" },
+              { label: "広告配信などについて", url: "#" },
+            ];
+      const titleTemplate =
+        typeof section.data.title === "string" && section.data.title.trim()
+          ? section.data.title
+          : "対象外店舗一覧";
+      const highlight =
+        typeof section.data.highlightLabel === "string" &&
+        section.data.highlightLabel.trim()
+          ? section.data.highlightLabel
+          : "対象外";
+      const hasHighlightPlaceholder =
+        highlight && titleTemplate.includes("{highlight}");
+      const titleSegments = hasHighlightPlaceholder
+        ? titleTemplate.split("{highlight}")
+        : [titleTemplate];
+      return (
+        <section className="excluded-stores-section">
+          <div className="excluded-wrap">
+            <h1 className="excluded-title">
+              {hasHighlightPlaceholder ? (
+                <>
+                  <span className="excluded-title__text">{titleSegments[0]}</span>
+                  <span className="excluded-title__badge">{highlight}</span>
+                  <span className="excluded-title__text">
+                    {titleSegments.slice(1).join("{highlight}")}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="excluded-title__text">{titleTemplate}</span>
+                  {highlight ? (
+                    <span className="excluded-title__badge">{highlight}</span>
+                  ) : null}
+                </>
+              )}
+            </h1>
+            <table className="excluded-region-table">
+              <tbody>
+                {REGION_GROUPS.map((group) => (
+                  <tr key={group.region}>
+                    <th className="excluded-region-th">
+                      <strong>{group.region}</strong>
+                    </th>
+                    <td className="excluded-region-td">
+                      {group.items.map((item) => (
+                        <a
+                          key={item.id}
+                          className="excluded-region-link"
+                          href={`#${item.id}`}
+                        >
+                          {item.label}
+                        </a>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {groups.length === 0 ? (
+              <div className="excluded-empty">
+                CSVを取り込むと、対象外店舗の一覧が表示されます。
+              </div>
+            ) : (
+              <div className="tenpo-container">
+                {groups.map((group) => (
+                  <div key={group.id}>
+                    <div className="tenpo_list_title">
+                      <h2 id={group.id}>{group.prefecture}</h2>
+                    </div>
+                    {group.entries.map((entry, index) => (
+                      <div key={`${group.id}-${index}`} className="tenpo_list">
+                        <span className="tenpo_list_shop">
+                          {entry.name || "店舗名"}
+                        </span>
+                        <span className="tenpo_list_add">{entry.address}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="excluded-footer">
+              <a className="excluded-return" href={returnUrl}>
+                <span className="excluded-return__label">{returnLabel}</span>
+                <span className="excluded-return__arrow" aria-hidden="true" />
+              </a>
+              <div className="excluded-footer__links">
+                {resolvedFooterLinks.map((link) => (
+                  <a key={link.label} href={link.url}>
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+              <div className="excluded-footer__copy">{footerCopy}</div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+    case "excludedBrandsList": {
+      const storeCsv = resolveStoreCsv(section, project?.stores);
+      const groups = buildExcludedBrandGroups(storeCsv);
+      const returnUrl =
+        typeof section.data.returnUrl === "string" && section.data.returnUrl.trim()
+          ? section.data.returnUrl
+          : "#";
+      const returnLabel =
+        typeof section.data.returnLabel === "string" &&
+        section.data.returnLabel.trim()
+          ? section.data.returnLabel
+          : "キャンペーンページに戻る";
+      const footerCopy =
+        typeof section.data.footerCopy === "string" && section.data.footerCopy.trim()
+          ? section.data.footerCopy
+          : "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED.";
+      const footerLinks = Array.isArray(section.data.footerLinks)
+        ? section.data.footerLinks
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") {
+                return null;
+              }
+              const label =
+                "label" in entry && typeof entry.label === "string"
+                  ? entry.label
+                  : "";
+              const url =
+                "url" in entry && typeof entry.url === "string" ? entry.url : "";
+              if (!label || !url) {
+                return null;
+              }
+              return { label, url };
+            })
+            .filter(
+              (entry): entry is { label: string; url: string } => entry != null
+            )
+        : [];
+      const resolvedFooterLinks =
+        footerLinks.length > 0
+          ? footerLinks
+          : [
+              { label: "サイトポリシー", url: "#" },
+              { label: "会社概要", url: "#" },
+              { label: "動作環境", url: "#" },
+              { label: "Cookie情報の利用", url: "#" },
+              { label: "広告配信などについて", url: "#" },
+            ];
+      const titleTemplate =
+        typeof section.data.title === "string" && section.data.title.trim()
+          ? section.data.title
+          : "対象外ブランド一覧";
+      const highlight =
+        typeof section.data.highlightLabel === "string" &&
+        section.data.highlightLabel.trim()
+          ? section.data.highlightLabel
+          : "対象外";
+      const hasHighlightPlaceholder =
+        highlight && titleTemplate.includes("{highlight}");
+      const titleSegments = hasHighlightPlaceholder
+        ? titleTemplate.split("{highlight}")
+        : [titleTemplate];
+      return (
+        <section className="excluded-stores-section">
+          <div className="excluded-wrap">
+            <h1 className="excluded-title">
+              {hasHighlightPlaceholder ? (
+                <>
+                  <span className="excluded-title__text">{titleSegments[0]}</span>
+                  <span className="excluded-title__badge">{highlight}</span>
+                  <span className="excluded-title__text">
+                    {titleSegments.slice(1).join("{highlight}")}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="excluded-title__text">{titleTemplate}</span>
+                  {highlight ? (
+                    <span className="excluded-title__badge">{highlight}</span>
+                  ) : null}
+                </>
+              )}
+            </h1>
+            {groups.length > 0 ? (
+              <ul className="excluded-brand-list">
+                {groups.map((group) => (
+                  <li key={group.id}>
+                    <span className="excluded-brand-marker">▼</span>
+                    <a className="excluded-brand-link" href={`#${group.id}`}>
+                      {group.brand}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {groups.length === 0 ? (
+              <div className="excluded-empty">
+                CSVを取り込むと、対象外ブランドの一覧が表示されます。
+              </div>
+            ) : (
+              <div className="tenpo-container">
+                {groups.map((group) => (
+                  <div key={group.id}>
+                    <div className="tenpo_list_title">
+                      <h2 id={group.id}>{group.brand}</h2>
+                    </div>
+                    {group.entries.map((entry, index) => (
+                      <div key={`${group.id}-${index}`} className="tenpo_list">
+                        <span className="tenpo_list_shop">
+                          {entry.name || "ブランド名"}
+                        </span>
+                        <span className="tenpo_list_add">{entry.address}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="excluded-footer">
+              <a className="excluded-return" href={returnUrl}>
+                <span className="excluded-return__label">{returnLabel}</span>
+                <span className="excluded-return__arrow" aria-hidden="true" />
+              </a>
+              <div className="excluded-footer__links">
+                {resolvedFooterLinks.map((link) => (
+                  <a key={link.label} href={link.url}>
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+              <div className="excluded-footer__copy">{footerCopy}</div>
+            </div>
+          </div>
+        </section>
+      );
+    }
     case "legalNotes":
       const legalItems = Array.isArray(section.data.items)
         ? (section.data.items as string[])
@@ -2286,13 +3233,19 @@ export default function PreviewSsr({
     project?.settings?.backgrounds?.page,
     {
       resolveAssetUrl,
+      resolvePreset: resolveBackgroundPreset,
       fallbackColor: "#ffffff",
     }
   );
   const mvBackground = buildBackgroundStyle(project?.settings?.backgrounds?.mv, {
     resolveAssetUrl,
+    resolvePreset: resolveBackgroundPreset,
     fallbackColor: "#ffffff",
   });
+  const pageBaseStyle = project?.pageBaseStyle;
+  const pageSectionAnimationStyle = buildSectionAnimationStyle(
+    pageBaseStyle?.sectionAnimation
+  );
   const allSections = project?.sections ?? [];
   const visibleSections = allSections.filter((section) => section.visible);
   const orderedSections = visibleSections;
@@ -2303,13 +3256,22 @@ export default function PreviewSsr({
     orderedSections[orderedSections.length - 1]?.type === "footerHtml";
   const topPaddingClass = hasBrandBar ? "pt-0" : "pt-12";
   const bottomPaddingClass = isFooterLast ? "pb-0" : "pb-12";
+  const fontScale =
+    typeof ui?.fontScale === "number" && Number.isFinite(ui.fontScale)
+      ? ui.fontScale
+      : 1;
+
+  const previewRootStyle: CSSProperties & Record<string, string> = {
+    ...pageBackground.style,
+    "--lp-font-scale": String(fontScale),
+  };
 
   return (
     <div
       id="__lp_root__"
       data-export="1"
       className="min-h-screen lp-preview-bg text-[var(--lp-text)]"
-      style={pageBackground.style}
+      style={previewRootStyle}
     >
       <style dangerouslySetInnerHTML={{ __html: animationStyleSheet }} />
       <main
@@ -2341,6 +3303,7 @@ export default function PreviewSsr({
             section.type === "heroImage" ||
             section.type === "campaignPeriodBar" ||
             section.type === "footerHtml" ||
+            section.type === "tabbedNotes" ||
             Boolean(section.data?.footerAssets);
           const sectionCardStyle = normalizeSectionCardStyle(
             section.sectionCardStyle
@@ -2364,12 +3327,24 @@ export default function PreviewSsr({
               : restItemsBase;
           const textColor =
             sectionCardStyle.textColor || section.style.typography.textColor;
+          const backgroundColor =
+            section.style.background?.color1 ||
+            sectionCardStyle.innerBgColor ||
+            "#ffffff";
+          const contrastRatio =
+            ui?.showContrastWarnings && textColor
+              ? getContrastRatio(textColor, backgroundColor)
+              : undefined;
+          const isLowContrast =
+            typeof contrastRatio === "number" && contrastRatio < 4.5;
           return (
             <div
               key={section.id}
               data-section-id={section.id}
+              data-contrast-warning={isLowContrast ? "true" : "false"}
               id={`sec-${section.id}`}
               className={"scroll-mt-4 transition-shadow transition-colors "}
+              style={pageSectionAnimationStyle}
             >
               {scopedCss ? (
                 <style

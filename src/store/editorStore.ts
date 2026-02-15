@@ -90,6 +90,9 @@ const pushStack = (stack: ProjectState[], snapshot: ProjectState) => {
   return next;
 };
 
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
 const normalizeTargetStoresConfig = (
   config?: Partial<TargetStoresConfig>
 ): TargetStoresConfig => {
@@ -154,6 +157,12 @@ const DEFAULT_PAGE_BASE_STYLE: PageBaseStyle = {
     letterSpacing: 0,
     fontWeight: 400,
   },
+  sectionAnimation: {
+    type: "none",
+    trigger: "onView",
+    speed: 500,
+    easing: "ease-out",
+  },
   colors: {
     background: "#ffffff",
     text: "#111111",
@@ -188,10 +197,48 @@ const normalizePageBaseStyle = (
   style?: Partial<PageBaseStyle>
 ): PageBaseStyle => {
   const typography = style?.typography ?? DEFAULT_PAGE_BASE_STYLE.typography;
+  const sectionAnimationInput =
+    style?.sectionAnimation ?? DEFAULT_PAGE_BASE_STYLE.sectionAnimation;
   const colors = style?.colors ?? DEFAULT_PAGE_BASE_STYLE.colors;
   const spacing = style?.spacing ?? DEFAULT_PAGE_BASE_STYLE.spacing;
   const sectionPadding = spacing.sectionPadding ?? DEFAULT_PAGE_BASE_STYLE.spacing.sectionPadding;
   const layout = style?.layout ?? DEFAULT_PAGE_BASE_STYLE.layout;
+  const sectionAnimationType =
+    sectionAnimationInput.type === "fade" ||
+    sectionAnimationInput.type === "slide" ||
+    sectionAnimationInput.type === "slideDown" ||
+    sectionAnimationInput.type === "slideLeft" ||
+    sectionAnimationInput.type === "slideRight" ||
+    sectionAnimationInput.type === "zoom" ||
+    sectionAnimationInput.type === "bounce" ||
+    sectionAnimationInput.type === "flip" ||
+    sectionAnimationInput.type === "flipY" ||
+    sectionAnimationInput.type === "rotate" ||
+    sectionAnimationInput.type === "blur" ||
+    sectionAnimationInput.type === "pop" ||
+    sectionAnimationInput.type === "swing" ||
+    sectionAnimationInput.type === "float" ||
+    sectionAnimationInput.type === "pulse" ||
+    sectionAnimationInput.type === "shake" ||
+    sectionAnimationInput.type === "wobble" ||
+    sectionAnimationInput.type === "skew" ||
+    sectionAnimationInput.type === "roll" ||
+    sectionAnimationInput.type === "tilt" ||
+    sectionAnimationInput.type === "zoomOut" ||
+    sectionAnimationInput.type === "stretch" ||
+    sectionAnimationInput.type === "compress" ||
+    sectionAnimationInput.type === "glide"
+      ? sectionAnimationInput.type
+      : "none";
+  const sectionAnimationTrigger =
+    sectionAnimationInput.trigger === "onScroll" ? "onScroll" : "onView";
+  const sectionAnimationEasing =
+    sectionAnimationInput.easing === "linear" ||
+    sectionAnimationInput.easing === "ease" ||
+    sectionAnimationInput.easing === "ease-in" ||
+    sectionAnimationInput.easing === "ease-in-out"
+      ? sectionAnimationInput.easing
+      : "ease-out";
   return {
     typography: {
       fontFamily: typography.fontFamily ?? DEFAULT_PAGE_BASE_STYLE.typography.fontFamily,
@@ -207,6 +254,14 @@ const normalizePageBaseStyle = (
       fontWeight: Number.isFinite(typography.fontWeight)
         ? Number(typography.fontWeight)
         : DEFAULT_PAGE_BASE_STYLE.typography.fontWeight,
+    },
+    sectionAnimation: {
+      type: sectionAnimationType,
+      trigger: sectionAnimationTrigger,
+      speed: Number.isFinite(sectionAnimationInput.speed)
+        ? Number(sectionAnimationInput.speed)
+        : DEFAULT_PAGE_BASE_STYLE.sectionAnimation.speed,
+      easing: sectionAnimationEasing,
     },
     colors: {
       background: colors.background ?? DEFAULT_PAGE_BASE_STYLE.colors.background,
@@ -254,6 +309,8 @@ const isBackgroundSpec = (value: unknown): value is BackgroundSpec => {
   return (
     type === "solid" ||
     type === "gradient" ||
+    type === "pattern" ||
+    type === "layers" ||
     type === "image" ||
     type === "video" ||
     type === "preset"
@@ -441,6 +498,12 @@ const createImageId = () =>
 
 const createRankingRowId = () =>
   `rank_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+const createTabId = () =>
+  `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+const createTabItemId = () =>
+  `tab_item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 const TARGET_STORES_NOTICE_LINES = [
   "ご注意ください！",
@@ -1367,6 +1430,8 @@ type PreviewMode = "desktop" | "mobile";
 
 type PreviewAspect = "free" | "16:9" | "4:3" | "1:1";
 
+type SaveDestination = "browser" | "manual-json";
+
 type PreviewBusyReason =
   | "render"
   | "ai"
@@ -1399,6 +1464,20 @@ export type EditorUIState = {
   leftTab: LeftTab;
   previewMode: PreviewMode;
   previewAspect: PreviewAspect;
+  previewDesktopWidth: number;
+  previewMobileWidth: number;
+  previewGuidesEnabled: boolean;
+  previewSafeAreaEnabled: boolean;
+  previewSectionBoundsEnabled: boolean;
+  previewScrollSnapEnabled: boolean;
+  previewFontScale: number;
+  previewContrastWarningsEnabled: boolean;
+  autoSaveIntervalSec: number;
+  saveDestination: SaveDestination;
+  exportFilenameTemplate: string;
+  aiDefaultInstruction: string;
+  aiForbiddenWords: string;
+  aiTargetSectionTypes: string[];
   saveStatus: EditorSaveStatus;
   saveStatusMessage?: string;
   isPreviewBusy: boolean;
@@ -1579,6 +1658,9 @@ export type EditorUIState = {
   setPageColors: (patch: Partial<PageBaseStyle["colors"]>) => void;
   setPageSpacing: (patch: Partial<PageBaseStyle["spacing"]>) => void;
   setPageLayout: (patch: Partial<PageBaseStyle["layout"]>) => void;
+  setPageSectionAnimation: (
+    patch: Partial<PageBaseStyle["sectionAnimation"]>
+  ) => void;
   setPageBackground: (spec: BackgroundSpec) => void;
   setMvBackground: (spec: BackgroundSpec) => void;
   updateProjectStores: (stores: ProjectState["stores"]) => void;
@@ -1613,6 +1695,20 @@ export type EditorUIState = {
   setLeftTab: (tab: LeftTab) => void;
   setPreviewMode: (mode: PreviewMode) => void;
   setPreviewAspect: (aspect: PreviewAspect) => void;
+  setPreviewDesktopWidth: (width: number) => void;
+  setPreviewMobileWidth: (width: number) => void;
+  setPreviewGuidesEnabled: (enabled: boolean) => void;
+  setPreviewSafeAreaEnabled: (enabled: boolean) => void;
+  setPreviewSectionBoundsEnabled: (enabled: boolean) => void;
+  setPreviewScrollSnapEnabled: (enabled: boolean) => void;
+  setPreviewFontScale: (scale: number) => void;
+  setPreviewContrastWarningsEnabled: (enabled: boolean) => void;
+  setAutoSaveIntervalSec: (seconds: number) => void;
+  setSaveDestination: (destination: SaveDestination) => void;
+  setExportFilenameTemplate: (value: string) => void;
+  setAiDefaultInstruction: (value: string) => void;
+  setAiForbiddenWords: (value: string) => void;
+  setAiTargetSectionTypes: (values: string[]) => void;
   setSaveStatus: (status: EditorSaveStatus, message?: string) => void;
   setPreviewBusy: (isBusy: boolean, reason?: PreviewBusyReason) => void;
   getProject: () => ProjectState;
@@ -1766,10 +1862,33 @@ const createDefaultProjectState = (): ProjectState => {
 
 export const createProjectFromTemplate = (
   templateType: ProjectState["meta"]["templateType"],
-  projectName: string
+  projectName: string,
+  sectionOrder?: string[]
 ): ProjectState => {
   const base = createDefaultProjectState();
   const nowIso = new Date().toISOString();
+  const nextOrder = Array.isArray(sectionOrder)
+    ? sectionOrder.filter((type) => typeof type === "string" && type.length > 0)
+    : [];
+  const orderedSections = (() => {
+    if (nextOrder.length === 0) {
+      return base.sections;
+    }
+    const usedIds = new Set<string>();
+    const ordered: SectionBase[] = [];
+    nextOrder.forEach((type) => {
+      const existing = base.sections.find(
+        (section) => section.type === type && !usedIds.has(section.id)
+      );
+      if (existing) {
+        ordered.push(existing);
+        usedIds.add(existing.id);
+        return;
+      }
+      ordered.push(createSection(type));
+    });
+    return ordered;
+  })();
   return {
     ...base,
     meta: {
@@ -1779,6 +1898,7 @@ export const createProjectFromTemplate = (
       createdAt: nowIso,
       updatedAt: nowIso,
     },
+    sections: orderedSections,
   };
 };
 
@@ -1904,7 +2024,7 @@ const createSection = (type: string): SectionBase => {
               label: "クーポンを獲得する",
               target: { kind: "url", url: "" },
               variant: "primary",
-              style: { presetId: "couponFlow", align: "center" },
+              style: { presetId: "couponFlow", align: "center", fullWidth: true },
             },
           ],
         }),
@@ -1934,6 +2054,42 @@ const createSection = (type: string): SectionBase => {
           storeCsv: { headers: [], rows: [] },
           storeLabels: {},
           storeFilters: {},
+        }),
+        style: normalizeSectionStyle(),
+      };
+      break;
+    case "excludedStoresList":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          title: "対象外店舗一覧",
+          highlightLabel: "対象外",
+          returnUrl: "",
+          returnLabel: "",
+        },
+        content: normalizeSectionContent({
+          storeCsv: { headers: [], rows: [] },
+        }),
+        style: normalizeSectionStyle(),
+      };
+      break;
+    case "excludedBrandsList":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          title: "対象外ブランド一覧",
+          highlightLabel: "対象外",
+          returnUrl: "",
+          returnLabel: "",
+        },
+        content: normalizeSectionContent({
+          storeCsv: { headers: [], rows: [] },
         }),
         style: normalizeSectionStyle(),
       };
@@ -1987,6 +2143,129 @@ const createSection = (type: string): SectionBase => {
             "なお、店頭や問い合わせ窓口での現在の順位や金額、当選結果についてのご質問にはお答えできません。",
           imageUrl: "/footer-defaults/img-02.png",
           imageAlt: "決済履歴の確認方法",
+        },
+        content: normalizeSectionContent(),
+        style: normalizeSectionStyle(),
+      };
+      break;
+    case "tabbedNotes":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          title: "注意事項",
+          tabs: [
+            {
+              id: createTabId(),
+              labelTop: "事前獲得クーポン",
+              labelBottom: "注意事項",
+              intro: "",
+              items: [
+                {
+                  id: createTabItemId(),
+                  text:
+                    "＊レジで表示されているお買上げ金額は割引表示されません。割引後の金額はau PAY アプリの「履歴」をご確認ください。",
+                  bullet: "none",
+                  tone: "accent",
+                  bold: false,
+                  subItems: [],
+                },
+                {
+                  id: createTabItemId(),
+                  text:
+                    "クーポンは1回20,000円（税込）以上のお支払いにご利用いただけます。",
+                  bullet: "disc",
+                  tone: "normal",
+                  bold: false,
+                  subItems: [],
+                },
+                {
+                  id: createTabItemId(),
+                  text:
+                    "キャンペーン期間中でも、クーポンの割引総額が所定の金額に達した場合、配布終了となり獲得済みクーポンのご利用は不可となります。",
+                  bullet: "disc",
+                  tone: "accent",
+                  bold: true,
+                  subItems: [],
+                },
+              ],
+              footnote: "※2026年2月6日時点の情報です。",
+              ctaText: "",
+              ctaLinkText: "",
+              ctaLinkUrl: "",
+              ctaTargetKind: "url",
+              ctaSectionId: "",
+              ctaImageUrl: "",
+              ctaImageAlt: "",
+              ctaImageAssetId: "",
+              buttonText: "",
+              buttonTargetKind: "url",
+              buttonUrl: "",
+              buttonSectionId: "",
+            },
+            {
+              id: createTabId(),
+              labelTop: "クイックチャンス",
+              labelBottom: "注意事項",
+              intro: "",
+              items: [
+                {
+                  id: createTabItemId(),
+                  text: "クーポンの利用方法は以下の通りとなります。",
+                  bullet: "disc",
+                  tone: "normal",
+                  bold: false,
+                  subItems: [
+                    "①クーポン画面を表示します。",
+                    "②クーポン利用の旨をお申し出いただき、クーポン画面を提示します。",
+                    "③「利用する」ボタンを押下してください。",
+                  ],
+                },
+                {
+                  id: createTabItemId(),
+                  text:
+                    "クーポンの利用期限前であっても、予告なく終了する場合があります。",
+                  bullet: "disc",
+                  tone: "normal",
+                  bold: false,
+                  subItems: [],
+                },
+                {
+                  id: createTabItemId(),
+                  text: "本キャンペーンは予告なく変更・終了する場合があります。",
+                  bullet: "disc",
+                  tone: "accent",
+                  bold: true,
+                  subItems: [],
+                },
+              ],
+              footnote: "※2026年2月6日時点の情報です。",
+              ctaText: "",
+              ctaLinkText: "",
+              ctaLinkUrl: "",
+              ctaTargetKind: "url",
+              ctaSectionId: "",
+              ctaImageUrl: "",
+              ctaImageAlt: "",
+              ctaImageAssetId: "",
+              buttonText: "",
+              buttonTargetKind: "url",
+              buttonUrl: "",
+              buttonSectionId: "",
+            },
+          ],
+          tabStyle: {
+            inactiveBg: "#DDDDDD",
+            inactiveText: "#000000",
+            activeBg: "#000000",
+            activeText: "#FFFFFF",
+            border: "#000000",
+            contentBg: "#FFFFFF",
+            contentBorder: "#000000",
+            accent: "#EB5505",
+          },
         },
         content: normalizeSectionContent(),
         style: normalizeSectionStyle(),
@@ -2066,6 +2345,20 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   leftTab: "sections",
   previewMode: "desktop",
   previewAspect: "free",
+  previewDesktopWidth: 1100,
+  previewMobileWidth: 390,
+  previewGuidesEnabled: false,
+  previewSafeAreaEnabled: false,
+  previewSectionBoundsEnabled: false,
+  previewScrollSnapEnabled: false,
+  previewFontScale: 1,
+  previewContrastWarningsEnabled: false,
+  autoSaveIntervalSec: 30,
+  saveDestination: "browser",
+  exportFilenameTemplate: "{projectName}",
+  aiDefaultInstruction: "",
+  aiForbiddenWords: "",
+  aiTargetSectionTypes: [],
   saveStatus: "saved",
   saveStatusMessage: undefined,
   isPreviewBusy: false,
@@ -4673,6 +4966,43 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         hasUserEdits: true,
       };
     }),
+  setPageSectionAnimation: (patch) =>
+    set((state) => {
+      const base = normalizePageBaseStyle(state.project.pageBaseStyle);
+      const nextStyle: PageBaseStyle = {
+        ...base,
+        sectionAnimation: { ...base.sectionAnimation, ...patch },
+      };
+      const nextProject: ProjectState = {
+        ...state.project,
+        meta: {
+          ...state.project.meta,
+          updatedAt: new Date().toISOString(),
+        },
+        pageBaseStyle: nextStyle,
+      };
+
+      if (projectsEqual(state.project, nextProject)) {
+        return state;
+      }
+
+      const nextUndoStack = pushStack(
+        state.undoStack,
+        cloneProject(state.project)
+      );
+
+      return {
+        ...state,
+        project: nextProject,
+        undoStack: nextUndoStack,
+        redoStack: [],
+        canUndo: nextUndoStack.length > 0,
+        canRedo: false,
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
   setPageLayout: (patch) =>
     set((state) => {
       const base = normalizePageBaseStyle(state.project.pageBaseStyle);
@@ -5284,6 +5614,30 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }
   },
   setPreviewAspect: (aspect) => set({ previewAspect: aspect }),
+  setPreviewDesktopWidth: (width) =>
+    set({ previewDesktopWidth: clampNumber(Math.round(width), 720, 1600) }),
+  setPreviewMobileWidth: (width) =>
+    set({ previewMobileWidth: clampNumber(Math.round(width), 320, 520) }),
+  setPreviewGuidesEnabled: (enabled) => set({ previewGuidesEnabled: enabled }),
+  setPreviewSafeAreaEnabled: (enabled) =>
+    set({ previewSafeAreaEnabled: enabled }),
+  setPreviewSectionBoundsEnabled: (enabled) =>
+    set({ previewSectionBoundsEnabled: enabled }),
+  setPreviewScrollSnapEnabled: (enabled) =>
+    set({ previewScrollSnapEnabled: enabled }),
+  setPreviewFontScale: (scale) =>
+    set({ previewFontScale: clampNumber(Number(scale) || 1, 0.85, 1.2) }),
+  setPreviewContrastWarningsEnabled: (enabled) =>
+    set({ previewContrastWarningsEnabled: enabled }),
+  setAutoSaveIntervalSec: (seconds) =>
+    set({ autoSaveIntervalSec: Math.max(10, Math.round(seconds)) }),
+  setSaveDestination: (destination) => set({ saveDestination: destination }),
+  setExportFilenameTemplate: (value) =>
+    set({ exportFilenameTemplate: value }),
+  setAiDefaultInstruction: (value) => set({ aiDefaultInstruction: value }),
+  setAiForbiddenWords: (value) => set({ aiForbiddenWords: value }),
+  setAiTargetSectionTypes: (values) =>
+    set({ aiTargetSectionTypes: values.filter(Boolean) }),
   setSaveStatus: (status, message) =>
     set({ saveStatus: status, saveStatusMessage: message }),
   setPreviewBusy: (isBusy, reason) =>

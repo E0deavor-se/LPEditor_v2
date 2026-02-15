@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LeftPanel from "@/src/components/editor/LeftPanel";
 import PreviewPane from "@/src/components/editor/PreviewPane";
 import TopBar from "@/src/components/editor/TopBar";
+import TooltipLayer from "@/src/components/editor/TooltipLayer";
 import InspectorPanel from "@/src/components/editor/right/InspectorPanel";
 import { getDb } from "@/src/db/db";
 import { createProjectFromTemplate, useEditorStore } from "@/src/store/editorStore";
@@ -17,15 +18,72 @@ type TemplateOption = {
   title: string;
   description: string;
   templateType: ProjectState["meta"]["templateType"];
+	sectionOrder: string[];
 };
 
 const TEMPLATE_OPTIONS: TemplateOption[] = [
   {
     id: "campaign",
-    title: "キャンペーン",
-    description: "クーポン/ポイント施策向けの標準LP構成",
+		title: "クーポン",
+		description: "クーポン施策向けの標準LP構成",
     templateType: "coupon",
+		sectionOrder: [
+			"brandBar",
+			"heroImage",
+			"campaignPeriodBar",
+			"campaignOverview",
+			"targetStores",
+			"couponFlow",
+			"legalNotes",
+			"footerHtml",
+		],
+	},
+	{
+		id: "point",
+		title: "ポイント施策",
+		description: "ポイント付与向けの標準LP構成",
+		templateType: "point",
+		sectionOrder: [
+			"brandBar",
+			"heroImage",
+			"campaignPeriodBar",
+			"campaignOverview",
+			"targetStores",
+			"legalNotes",
+			"footerHtml",
+		],
+	},
+	{
+		id: "ranking",
+		title: "ランキング施策",
+		description: "ランキング訴求向けのLP構成",
+		templateType: "quickchance",
+		sectionOrder: [
+			"brandBar",
+			"heroImage",
+			"campaignPeriodBar",
+			"campaignOverview",
+			"rankingTable",
+			"paymentHistoryGuide",
+			"targetStores",
+			"legalNotes",
+			"footerHtml",
+		],
   },
+	{
+		id: "excluded-stores",
+		title: "対象外店舗一覧",
+		description: "対象外店舗の一覧ページ",
+		templateType: "target",
+		sectionOrder: ["excludedStoresList"],
+	},
+	{
+		id: "excluded-brands",
+		title: "対象外ブランド一覧",
+		description: "対象外ブランドの一覧ページ",
+		templateType: "target",
+		sectionOrder: ["excludedBrandsList"],
+	},
 ];
 
 export default function EditorLayout() {
@@ -35,11 +93,16 @@ export default function EditorLayout() {
 	const manualSaveTick = useEditorStore((state) => state.manualSaveTick);
 	const project = useEditorStore((state) => state.project);
 	const hasUserEdits = useEditorStore((state) => state.hasUserEdits);
+	const autoSaveIntervalSec = useEditorStore(
+		(state) => state.autoSaveIntervalSec
+	);
+	const saveDestination = useEditorStore((state) => state.saveDestination);
 	const setProject = useEditorStore((state) => state.setProject);
 	const replaceProject = useEditorStore((state) => state.replaceProject);
 	const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
 	const setPageBackground = useEditorStore((state) => state.setPageBackground);
 	const projectRef = useRef(project);
+	const showLeftPanel = project.meta.templateType !== "target";
 	const lastSavedVersionRef = useRef<string | undefined>(
 		project.meta.updatedAt
 	);
@@ -95,7 +158,13 @@ export default function EditorLayout() {
 	const handleTemplateSelect = (option: TemplateOption) => {
 		window.localStorage.setItem(TEMPLATE_STORAGE_KEY, option.id);
 		setSelectedTemplateId(option.id);
-		setProject(createProjectFromTemplate(option.templateType, option.title));
+		setProject(
+			createProjectFromTemplate(
+				option.templateType,
+				option.title,
+				option.sectionOrder
+			)
+		);
 		setTemplateChooserOpen(false);
 	};
 
@@ -137,6 +206,9 @@ export default function EditorLayout() {
 
 	const saveProject = useCallback(
 		async (reason: "auto" | "interval" | "manual") => {
+			if (saveDestination !== "browser") {
+				return;
+			}
 			if (autoSaveInFlightRef.current) {
 				return;
 			}
@@ -177,10 +249,13 @@ export default function EditorLayout() {
 				autoSaveInFlightRef.current = false;
 			}
 		},
-		[setSaveStatus]
-	);
+			[saveDestination, setSaveStatus]
+		);
 
 	useEffect(() => {
+		if (saveDestination !== "browser") {
+			return undefined;
+		}
 		if (!hasUserEdits) {
 			return undefined;
 		}
@@ -196,17 +271,21 @@ export default function EditorLayout() {
 				autoSaveTimerRef.current = null;
 			}
 		};
-	}, [hasUserEdits, project, saveProject]);
+	}, [hasUserEdits, project, saveDestination, saveProject]);
 
 	useEffect(() => {
+		if (saveDestination !== "browser") {
+			return undefined;
+		}
+		const intervalMs = Math.max(10, autoSaveIntervalSec) * 1000;
 		const intervalId = setInterval(() => {
 			if (!hasUserEdits) {
 				return;
 			}
 			void saveProject("interval");
-		}, 30000);
+		}, intervalMs);
 		return () => clearInterval(intervalId);
-	}, [hasUserEdits, saveProject]);
+	}, [autoSaveIntervalSec, hasUserEdits, saveDestination, saveProject]);
 
 	useEffect(() => {
 		if (manualSaveTick === 0) {
@@ -217,10 +296,12 @@ export default function EditorLayout() {
 	}, [manualSaveTick, saveProject]);
 
 	return (
-		<div className="flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
+		<div className="lp-editor flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
 			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} />
 			<div className="flex min-h-0 flex-1">
-				<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
+				{showLeftPanel ? (
+					<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
+				) : null}
 				<PreviewPane />
 				<aside
 					className="ui-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] lg:flex"
@@ -229,6 +310,10 @@ export default function EditorLayout() {
 					<InspectorPanel />
 				</aside>
 			</div>
+			<footer className="flex items-center justify-center border-t border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-4 py-2 text-[11px] text-[var(--ui-muted)]">
+				LP Editor.v2 / Created By Jhastine.K
+			</footer>
+			<TooltipLayer />
 			{templateChooserOpen ? (
 				<div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-6">
 					<div className="w-full max-w-2xl rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -244,11 +329,20 @@ export default function EditorLayout() {
 									キャンペーンを選ぶと、今の並びのLPが読み込まれます。
 								</div>
 							</div>
-							{lastTemplate ? (
-								<span className="ui-chip h-8 px-3 text-[11px]">
-									前回: {lastTemplate.title}
-								</span>
-							) : null}
+							<div className="flex items-center gap-2">
+								{lastTemplate ? (
+									<span className="ui-chip h-8 px-3 text-[11px]">
+										前回: {lastTemplate.title}
+									</span>
+								) : null}
+								<button
+									type="button"
+									className="ui-button h-8 px-3 text-[11px]"
+									onClick={() => setTemplateChooserOpen(false)}
+								>
+									LP Editorに戻る
+								</button>
+							</div>
 						</div>
 						<div className="mt-5 grid gap-4 sm:grid-cols-2">
 							{TEMPLATE_OPTIONS.map((option) => (
