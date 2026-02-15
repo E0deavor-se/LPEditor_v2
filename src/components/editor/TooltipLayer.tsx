@@ -161,7 +161,7 @@ export default function TooltipLayer() {
       return false;
     };
 
-    const handlePointerOver = (event: Event) => {
+    const handlePointerOver = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target) {
         return;
@@ -175,11 +175,11 @@ export default function TooltipLayer() {
       showTooltipFor(el);
     };
 
-    const handlePointerOut = (event: Event) => {
+    const handlePointerOut = (event: MouseEvent) => {
       if (!targetRef.current) {
         return;
       }
-      const related = (event as PointerEvent).relatedTarget as HTMLElement | null;
+      const related = event.relatedTarget as HTMLElement | null;
       if (related && targetRef.current.contains(related)) {
         return;
       }
@@ -211,14 +211,14 @@ export default function TooltipLayer() {
       hideTooltip();
     };
 
-    root.addEventListener("pointerover", handlePointerOver);
-    root.addEventListener("pointerout", handlePointerOut);
+    root.addEventListener("mouseover", handlePointerOver);
+    root.addEventListener("mouseout", handlePointerOut);
     root.addEventListener("focusin", handleFocusIn);
     root.addEventListener("focusout", handleFocusOut);
 
     return () => {
-      root.removeEventListener("pointerover", handlePointerOver);
-      root.removeEventListener("pointerout", handlePointerOut);
+      root.removeEventListener("mouseover", handlePointerOver);
+      root.removeEventListener("mouseout", handlePointerOut);
       root.removeEventListener("focusin", handleFocusIn);
       root.removeEventListener("focusout", handleFocusOut);
     };
