@@ -14,7 +14,10 @@ const escapeHtml = (value: string) =>
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const formatDate = (value?: string) => (value ? value.replaceAll("-", "/") : "");
+const formatDate = (value?: unknown) =>
+  typeof value === "string" && value
+    ? value.replaceAll("-", "/")
+    : "";
 
 const resolveTargetStoresConfig = (project: ProjectState) => {
   const section = project.sections.find(
