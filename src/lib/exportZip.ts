@@ -143,18 +143,23 @@ export const buildIndexHtml = (project: ProjectState): string => {
             </section>
           `;
         case "legalNotes":
+          {
+            const items = Array.isArray(section.data?.items)
+              ? section.data.items
+              : [];
           return `
             <section class="container">
               <h2>${escapeHtml(
                 String(section.data.title ?? "注意事項")
               )}</h2>
               <ul>
-                ${(section.data.items ?? [])
+                ${items
                   .map((item: string) => `<li>${escapeHtml(item)}</li>`)
                   .join("")}
               </ul>
             </section>
           `;
+        }
         case "rankingTable": {
           const data = section.data ?? {};
           const headers =
