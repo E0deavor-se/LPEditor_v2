@@ -146,7 +146,7 @@ export default function TooltipLayer() {
   }, [tooltip.visible, tooltip.text]);
 
   useEffect(() => {
-    const root = document.querySelector(".lp-editor");
+    const root = document.querySelector<HTMLElement>(".lp-editor");
     if (!root) {
       return;
     }
@@ -186,7 +186,7 @@ export default function TooltipLayer() {
       hideTooltip();
     };
 
-    const handleFocusIn = (event: FocusEvent) => {
+    const handleFocusIn = (event: Event) => {
       const target = event.target as HTMLElement | null;
       if (!target) {
         return;
@@ -200,11 +200,11 @@ export default function TooltipLayer() {
       showTooltipFor(el);
     };
 
-    const handleFocusOut = (event: FocusEvent) => {
+    const handleFocusOut = (event: Event) => {
       if (!targetRef.current) {
         return;
       }
-      const related = event.relatedTarget as HTMLElement | null;
+      const related = (event as FocusEvent).relatedTarget as HTMLElement | null;
       if (related && targetRef.current.contains(related)) {
         return;
       }
