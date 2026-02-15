@@ -161,7 +161,7 @@ export default function TooltipLayer() {
       return false;
     };
 
-    const handlePointerOver = (event: PointerEvent) => {
+    const handlePointerOver = (event: Event) => {
       const target = event.target as HTMLElement | null;
       if (!target) {
         return;
@@ -175,11 +175,11 @@ export default function TooltipLayer() {
       showTooltipFor(el);
     };
 
-    const handlePointerOut = (event: PointerEvent) => {
+    const handlePointerOut = (event: Event) => {
       if (!targetRef.current) {
         return;
       }
-      const related = event.relatedTarget as HTMLElement | null;
+      const related = (event as PointerEvent).relatedTarget as HTMLElement | null;
       if (related && targetRef.current.contains(related)) {
         return;
       }
