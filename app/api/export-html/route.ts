@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import PreviewSsr from "@/src/preview/PreviewSsr";
 import { buildIndexHtml } from "@/src/lib/exportZip";
 import type { ProjectState } from "@/src/types/project";
 
@@ -28,17 +27,7 @@ export async function POST(request: Request) {
 
     const sectionCount = body.project.sections?.length ?? 0;
     console.log("[export-html] sections:", sectionCount);
-
-    const { renderToStaticMarkup } = await import("react-dom/server");
-    const bodyHtml = renderToStaticMarkup(
-      PreviewSsr({ project: body.project, ui: body.ui ?? null })
-    );
-    console.log("[export-html] bodyHtml length:", bodyHtml.length);
-    const html = buildIndexHtml({
-      bodyHtml,
-      inlineCss: true,
-      project: body.project,
-    });
+    const html = buildIndexHtml(body.project);
     console.log("[export-html] final html length:", html.length);
 
     if (!html || html.trim().length < 50) {
@@ -46,7 +35,7 @@ export async function POST(request: Request) {
         {
           error: "empty html",
           debug: {
-            bodyLen: bodyHtml.length,
+            bodyLen: 0,
             htmlLen: html.length,
             sections: sectionCount,
           },
