@@ -106,8 +106,8 @@ const normalizePathsDeep = (value: unknown): unknown => {
       shouldNormalizeKey(key)
     ) {
       result[key] = normalizePath(normalizedEntry);
-      return;
-    }
+          return `
+            <section class="container tabbed-notes tabbed-notes--${tabStyle.variant}" style="${styleVars}">
     result[key] = normalizedEntry;
   });
   return result;
@@ -171,13 +171,13 @@ const collectFooterDefaultAssets = async (
       continue;
     }
     const filename = url.split("/").pop() || "asset.png";
-    const targetPath = `assets/footer-defaults/${sanitizeFilename(filename)}`;
+    const targetPath = "assets/footer-defaults/" + sanitizeFilename(filename);
     const distPath = toDistAssetPath(targetPath);
     try {
       const asset = await fetchAssetBytes(url);
       zip.file(targetPath, asset.bytes);
       zip.file(distPath, asset.bytes);
-      urlMap.set(url, `./${targetPath}`);
+      urlMap.set(url, "./" + targetPath);
     } catch (error) {
       warnings.push({
         type: "asset",
@@ -1185,6 +1185,191 @@ const renderStoreCards = (stores: StoresTable | null) => {
   return `<div class="store-grid">${cards.join("")}</div>${limitNote}`;
 };
 
+const REGION_GROUPS = [
+  {
+    region: "北海道",
+    items: [{ name: "北海道", label: "北海道", id: "hokkaido" }],
+  },
+  {
+    region: "東北",
+    items: [
+      { name: "青森県", label: "青森", id: "aomori" },
+      { name: "岩手県", label: "岩手", id: "iwate" },
+      { name: "宮城県", label: "宮城", id: "miyagi" },
+      { name: "秋田県", label: "秋田", id: "akita" },
+      { name: "山形県", label: "山形", id: "yamagata" },
+      { name: "福島県", label: "福島", id: "fukushima" },
+    ],
+  },
+  {
+    region: "関東",
+    items: [
+      { name: "茨城県", label: "茨城", id: "ibaraki" },
+      { name: "栃木県", label: "栃木", id: "tochigi" },
+      { name: "群馬県", label: "群馬", id: "gunma" },
+      { name: "埼玉県", label: "埼玉", id: "saitama" },
+      { name: "千葉県", label: "千葉", id: "chiba" },
+      { name: "東京都", label: "東京", id: "tokyo" },
+      { name: "神奈川県", label: "神奈川", id: "kanagawa" },
+    ],
+  },
+  {
+    region: "中部",
+    items: [
+      { name: "新潟県", label: "新潟", id: "niigata" },
+      { name: "富山県", label: "富山", id: "toyama" },
+      { name: "石川県", label: "石川", id: "ishikawa" },
+      { name: "福井県", label: "福井", id: "fukui" },
+      { name: "山梨県", label: "山梨", id: "yamanashi" },
+      { name: "長野県", label: "長野", id: "nagano" },
+      { name: "岐阜県", label: "岐阜", id: "gifu" },
+      { name: "静岡県", label: "静岡", id: "shizuoka" },
+      { name: "愛知県", label: "愛知", id: "aichi" },
+    ],
+  },
+  {
+    region: "近畿",
+    items: [
+      { name: "三重県", label: "三重", id: "mie" },
+      { name: "滋賀県", label: "滋賀", id: "shiga" },
+      { name: "京都府", label: "京都", id: "kyoto" },
+      { name: "大阪府", label: "大阪", id: "osaka" },
+      { name: "兵庫県", label: "兵庫", id: "hyogo" },
+      { name: "奈良県", label: "奈良", id: "nara" },
+      { name: "和歌山県", label: "和歌山", id: "wakayama" },
+    ],
+  },
+  {
+    region: "中国",
+    items: [
+      { name: "鳥取県", label: "鳥取", id: "tottori" },
+      { name: "島根県", label: "島根", id: "shimane" },
+      { name: "岡山県", label: "岡山", id: "okayama" },
+      { name: "広島県", label: "広島", id: "hiroshima" },
+      { name: "山口県", label: "山口", id: "yamaguchi" },
+    ],
+  },
+  {
+    region: "四国",
+    items: [
+      { name: "徳島県", label: "徳島", id: "tokushima" },
+      { name: "香川県", label: "香川", id: "kagawa" },
+      { name: "愛媛県", label: "愛媛", id: "ehime" },
+      { name: "高知県", label: "高知", id: "kouchi" },
+    ],
+  },
+  {
+    region: "九州・沖縄",
+    items: [
+      { name: "福岡県", label: "福岡", id: "fukuoka" },
+      { name: "佐賀県", label: "佐賀", id: "saga" },
+      { name: "長崎県", label: "長崎", id: "nagasaki" },
+      { name: "熊本県", label: "熊本", id: "kumamoto" },
+      { name: "大分県", label: "大分", id: "oita" },
+      { name: "宮崎県", label: "宮崎", id: "miyazaki" },
+      { name: "鹿児島県", label: "鹿児島", id: "kagoshima" },
+      { name: "沖縄県", label: "沖縄", id: "okinawa" },
+    ],
+  },
+];
+
+const PREFECTURE_ORDER = REGION_GROUPS.flatMap((group) =>
+  group.items.map((item) => item.name)
+);
+
+const PREFECTURE_ID_MAP = new Map(
+  REGION_GROUPS.flatMap((group) =>
+    group.items.map((item) => [item.name, item.id] as const)
+  )
+);
+
+const resolvePrefectureId = (prefecture: string, fallbackIndex: number) =>
+  PREFECTURE_ID_MAP.get(prefecture) ?? `pref-${fallbackIndex}`;
+
+const renderExcludedStoresNav = () => {
+  const rows = REGION_GROUPS.map((group) => {
+    const links = group.items
+      .map(
+        (item) =>
+          `<a href="#${item.id}" class="excluded-region-link">${escapeHtml(
+            item.label
+          )}</a>`
+      )
+      .join("");
+    return `
+      <tr>
+        <th class="excluded-region-th"><strong>${escapeHtml(
+          group.region
+        )}</strong></th>
+        <td class="excluded-region-td">${links}</td>
+      </tr>
+    `;
+  });
+  return `
+    <table class="excluded-region-table">
+      <tbody>
+        ${rows.join("")}
+      </tbody>
+    </table>
+  `;
+};
+
+const renderExcludedStoresList = (stores: StoresTable | null) => {
+  if (!stores || stores.rows.length === 0) {
+    return `<div class="excluded-empty">CSVを取り込むと、対象外店舗の一覧が表示されます。</div>`;
+  }
+  const canonical = stores.canonical;
+  const groups = new Map<string, Array<{ name: string; address: string }>>();
+  stores.rows.forEach((row) => {
+    const name = str(row[canonical.storeNameKey]).trim();
+    const address = str(row[canonical.addressKey]).trim();
+    const pref = str(row[canonical.prefectureKey]).trim();
+    const key = pref || "未分類";
+    const list = groups.get(key) ?? [];
+    list.push({ name, address });
+    groups.set(key, list);
+  });
+  const orderMap = new Map(
+    PREFECTURE_ORDER.map((prefecture, index) => [prefecture, index])
+  );
+  const sortedGroups = Array.from(groups.entries())
+    .map(([prefecture, entries]) => ({
+      prefecture,
+      entries,
+    }))
+    .sort((a, b) => {
+      const orderA = orderMap.get(a.prefecture) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = orderMap.get(b.prefecture) ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+  const blocks = sortedGroups
+    .map((group, index) => {
+      const rows = group.entries
+        .map(
+          (entry) => `
+            <div class="tenpo_list">
+              <span class="tenpo_list_shop">${escapeHtml(
+                entry.name || "店舗名"
+              )}</span>
+              <span class="tenpo_list_add">${escapeHtml(entry.address)}</span>
+            </div>
+          `
+        )
+        .join("");
+      const prefId = resolvePrefectureId(group.prefecture, index + 1);
+      return `
+        <div>
+          <div class="tenpo_list_title">
+            <h2 id="${prefId}">${escapeHtml(group.prefecture)}</h2>
+          </div>
+          ${rows}
+        </div>
+      `;
+    })
+    .join("");
+  return `<div class="tenpo-container">${blocks}</div>`;
+};
+
 export const renderProjectToHtml = (
   project: ProjectState,
   cssHref = "styles.css"
@@ -1279,6 +1464,182 @@ export const renderProjectToHtml = (
             </section>
           `;
         }
+        case "tabbedNotes": {
+          const data = section.data ?? {};
+          const rawTabs = Array.isArray(data.tabs) ? data.tabs : [];
+          const tabs = rawTabs.map((tab, index) => {
+            const entry = tab && typeof tab === "object"
+              ? (tab as Record<string, unknown>)
+              : {};
+            const rawItems = Array.isArray(entry.items) ? entry.items : [];
+            const items = rawItems.map((item, itemIndex) => {
+              const itemEntry = item && typeof item === "object"
+                ? (item as Record<string, unknown>)
+                : {};
+              const subItems = Array.isArray(itemEntry.subItems)
+                ? itemEntry.subItems.map((value) => str(value))
+                : [];
+              return {
+                id:
+                  typeof itemEntry.id === "string" && itemEntry.id.trim()
+                    ? itemEntry.id
+                    : `tab_item_${index + 1}_${itemIndex + 1}`,
+                text: str(itemEntry.text ?? ""),
+                bullet: itemEntry.bullet === "none" ? "none" : "disc",
+                tone: itemEntry.tone === "accent" ? "accent" : "normal",
+                bold: Boolean(itemEntry.bold),
+                subItems,
+              };
+            });
+            const ctaTargetKind =
+              entry.ctaTargetKind === "section" ? "section" : "url";
+            const ctaSectionId = str(entry.ctaSectionId ?? "");
+            const ctaLinkUrl = str(entry.ctaLinkUrl ?? "");
+            const resolvedCtaUrl =
+              ctaTargetKind === "section" && ctaSectionId
+                ? `#sec-${ctaSectionId}`
+                : ctaLinkUrl;
+            const ctaImageUrl = str(entry.ctaImageUrl ?? "");
+            const ctaImageAlt = escapeHtml(str(entry.ctaImageAlt ?? ""));
+            const ctaImageAssetId = str(entry.ctaImageAssetId ?? "");
+            const resolvedCtaImage =
+              ctaImageAssetId && project.assets?.[ctaImageAssetId]?.data
+                ? project.assets[ctaImageAssetId].data
+                : ctaImageUrl;
+            const buttonTargetKind =
+              entry.buttonTargetKind === "section" ? "section" : "url";
+            const buttonSectionId = str(entry.buttonSectionId ?? "");
+            const buttonUrl = str(entry.buttonUrl ?? "");
+            const resolvedButtonUrl =
+              buttonTargetKind === "section" && buttonSectionId
+                ? `#sec-${buttonSectionId}`
+                : buttonUrl;
+            return {
+              id:
+                typeof entry.id === "string" && entry.id.trim()
+                  ? entry.id
+                  : `tab_${index + 1}`,
+              labelTop: escapeHtml(str(entry.labelTop ?? "")),
+              labelBottom: escapeHtml(str(entry.labelBottom ?? "注意事項")),
+              intro: escapeHtml(str(entry.intro ?? "")),
+              items,
+              footnote: escapeHtml(str(entry.footnote ?? "")),
+              ctaText: escapeHtml(str(entry.ctaText ?? "")),
+              ctaLinkText: escapeHtml(str(entry.ctaLinkText ?? "")),
+              resolvedCtaUrl,
+              resolvedCtaImage,
+              ctaImageAlt,
+              buttonText: escapeHtml(str(entry.buttonText ?? "")),
+              resolvedButtonUrl,
+            };
+          });
+          const rawStyle = data.tabStyle && typeof data.tabStyle === "object"
+            ? (data.tabStyle as Record<string, unknown>)
+            : {};
+          const rawVariant = typeof rawStyle.variant === "string"
+            ? rawStyle.variant
+            : "simple";
+          const variant =
+            rawVariant === "sticky" ||
+            rawVariant === "underline" ||
+            rawVariant === "popout"
+              ? rawVariant
+              : "simple";
+          const tabStyle = {
+            variant,
+            inactiveBg: typeof rawStyle.inactiveBg === "string" ? rawStyle.inactiveBg : "#DDDDDD",
+            inactiveText:
+              typeof rawStyle.inactiveText === "string" ? rawStyle.inactiveText : "#000000",
+            activeBg: typeof rawStyle.activeBg === "string" ? rawStyle.activeBg : "#000000",
+            activeText:
+              typeof rawStyle.activeText === "string" ? rawStyle.activeText : "#FFFFFF",
+            border: typeof rawStyle.border === "string" ? rawStyle.border : "#000000",
+            contentBg:
+              typeof rawStyle.contentBg === "string" ? rawStyle.contentBg : "#FFFFFF",
+            contentBorder:
+              typeof rawStyle.contentBorder === "string"
+                ? rawStyle.contentBorder
+                : "#000000",
+            accent: typeof rawStyle.accent === "string" ? rawStyle.accent : "#EB5505",
+          };
+          const styleVars = [
+            `--tab-inactive-bg:${escapeHtml(str(tabStyle.inactiveBg))}`,
+            `--tab-inactive-text:${escapeHtml(str(tabStyle.inactiveText))}`,
+            `--tab-active-bg:${escapeHtml(str(tabStyle.activeBg))}`,
+            `--tab-active-text:${escapeHtml(str(tabStyle.activeText))}`,
+            `--tab-border:${escapeHtml(str(tabStyle.border))}`,
+            `--tab-content-bg:${escapeHtml(str(tabStyle.contentBg))}`,
+            `--tab-content-border:${escapeHtml(str(tabStyle.contentBorder))}`,
+            `--tab-accent:${escapeHtml(str(tabStyle.accent))}`,
+          ].join(";");
+          const tabName = `tab-${section.id}`;
+          const tabHtml = tabs
+            .map((tab, index) => {
+              const tabId = `${tabName}-${index + 1}`;
+              const itemsHtml = tab.items
+                .map((item) => {
+                  const itemClass = [
+                    "tabbed-notes__item",
+                    item.bullet === "disc" ? "is-disc" : "",
+                    item.tone === "accent" ? "is-accent" : "",
+                    item.bold ? "is-bold" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                  const subList = item.subItems.length > 0
+                    ? `<ul class=\"tabbed-notes__sublist\">${item.subItems
+                        .map((sub) => `<li>${escapeHtml(sub)}</li>`)
+                        .join("")}</ul>`
+                    : "";
+                  return `<li class=\"${itemClass}\">${escapeHtml(item.text)}${subList}</li>`;
+                })
+                .join("");
+              const ctaHtml =
+                tab.ctaText || tab.ctaLinkText || tab.resolvedCtaImage
+                  ? `
+                    <div class=\"tabbed-notes__cta\">
+                      ${tab.ctaText ? `<p class=\"tabbed-notes__cta-text\">${tab.ctaText}</p>` : ""}
+                      ${tab.ctaLinkText && tab.resolvedCtaUrl ? `<a class=\"tabbed-notes__cta-link\" href=\"${tab.resolvedCtaUrl}\">${tab.ctaLinkText}</a>` : ""}
+                      ${tab.resolvedCtaImage ? `<a class=\"tabbed-notes__cta-image\" href=\"${tab.resolvedCtaUrl || "#"}\"><img src=\"${escapeHtml(str(tab.resolvedCtaImage))}\" alt=\"${tab.ctaImageAlt}\" /></a>` : ""}
+                    </div>
+                  `
+                  : "";
+              const buttonHtml =
+                tab.buttonText && tab.resolvedButtonUrl
+                  ? `
+                    <div class=\"tabbed-notes__button\">
+                      <a class=\"tabbed-notes__button-link\" href=\"${tab.resolvedButtonUrl}\">${tab.buttonText}</a>
+                    </div>
+                  `
+                  : "";
+              return `
+                <input id=\"${tabId}\" type=\"radio\" name=\"${tabName}\" class=\"tabbed-notes__switch\" ${
+                  index === 0 ? "checked=\\\"checked\\\"" : ""
+                }>
+                <label class=\"tabbed-notes__label\" for=\"${tabId}\">
+                  ${tab.labelTop ? `<span class=\"tabbed-notes__label-top\">${tab.labelTop}</span>` : ""}
+                  <span class=\"tabbed-notes__label-bottom\">${tab.labelBottom}</span>
+                </label>
+                <div class=\"tabbed-notes__content\">
+                  <div class=\"tabbed-notes__panel\">
+                    ${tab.intro ? `<p class=\"tabbed-notes__intro\">${tab.intro}</p>` : ""}
+                    <ul class=\"tabbed-notes__list\">${itemsHtml}</ul>
+                    ${tab.footnote ? `<p class=\"tabbed-notes__footnote\">${tab.footnote}</p>` : ""}
+                    ${ctaHtml}
+                    ${buttonHtml}
+                  </div>
+                </div>
+              `;
+            })
+            .join("");
+          return `
+            <section class=\"container tabbed-notes\" style=\"${styleVars}\">
+              <div class=\"tabbed-notes__wrap\">
+                ${tabHtml}
+              </div>
+            </section>
+          `;
+        }
         case "couponFlow": {
           const items = Array.isArray(section.content?.items)
             ? section.content?.items
@@ -1326,6 +1687,95 @@ export const renderProjectToHtml = (
               ${renderStoreCards(stores)}
             </section>
           `;
+        case "excludedStoresList": {
+          const rawTitleTemplate = str(section.data.title || "対象外店舗一覧");
+          const rawHighlight = str(section.data.highlightLabel || "対象外");
+          const highlight = escapeHtml(rawHighlight);
+          const returnUrl = escapeHtml(str(section.data.returnUrl || "#"));
+          const returnLabel = escapeHtml(
+            str(section.data.returnLabel || "キャンペーンページに戻る")
+          );
+          const footerCopy = escapeHtml(
+            str(
+              section.data.footerCopy ||
+                "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED."
+            )
+          );
+          const footerLinksRaw = Array.isArray(section.data.footerLinks)
+            ? section.data.footerLinks
+            : [];
+          const footerLinks = footerLinksRaw
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") {
+                return null;
+              }
+              const label =
+                "label" in entry && typeof entry.label === "string"
+                  ? entry.label
+                  : "";
+              const url =
+                "url" in entry && typeof entry.url === "string" ? entry.url : "";
+              if (!label || !url) {
+                return null;
+              }
+              return { label, url };
+            })
+            .filter((entry): entry is { label: string; url: string } => entry != null);
+          const resolvedFooterLinks = footerLinks.length
+            ? footerLinks
+            : [
+                { label: "サイトポリシー", url: "#" },
+                { label: "会社概要", url: "#" },
+                { label: "動作環境", url: "#" },
+                { label: "Cookie情報の利用", url: "#" },
+                { label: "広告配信などについて", url: "#" },
+              ];
+          const hasHighlightPlaceholder =
+            highlight && rawTitleTemplate.includes("{highlight}");
+          const titleParts = rawTitleTemplate.split("{highlight}");
+          const titleHtml = hasHighlightPlaceholder
+            ? `
+              <span class="excluded-title__text">${escapeHtml(
+                titleParts[0]
+              )}</span>
+              <span class="excluded-title__badge">${highlight}</span>
+              <span class="excluded-title__text">${escapeHtml(
+                titleParts.slice(1).join("{highlight}")
+              )}</span>
+            `
+            : `
+              <span class="excluded-title__text">${escapeHtml(
+                rawTitleTemplate
+              )}</span>
+              ${highlight ? `<span class="excluded-title__badge">${highlight}</span>` : ""}
+            `;
+          return `
+            <section class="excluded-stores">
+              <div class="excluded-wrap">
+                <h1 class="excluded-title">${titleHtml}</h1>
+                ${renderExcludedStoresNav()}
+                ${renderExcludedStoresList(stores)}
+                <div class="excluded-footer">
+                  <a class="excluded-return" href="${returnUrl}">
+                    <span class="excluded-return__label">${returnLabel}</span>
+                    <span class="excluded-return__arrow" aria-hidden="true"></span>
+                  </a>
+                  <div class="excluded-footer__links">
+                    ${resolvedFooterLinks
+                      .map(
+                        (link) =>
+                          `<a href="${escapeHtml(link.url)}">${escapeHtml(
+                            link.label
+                          )}</a>`
+                      )
+                      .join("")}
+                  </div>
+                  <div class="excluded-footer__copy">${footerCopy}</div>
+                </div>
+              </div>
+            </section>
+          `;
+        }
         case "legalNotes": {
           const items = Array.isArray(section.data.items) ? section.data.items : [];
           return `
@@ -1685,6 +2135,166 @@ ul {
   font-size: 12px;
   color: #64748b;
 }
+.excluded-stores {
+  margin-top: 16px;
+}
+.excluded-wrap {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 1em;
+  background: #ffffff;
+  color: #333333;
+  font-size: 16px;
+  line-height: 1.6;
+  font-family: "メイリオ", Meiryo, "ＭＳ Ｐゴシック", "MS PGothic", arial,
+    sans-serif;
+}
+.excluded-title {
+  margin: 1.1em 0 0.5em;
+  font-size: 1.1em;
+  font-weight: bold;
+  color: #444444;
+}
+.excluded-title::before {
+  content: "■";
+  color: #eb5505;
+  padding-right: 0.2em;
+}
+.excluded-title__text {
+  margin-right: 0.1em;
+}
+.excluded-title__badge {
+  color: #ff4500;
+  font-size: 1.4em;
+  font-weight: bold;
+}
+.excluded-empty {
+  border: 1px dashed #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 13px;
+  color: #666666;
+}
+.excluded-region-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+.excluded-region-table th {
+  padding: 8px;
+  border: 1px solid #000000;
+  width: 10%;
+  white-space: nowrap;
+  background-color: #ff4500;
+  color: #ffffff;
+  text-align: left;
+}
+.excluded-region-table td {
+  padding: 8px;
+  border: 1px solid #ffffff;
+  background-color: #ffffe0;
+}
+.excluded-region-table tr:nth-child(even) td {
+  background-color: #fffff0;
+}
+.excluded-region-link {
+  text-decoration: underline;
+  color: #eb5505;
+  display: inline-block;
+  margin-right: 10px;
+}
+.tenpo-container {
+  display: block;
+}
+.tenpo_list_title {
+  background-color: #ff4500;
+  margin-top: 2em;
+  padding: 15px;
+  color: #ffffff;
+}
+.tenpo_list_title h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.1em;
+  font-weight: bold;
+}
+.tenpo_list {
+  padding: 10px;
+  line-height: 1.8em;
+  vertical-align: middle;
+  font-size: 12px;
+  border-bottom: 1px solid #006c6b;
+  border-left: 1px solid #006c6b;
+  border-right: 1px solid #006c6b;
+}
+.tenpo_list_shop {
+  width: 350px;
+  padding-left: 1px;
+  font-size: 85%;
+  display: inline-block;
+  font-weight: bold;
+  padding-right: 30px;
+  vertical-align: top;
+}
+.tenpo_list_add {
+  width: 425px;
+  font-size: 80%;
+  display: inline-block;
+  vertical-align: top;
+}
+.excluded-footer {
+  margin-top: 24px;
+  padding: 16px 12px;
+  background: #f4f4f4;
+  border-top: 1px solid #ebebeb;
+  text-align: center;
+}
+.excluded-return {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 14px;
+  background: #eb5505;
+  color: #ffffff;
+  font-weight: bold;
+  padding: 14px 20px;
+  border-radius: 8px;
+  text-decoration: none;
+  position: relative;
+}
+.excluded-return__arrow {
+  width: 10px;
+  height: 10px;
+  border-top: 3px solid #ffffff;
+  border-right: 3px solid #ffffff;
+  transform: rotate(45deg);
+}
+.excluded-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+.excluded-footer__links a {
+  color: #0066aa;
+  text-decoration: underline;
+}
+.excluded-footer__copy {
+  font-size: 11px;
+  color: #666666;
+}
+@media (max-width: 780px) {
+  .tenpo_list_add,
+  .tenpo_list_shop {
+    width: 100%;
+  }
+}
 .ranking-table {
   margin-top: 16px;
 }
@@ -1785,6 +2395,15 @@ ul {
   margin-top: 8px;
   text-align: center;
   font-size: 14px;
+  .tabbed-notes__label {
+    font-size: 14px;
+  }
+  .tabbed-notes__panel {
+    padding: 0 20px 24px;
+  }
+  .tabbed-notes__cta-image {
+    max-width: 100%;
+  }
   line-height: 1.7;
   font-weight: 600;
 }
@@ -1820,6 +2439,203 @@ ul {
   color: #64748b;
   border-radius: 6px;
 }
+.tabbed-notes {
+  margin-top: 16px;
+}
+.tabbed-notes__wrap {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 0 4px;
+  border-bottom: 1px solid var(--tab-border, #000000);
+}
+.tabbed-notes__label {
+  color: var(--tab-inactive-text, #000000);
+  background: var(--tab-inactive-bg, #dddddd);
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: center;
+  padding: 10px 8px;
+  order: -1;
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+  border-radius: 16px 16px 0 0;
+  flex: 1;
+}
+.tabbed-notes__label:not(:last-of-type) {
+  border-right: 1px solid var(--tab-border, #000000);
+}
+.tabbed-notes__label-top {
+  display: block;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.tabbed-notes__label-bottom {
+  display: block;
+  line-height: 1.2;
+}
+.tabbed-notes--sticky .tabbed-notes__wrap {
+  border-bottom: none;
+  gap: 6px;
+}
+.tabbed-notes--sticky .tabbed-notes__label {
+  border: 1px solid var(--tab-border, #000000);
+  border-radius: 10px 10px 4px 4px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
+}
+.tabbed-notes--sticky .tabbed-notes__label:not(:last-of-type) {
+  border-right: none;
+}
+.tabbed-notes--underline .tabbed-notes__wrap {
+  gap: 12px;
+  border-bottom: 1px solid var(--tab-border, #000000);
+}
+.tabbed-notes--underline .tabbed-notes__label {
+  background: transparent;
+  border-radius: 0;
+  padding: 8px 4px;
+}
+.tabbed-notes--underline .tabbed-notes__label:not(:last-of-type) {
+  border-right: none;
+}
+.tabbed-notes--underline .tabbed-notes__switch:checked + .tabbed-notes__label {
+  background: transparent;
+  color: var(--tab-active-bg, #000000);
+  box-shadow: inset 0 -2px 0 var(--tab-active-bg, #000000);
+}
+.tabbed-notes--popout .tabbed-notes__wrap {
+  gap: 8px;
+}
+.tabbed-notes--popout .tabbed-notes__label {
+  border: 1px solid var(--tab-border, #000000);
+  border-bottom: 1px solid var(--tab-border, #000000);
+  border-radius: 14px 14px 0 0;
+}
+.tabbed-notes--popout .tabbed-notes__label:not(:last-of-type) {
+  border-right: none;
+}
+.tabbed-notes--popout .tabbed-notes__switch:checked + .tabbed-notes__label {
+  border-bottom-color: var(--tab-content-bg, #ffffff);
+  margin-bottom: -1px;
+}
+.tabbed-notes--popout .tabbed-notes__switch:checked + .tabbed-notes__label::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  transform: translateX(-50%);
+  border-width: 8px 8px 0;
+  border-style: solid;
+  border-color: var(--tab-active-bg, #000000) transparent transparent;
+}
+.tabbed-notes__content {
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+.tabbed-notes__switch:checked + .tabbed-notes__label {
+  color: var(--tab-active-text, #ffffff);
+  background-color: var(--tab-active-bg, #000000);
+}
+.tabbed-notes__switch:checked + .tabbed-notes__label + .tabbed-notes__content {
+  height: auto;
+  overflow: auto;
+  opacity: 1;
+  transition: 0.5s opacity;
+}
+.tabbed-notes__switch {
+  display: none;
+}
+.tabbed-notes__panel {
+  background-color: var(--tab-content-bg, #ffffff);
+  border: 1px solid var(--tab-content-border, #000000);
+  border-radius: 0;
+  padding: 0 36px 36px;
+}
+.tabbed-notes__intro {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 14px;
+}
+.tabbed-notes__list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+}
+.tabbed-notes__item {
+  position: relative;
+  padding-left: 1em;
+  text-indent: -1em;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.tabbed-notes__item + .tabbed-notes__item {
+  margin-top: 6px;
+}
+.tabbed-notes__item.is-disc::before {
+  content: "・";
+}
+.tabbed-notes__item.is-accent {
+  color: var(--tab-accent, #eb5505);
+}
+.tabbed-notes__item.is-bold {
+  font-weight: 700;
+}
+.tabbed-notes__sublist {
+  margin-top: 6px;
+  padding-left: 1em;
+  list-style: none;
+}
+.tabbed-notes__sublist li {
+  padding-left: 1em;
+  text-indent: -1em;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.tabbed-notes__footnote {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+.tabbed-notes__cta {
+  margin-top: 18px;
+  text-align: center;
+}
+.tabbed-notes__cta-text {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.tabbed-notes__cta-link {
+  color: var(--tab-accent, #eb5505);
+  text-decoration: underline;
+  font-weight: 700;
+}
+.tabbed-notes__cta-image {
+  display: block;
+  margin: 12px auto 0;
+  max-width: 65%;
+}
+.tabbed-notes__cta-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tabbed-notes__button {
+  margin-top: 16px;
+  text-align: center;
+}
+.tabbed-notes__button-link {
+  display: inline-block;
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: var(--tab-active-bg, #000000);
+  color: var(--tab-active-text, #ffffff);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 14px;
+}
 @media (max-width: 640px) {
   .ranking-table__date {
     font-size: 16px;
@@ -1831,6 +2647,9 @@ ul {
   .payment-guide__body,
   .payment-guide__alert {
     font-size: 12px;
+  }
+  .excluded-wrap {
+    font-size: 0.9em;
   }
 }
 .note {
