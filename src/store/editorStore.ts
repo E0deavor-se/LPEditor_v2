@@ -1406,7 +1406,7 @@ const normalizeSection = (section: SectionBase): SectionBase => {
       : styleWithFullWidth;
   return {
     ...section,
-    visible: isBrandBar ? true : section.visible ?? true,
+    visible: section.visible ?? true,
     locked: false,
     data:
       section.type === "campaignOverview"

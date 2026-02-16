@@ -32,8 +32,8 @@ const SectionTypeLabels: Record<string, string> = {
   footerHtml: "問い合わせ",
   rankingTable: "ランキング表",
   paymentHistoryGuide: "決済利用方法",
-  excludedStoresList: "対象外店舗一覧",
-  excludedBrandsList: "対象外ブランド一覧",
+  excludedStoresList: "対象外店舗セクション",
+  excludedBrandsList: "対象外ブランドセクション",
   tabbedNotes: "付箋タブセクション",
 };
 

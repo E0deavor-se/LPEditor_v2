@@ -1,12 +1,14 @@
 "use client";
 
-import { Image } from "lucide-react";
+import { Image, UploadCloud } from "lucide-react";
+import { useRef } from "react";
 import Accordion from "@/src/components/editor/right/primitives/Accordion";
 import ColorField from "@/src/components/editor/right/primitives/ColorField";
 import FieldRow from "@/src/components/editor/right/primitives/FieldRow";
 import NumberField from "@/src/components/editor/right/primitives/NumberField";
 import SegmentedField from "@/src/components/editor/right/primitives/SegmentedField";
 import SelectField from "@/src/components/editor/right/primitives/SelectField";
+import ToggleField from "@/src/components/editor/right/primitives/ToggleField";
 import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
 import {
   BACKGROUND_PRESET_OPTIONS,
@@ -26,6 +28,7 @@ type PageStyleBackgroundProps = {
   spec?: BackgroundSpec;
   onChange: (spec: BackgroundSpec) => void;
   resolveAssetUrl?: (assetId: string) => string | undefined;
+  onAddAsset?: (payload: { filename: string; data: string }) => string;
   defaultOpen?: boolean;
 };
 
@@ -85,6 +88,12 @@ const ensureImage = (spec?: BackgroundSpec): ImageSpec =>
         position: "center",
         attachment: "scroll",
         opacity: 1,
+        blur: 0,
+        brightness: 1,
+        saturation: 1,
+        overlayColor: "#000000",
+        overlayOpacity: 0,
+        overlayBlendMode: "normal",
       };
 
 const ensureVideo = (spec?: BackgroundSpec): VideoSpec =>
@@ -93,6 +102,14 @@ const ensureVideo = (spec?: BackgroundSpec): VideoSpec =>
     : {
         type: "video",
         assetId: "",
+        opacity: 1,
+        blur: 0,
+        brightness: 1,
+        saturation: 1,
+        autoPlay: true,
+        loop: true,
+        muted: true,
+        playsInline: true,
       };
 
 const ensurePreset = (spec?: BackgroundSpec): PresetSpec =>
@@ -114,8 +131,11 @@ export default function PageStyleBackground({
   spec,
   onChange,
   resolveAssetUrl,
+  onAddAsset,
   defaultOpen,
 }: PageStyleBackgroundProps) {
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const currentSpec = spec ?? ensureSolid();
   const backgroundType = currentSpec.type;
   const previewStyle = buildBackgroundStyle(currentSpec, {
@@ -315,16 +335,178 @@ export default function PageStyleBackground({
           </>
         ) : null}
         {backgroundType === "video" ? (
-          <FieldRow label="オーバーレイ">
-            <ColorField
-              value={ensureVideo(spec).overlayColor ?? "#000000"}
-              ariaLabel="動画オーバーレイ"
-              onChange={(next) => {
-                const video = ensureVideo(spec);
-                onChange({ ...video, overlayColor: next });
-              }}
-            />
-          </FieldRow>
+          <div className="flex flex-col gap-2">
+            <Accordion title="動画" defaultOpen>
+              <div className="flex flex-col gap-2">
+                <FieldRow label="ファイル">
+                  <div className="flex w-full items-center gap-2">
+                    <button
+                      type="button"
+                      className="ui-button h-7 px-2 text-[11px]"
+                      onClick={() => videoInputRef.current?.click()}
+                      disabled={!onAddAsset}
+                    >
+                      <UploadCloud size={12} />
+                      <span>アップ</span>
+                    </button>
+                    {ensureVideo(spec).assetId ? (
+                      <button
+                        type="button"
+                        className="ui-button h-7 px-2 text-[11px]"
+                        onClick={() => {
+                          const video = ensureVideo(spec);
+                          onChange({ ...video, assetId: "" });
+                        }}
+                      >
+                        解除
+                      </button>
+                    ) : null}
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file || !onAddAsset) {
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const data = typeof reader.result === "string" ? reader.result : "";
+                          if (!data) {
+                            return;
+                          }
+                          const assetId = onAddAsset({
+                            filename: file.name,
+                            data,
+                          });
+                          const video = ensureVideo(spec);
+                          onChange({ ...video, assetId });
+                        };
+                        reader.readAsDataURL(file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </div>
+                </FieldRow>
+              </div>
+            </Accordion>
+            <Accordion title="色調整">
+              <div className="flex flex-col gap-2">
+                <FieldRow label="透過">
+                  <NumberField
+                    value={ensureVideo(spec).opacity ?? 1}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    ariaLabel="動画透明度"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, opacity: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="ぼかし">
+                  <NumberField
+                    value={ensureVideo(spec).blur ?? 0}
+                    min={0}
+                    max={40}
+                    step={1}
+                    ariaLabel="動画ぼかし"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, blur: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="明るさ">
+                  <NumberField
+                    value={ensureVideo(spec).brightness ?? 1}
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    ariaLabel="動画明るさ"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, brightness: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="彩度">
+                  <NumberField
+                    value={ensureVideo(spec).saturation ?? 1}
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    ariaLabel="動画彩度"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, saturation: next });
+                    }}
+                  />
+                </FieldRow>
+              </div>
+            </Accordion>
+            <Accordion title="オーバーレイ">
+              <div className="flex flex-col gap-2">
+                <FieldRow label="色">
+                  <ColorField
+                    value={ensureVideo(spec).overlayColor ?? "#000000"}
+                    ariaLabel="動画オーバーレイ"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, overlayColor: next });
+                    }}
+                  />
+                </FieldRow>
+              </div>
+            </Accordion>
+            <Accordion title="再生">
+              <div className="flex flex-col gap-2">
+                <FieldRow label="自動">
+                  <ToggleField
+                    value={ensureVideo(spec).autoPlay ?? true}
+                    ariaLabel="自動再生"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, autoPlay: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="ループ">
+                  <ToggleField
+                    value={ensureVideo(spec).loop ?? true}
+                    ariaLabel="ループ"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, loop: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="ミュート">
+                  <ToggleField
+                    value={ensureVideo(spec).muted ?? true}
+                    ariaLabel="ミュート"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, muted: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="インライン">
+                  <ToggleField
+                    value={ensureVideo(spec).playsInline ?? true}
+                    ariaLabel="インライン"
+                    onChange={(next) => {
+                      const video = ensureVideo(spec);
+                      onChange({ ...video, playsInline: next });
+                    }}
+                  />
+                </FieldRow>
+              </div>
+            </Accordion>
+          </div>
         ) : null}
         {backgroundType === "preset" ? (
           <FieldRow label="プリセットID">
@@ -346,13 +528,236 @@ export default function PageStyleBackground({
           </FieldRow>
         ) : null}
         {backgroundType === "image" ? (
-          <div className="text-[11px] text-[var(--ui-muted)]">
-            URLはAdvancedで設定します。
+          <div className="flex flex-col gap-2">
+            <Accordion title="画像" defaultOpen>
+              <div className="flex flex-col gap-2">
+                <FieldRow label="ファイル">
+                  <div className="flex w-full items-center gap-2">
+                    <button
+                      type="button"
+                      className="ui-button h-7 px-2 text-[11px]"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={!onAddAsset}
+                    >
+                      <UploadCloud size={12} />
+                      <span>アップ</span>
+                    </button>
+                    {ensureImage(spec).assetId ? (
+                      <button
+                        type="button"
+                        className="ui-button h-7 px-2 text-[11px]"
+                        onClick={() => {
+                          const image = ensureImage(spec);
+                          onChange({ ...image, assetId: "" });
+                        }}
+                      >
+                        解除
+                      </button>
+                    ) : null}
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file || !onAddAsset) {
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const data = typeof reader.result === "string" ? reader.result : "";
+                          if (!data) {
+                            return;
+                          }
+                          const assetId = onAddAsset({
+                            filename: file.name,
+                            data,
+                          });
+                          const image = ensureImage(spec);
+                          onChange({ ...image, assetId });
+                        };
+                        reader.readAsDataURL(file);
+                        event.target.value = "";
+                      }}
+                    />
+                  </div>
+                </FieldRow>
+              </div>
+            </Accordion>
+            <Accordion title="表示" defaultOpen>
+              <div className="flex flex-col gap-2">
+                <FieldRow label="サイズ">
+                  <SegmentedField
+                    value={ensureImage(spec).size}
+                    ariaLabel="画像サイズ"
+                    options={[
+                      { value: "cover", label: "フル" },
+                      { value: "contain", label: "フィット" },
+                      { value: "100% 100%", label: "伸縮" },
+                      { value: "auto", label: "実寸" },
+                    ]}
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, size: String(next) });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="位置">
+                  <SelectField
+                    value={ensureImage(spec).position}
+                    ariaLabel="画像位置"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, position: String(next) });
+                    }}
+                  >
+                    <option value="center">中央</option>
+                    <option value="top">上</option>
+                    <option value="bottom">下</option>
+                    <option value="left">左</option>
+                    <option value="right">右</option>
+                    <option value="center top">中央上</option>
+                    <option value="center bottom">中央下</option>
+                  </SelectField>
+                </FieldRow>
+                <FieldRow label="繰返">
+                  <SelectField
+                    value={ensureImage(spec).repeat}
+                    ariaLabel="画像繰り返し"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, repeat: String(next) });
+                    }}
+                  >
+                    <option value="no-repeat">なし</option>
+                    <option value="repeat">あり</option>
+                    <option value="repeat-x">横</option>
+                    <option value="repeat-y">縦</option>
+                  </SelectField>
+                </FieldRow>
+                <FieldRow label="固定">
+                  <SegmentedField
+                    value={ensureImage(spec).attachment}
+                    ariaLabel="画像固定"
+                    options={[
+                      { value: "scroll", label: "スク" },
+                      { value: "fixed", label: "固定" },
+                    ]}
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, attachment: String(next) });
+                    }}
+                  />
+                </FieldRow>
+              </div>
+            </Accordion>
+            <Accordion title="色調整">
+              <div className="flex flex-col gap-2">
+                <FieldRow label="透過">
+                  <NumberField
+                    value={ensureImage(spec).opacity ?? 1}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    ariaLabel="透明度"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, opacity: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="ぼかし">
+                  <NumberField
+                    value={ensureImage(spec).blur ?? 0}
+                    min={0}
+                    max={40}
+                    step={1}
+                    ariaLabel="ぼかし"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, blur: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="明るさ">
+                  <NumberField
+                    value={ensureImage(spec).brightness ?? 1}
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    ariaLabel="明るさ"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, brightness: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="彩度">
+                  <NumberField
+                    value={ensureImage(spec).saturation ?? 1}
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    ariaLabel="彩度"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, saturation: next });
+                    }}
+                  />
+                </FieldRow>
+              </div>
+            </Accordion>
+            <Accordion title="オーバーレイ">
+              <div className="flex flex-col gap-2">
+                <FieldRow label="色">
+                  <ColorField
+                    value={ensureImage(spec).overlayColor ?? "#000000"}
+                    ariaLabel="色被せ"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, overlayColor: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="濃さ">
+                  <NumberField
+                    value={ensureImage(spec).overlayOpacity ?? 0}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    ariaLabel="色被せ濃さ"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({ ...image, overlayOpacity: next });
+                    }}
+                  />
+                </FieldRow>
+                <FieldRow label="合成">
+                  <SelectField
+                    value={ensureImage(spec).overlayBlendMode ?? "normal"}
+                    ariaLabel="色被せ合成"
+                    onChange={(next) => {
+                      const image = ensureImage(spec);
+                      onChange({
+                        ...image,
+                        overlayBlendMode: next as ImageSpec["overlayBlendMode"],
+                      });
+                    }}
+                  >
+                    <option value="normal">通常</option>
+                    <option value="multiply">乗算</option>
+                    <option value="screen">スクリーン</option>
+                    <option value="overlay">オーバーレイ</option>
+                  </SelectField>
+                </FieldRow>
+              </div>
+            </Accordion>
           </div>
         ) : null}
         {backgroundType === "video" ? (
           <div className="text-[11px] text-[var(--ui-muted)]">
-            URLはAdvancedで設定します。
+            URL入力もAdvancedで設定できます。
           </div>
         ) : null}
         <div className="mt-1 flex justify-end">

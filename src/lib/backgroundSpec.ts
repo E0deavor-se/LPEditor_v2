@@ -21,10 +21,42 @@ const DEFAULT_IMAGE_SIZE = "cover";
 const DEFAULT_IMAGE_POSITION = "center";
 const DEFAULT_IMAGE_ATTACHMENT = "scroll";
 const DEFAULT_IMAGE_OPACITY = 1;
+const DEFAULT_IMAGE_BLUR = 0;
+const DEFAULT_IMAGE_BRIGHTNESS = 1;
+const DEFAULT_IMAGE_SATURATION = 1;
+const DEFAULT_IMAGE_OVERLAY_OPACITY = 0;
 const MAX_LAYER_COUNT = 5;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+
+const hexToRgb = (value: string) => {
+  const hex = value.replace("#", "").trim();
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(hex)) {
+    return null;
+  }
+  const normalized =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : hex;
+  const int = Number.parseInt(normalized, 16);
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255,
+  };
+};
+
+const toRgba = (color: string, opacity: number) => {
+  const rgb = hexToRgb(color);
+  if (!rgb) {
+    return color;
+  }
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
+};
 
 const normalizeStopPos = (pos: number) => {
   if (!Number.isFinite(pos)) {
@@ -80,6 +112,30 @@ const normalizeSpec = (
           typeof spec.opacity === "number"
             ? clamp(spec.opacity, 0, 1)
             : DEFAULT_IMAGE_OPACITY,
+        blur:
+          typeof spec.blur === "number"
+            ? clamp(spec.blur, 0, 40)
+            : DEFAULT_IMAGE_BLUR,
+        brightness:
+          typeof spec.brightness === "number"
+            ? clamp(spec.brightness, 0, 2)
+            : DEFAULT_IMAGE_BRIGHTNESS,
+        saturation:
+          typeof spec.saturation === "number"
+            ? clamp(spec.saturation, 0, 2)
+            : DEFAULT_IMAGE_SATURATION,
+        overlayColor:
+          typeof spec.overlayColor === "string" ? spec.overlayColor : undefined,
+        overlayOpacity:
+          typeof spec.overlayOpacity === "number"
+            ? clamp(spec.overlayOpacity, 0, 1)
+            : DEFAULT_IMAGE_OVERLAY_OPACITY,
+        overlayBlendMode:
+          spec.overlayBlendMode === "multiply" ||
+          spec.overlayBlendMode === "screen" ||
+          spec.overlayBlendMode === "overlay"
+            ? spec.overlayBlendMode
+            : "normal",
       };
     case "video":
       return spec;
@@ -179,12 +235,61 @@ export const buildBackgroundStyle = (
     case "image": {
       const imageUrl =
         options.resolveAssetUrl?.(normalized.assetId) ?? normalized.assetId;
-      style.backgroundImage = imageUrl ? `url("${imageUrl}")` : "none";
+      const overlayOpacity =
+        typeof normalized.overlayOpacity === "number"
+          ? clamp(normalized.overlayOpacity, 0, 1)
+          : 0;
+      const overlayColor = normalized.overlayColor;
+      const hasOverlay = Boolean(overlayColor) && overlayOpacity > 0;
+      const brightness =
+        typeof normalized.brightness === "number"
+          ? clamp(normalized.brightness, 0, 2)
+          : DEFAULT_IMAGE_BRIGHTNESS;
+      const saturation =
+        typeof normalized.saturation === "number"
+          ? clamp(normalized.saturation, 0, 2)
+          : DEFAULT_IMAGE_SATURATION;
+      const opacity =
+        typeof normalized.opacity === "number"
+          ? clamp(normalized.opacity, 0, 1)
+          : DEFAULT_IMAGE_OPACITY;
+      const blur =
+        typeof normalized.blur === "number"
+          ? clamp(normalized.blur, 0, 40)
+          : DEFAULT_IMAGE_BLUR;
+      const hasFilter = brightness !== 1 || saturation !== 1 || opacity !== 1 || blur > 0;
+      if (imageUrl) {
+        if (hasOverlay) {
+          const overlay = toRgba(overlayColor as string, overlayOpacity);
+          style.backgroundImage = `linear-gradient(${overlay}, ${overlay}), url("${imageUrl}")`;
+          style.backgroundBlendMode =
+            normalized.overlayBlendMode && normalized.overlayBlendMode !== "normal"
+              ? normalized.overlayBlendMode
+              : "normal";
+        } else {
+          style.backgroundImage = `url("${imageUrl}")`;
+        }
+      } else {
+        style.backgroundImage = "none";
+      }
       style.backgroundRepeat = normalized.repeat;
       style.backgroundSize = normalized.size;
       style.backgroundPosition = normalized.position;
       style.backgroundAttachment = normalized.attachment;
       style.backgroundColor = fallbackColor;
+      if (hasFilter) {
+        const filters = [
+          `brightness(${brightness})`,
+          `saturate(${saturation})`,
+        ];
+        if (blur > 0) {
+          filters.push(`blur(${blur}px)`);
+        }
+        if (opacity !== 1) {
+          filters.push(`opacity(${opacity})`);
+        }
+        style.filter = filters.join(" ");
+      }
       break;
     }
     case "pattern": {

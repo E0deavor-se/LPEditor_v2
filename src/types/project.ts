@@ -62,8 +62,26 @@ export type BackgroundSpec =
       position: string;
       attachment: string;
       opacity: number;
+      blur?: number;
+      brightness?: number;
+      saturation?: number;
+      overlayColor?: string;
+      overlayOpacity?: number;
+      overlayBlendMode?: "normal" | "multiply" | "screen" | "overlay";
     }
-  | { type: "video"; assetId: string; overlayColor?: string }
+  | {
+      type: "video";
+      assetId: string;
+      overlayColor?: string;
+      opacity?: number;
+      blur?: number;
+      brightness?: number;
+      saturation?: number;
+      autoPlay?: boolean;
+      loop?: boolean;
+      muted?: boolean;
+      playsInline?: boolean;
+    }
   | { type: "preset"; presetId: string; overrides?: Partial<BackgroundSpec> };
 
 export type SectionBackground = {

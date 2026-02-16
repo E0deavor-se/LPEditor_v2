@@ -2363,6 +2363,7 @@ export default function InspectorPanel() {
                       spec={activeBackgroundSpec}
                       onChange={applyBackgroundSpec}
                       resolveAssetUrl={(assetId) => assets?.[assetId]?.data}
+                      onAddAsset={addAsset}
                     />
                     <PageStyleColors
                       value={pageStyle.colors}

@@ -2326,6 +2326,27 @@ const renderSection = (
       const mvVideoUrl = mvVideo?.assetId
         ? assets?.[mvVideo.assetId]?.data || ""
         : "";
+      const mvAutoPlay = mvVideo?.autoPlay ?? true;
+      const mvLoop = mvVideo?.loop ?? true;
+      const mvMuted = mvVideo?.muted ?? true;
+      const mvInline = mvVideo?.playsInline ?? true;
+      const mvOpacity =
+        typeof mvVideo?.opacity === "number" ? mvVideo.opacity : 1;
+      const mvBlur = typeof mvVideo?.blur === "number" ? mvVideo.blur : 0;
+      const mvBrightness =
+        typeof mvVideo?.brightness === "number" ? mvVideo.brightness : 1;
+      const mvSaturation =
+        typeof mvVideo?.saturation === "number" ? mvVideo.saturation : 1;
+      const mvFilters = [
+        `brightness(${mvBrightness})`,
+        `saturate(${mvSaturation})`,
+      ];
+      if (mvBlur > 0) {
+        mvFilters.push(`blur(${mvBlur}px)`);
+      }
+      if (mvOpacity !== 1) {
+        mvFilters.push(`opacity(${mvOpacity})`);
+      }
       return (
         <div className="lp-hero relative overflow-hidden">
           <div
@@ -2336,10 +2357,11 @@ const renderSection = (
               <video
                 className="h-full w-full object-cover"
                 src={mvVideoUrl}
-                autoPlay
-                muted
-                loop
-                playsInline
+                autoPlay={mvAutoPlay}
+                muted={mvMuted}
+                loop={mvLoop}
+                playsInline={mvInline}
+                style={{ filter: mvFilters.join(" ") }}
               />
             ) : null}
           </div>
@@ -3249,12 +3271,21 @@ export default function PreviewSsr({
   const allSections = project?.sections ?? [];
   const visibleSections = allSections.filter((section) => section.visible);
   const orderedSections = visibleSections;
-  const hasBrandBar = visibleSections.some(
-    (section) => section.type === "brandBar"
+  const firstSection = orderedSections[0];
+  const isFirstFullBleed = Boolean(
+    firstSection &&
+      (firstSection.type === "brandBar" ||
+        firstSection.type === "heroImage" ||
+        firstSection.type === "campaignPeriodBar" ||
+        firstSection.type === "footerHtml" ||
+        firstSection.type === "excludedStoresList" ||
+        firstSection.type === "excludedBrandsList" ||
+        firstSection.type === "tabbedNotes" ||
+        Boolean(firstSection.data?.footerAssets))
   );
   const isFooterLast =
     orderedSections[orderedSections.length - 1]?.type === "footerHtml";
-  const topPaddingClass = hasBrandBar ? "pt-0" : "pt-12";
+  const topPaddingClass = isFirstFullBleed ? "pt-0" : "pt-12";
   const bottomPaddingClass = isFooterLast ? "pb-0" : "pb-12";
   const fontScale =
     typeof ui?.fontScale === "number" && Number.isFinite(ui.fontScale)
@@ -3262,21 +3293,59 @@ export default function PreviewSsr({
       : 1;
 
   const previewRootStyle: CSSProperties & Record<string, string> = {
-    ...pageBackground.style,
     "--lp-font-scale": String(fontScale),
   };
+  const pageBackgroundStyle = pageBackground.style as CSSProperties;
+  const pageVideo = pageBackground.video;
+  const pageVideoUrl = pageVideo?.assetId
+    ? assets?.[pageVideo.assetId]?.data || ""
+    : "";
+  const pageAutoPlay = pageVideo?.autoPlay ?? true;
+  const pageLoop = pageVideo?.loop ?? true;
+  const pageMuted = pageVideo?.muted ?? true;
+  const pageInline = pageVideo?.playsInline ?? true;
+  const pageOpacity =
+    typeof pageVideo?.opacity === "number" ? pageVideo.opacity : 1;
+  const pageBlur = typeof pageVideo?.blur === "number" ? pageVideo.blur : 0;
+  const pageBrightness =
+    typeof pageVideo?.brightness === "number" ? pageVideo.brightness : 1;
+  const pageSaturation =
+    typeof pageVideo?.saturation === "number" ? pageVideo.saturation : 1;
+  const pageFilters = [
+    `brightness(${pageBrightness})`,
+    `saturate(${pageSaturation})`,
+  ];
+  if (pageBlur > 0) {
+    pageFilters.push(`blur(${pageBlur}px)`);
+  }
+  if (pageOpacity !== 1) {
+    pageFilters.push(`opacity(${pageOpacity})`);
+  }
 
   return (
     <div
       id="__lp_root__"
       data-export="1"
-      className="min-h-screen lp-preview-bg text-[var(--lp-text)]"
+      className="relative min-h-screen lp-preview-bg text-[var(--lp-text)]"
       style={previewRootStyle}
     >
       <style dangerouslySetInnerHTML={{ __html: animationStyleSheet }} />
+      <div className="absolute inset-0 pointer-events-none" style={pageBackgroundStyle}>
+        {pageVideo && pageVideoUrl ? (
+          <video
+            className="h-full w-full object-cover"
+            src={pageVideoUrl}
+            autoPlay={pageAutoPlay}
+            muted={pageMuted}
+            loop={pageLoop}
+            playsInline={pageInline}
+            style={{ filter: pageFilters.join(" ") }}
+          />
+        ) : null}
+      </div>
       <main
         className={
-          "flex min-h-screen w-full flex-col gap-0 " +
+          "relative z-10 flex min-h-screen w-full flex-col gap-0 " +
           topPaddingClass +
           " " +
           bottomPaddingClass

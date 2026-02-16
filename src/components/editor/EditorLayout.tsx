@@ -75,14 +75,14 @@ const TEMPLATE_OPTIONS: TemplateOption[] = [
 		title: "対象外店舗一覧",
 		description: "対象外店舗の一覧ページ",
 		templateType: "target",
-		sectionOrder: ["excludedStoresList"],
+		sectionOrder: ["brandBar", "excludedStoresList"],
 	},
 	{
 		id: "excluded-brands",
 		title: "対象外ブランド一覧",
 		description: "対象外ブランドの一覧ページ",
 		templateType: "target",
-		sectionOrder: ["excludedBrandsList"],
+		sectionOrder: ["brandBar", "excludedBrandsList"],
 	},
 ];
 
@@ -102,7 +102,7 @@ export default function EditorLayout() {
 	const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
 	const setPageBackground = useEditorStore((state) => state.setPageBackground);
 	const projectRef = useRef(project);
-	const showLeftPanel = project.meta.templateType !== "target";
+	const showLeftPanel = true;
 	const lastSavedVersionRef = useRef<string | undefined>(
 		project.meta.updatedAt
 	);

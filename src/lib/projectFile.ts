@@ -69,11 +69,10 @@ const sanitizeFilename = (value: string) =>
     .toLowerCase();
 
 const normalizeSection = (section: Partial<SectionBase>, index: number): SectionBase => {
-  const isBrandBar = section.type === "brandBar";
   const base: SectionBase = {
     id: section.id ?? `sec_${section.type ?? "section"}_${index}`,
     type: section.type ?? "section",
-    visible: isBrandBar ? true : section.visible ?? true,
+    visible: section.visible ?? true,
     locked: false,
     data: typeof section.data === "object" && section.data ? { ...section.data } : {},
     content:
