@@ -2407,6 +2407,9 @@ export default function InspectorPanel() {
                       DEFAULT_SECTION_CARD_STYLE
                     }
                     showSectionDesign={!isInquiry}
+                    showPeriodBarHeight={
+                      selectedSection.type === "campaignPeriodBar"
+                    }
                     hideGradient={isTabbedNotes}
                     hideTitleBand={isTabbedNotes}
                     surfaceExtras={

@@ -163,6 +163,7 @@ export type SectionStyle = {
     align: "left" | "center";
     radius: number;
     fullWidth: boolean;
+    minHeight: number;
   };
   customCss?: string;
 };

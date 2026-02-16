@@ -366,6 +366,7 @@ const DEFAULT_SECTION_STYLE: SectionStyle = {
     align: "center",
     radius: 0,
     fullWidth: false,
+    minHeight: 0,
   },
   customCss: "",
 };
@@ -470,6 +471,10 @@ const normalizeSectionStyle = (
         typeof layout.fullWidth === "boolean"
           ? layout.fullWidth
           : DEFAULT_SECTION_STYLE.layout.fullWidth,
+      minHeight: coerceNumber(
+        (layout as SectionStyle["layout"]).minHeight,
+        DEFAULT_SECTION_STYLE.layout.minHeight
+      ),
     },
     customCss: typeof style?.customCss === "string" ? style.customCss : "",
   };

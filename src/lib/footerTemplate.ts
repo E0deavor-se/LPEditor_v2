@@ -791,6 +791,12 @@ ${FOOTER_TEMPLATE_CSS}
       </div>
     </div>
 
+    {{footerLogoSection}}
+  </footer>
+</div>
+`;
+
+const FOOTER_LOGO_SECTION = `
     <div class="footer-logo">
       <p class="footer-logo__img">
         <img
@@ -801,8 +807,6 @@ ${FOOTER_TEMPLATE_CSS}
         >
       </p>
     </div>
-  </footer>
-</div>
 `;
 
 const resolveAsset = (
@@ -837,9 +841,12 @@ const resolveBgValue = (
 export const buildFooterHtml = (
   assets: AssetMap | undefined,
   footerAssets: FooterAssets | undefined,
-  options?: { brandBarAssetId?: string }
+  options?: { brandBarAssetId?: string; hideFooterLogo?: boolean }
 ) => {
   let html = FOOTER_TEMPLATE_HTML;
+  const footerLogoSection = options?.hideFooterLogo ? "" : FOOTER_LOGO_SECTION;
+
+  html = html.replaceAll("{{footerLogoSection}}", footerLogoSection);
 
   FOOTER_ASSET_KEYS.forEach((key) => {
     const linkedAssetId =

@@ -2473,6 +2473,16 @@ const renderSection = (
         width: "100%",
         display: "flex",
         alignItems: "center",
+        minHeight:
+          Number.isFinite(section.style.layout.minHeight) &&
+          section.style.layout.minHeight > 0
+            ? `${section.style.layout.minHeight}px`
+            : undefined,
+        height:
+          Number.isFinite(section.style.layout.minHeight) &&
+          section.style.layout.minHeight > 0
+            ? `${section.style.layout.minHeight}px`
+            : undefined,
         "--lp-periodbar-bg": bandColor,
         "--lp-periodbar-band": bandColor,
         "--lp-periodbar-text": textColor,
@@ -3218,9 +3228,11 @@ const renderSection = (
         </section>
       );
     case "footerHtml":
-      const brandBarAssetId = project?.sections?.find(
-        (entry) => entry.type === "brandBar"
-      )?.data?.brandImageAssetId as string | undefined;
+      const brandBarSection = project?.sections?.find(
+        (entry) => entry.type === "brandBar" && entry.visible
+      );
+      const brandBarAssetId = brandBarSection?.data
+        ?.brandImageAssetId as string | undefined;
       return (
         <section
           className="w-full"
@@ -3233,7 +3245,7 @@ const renderSection = (
                 section.data?.footerAssets as
                   | Record<string, string | undefined>
                   | undefined,
-                { brandBarAssetId }
+                { brandBarAssetId, hideFooterLogo: !brandBarSection }
               ),
             }}
           />

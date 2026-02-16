@@ -22,6 +22,7 @@ type SectionStylePanelProps = {
   style: SectionStyle;
   cardStyle: SectionCardStyle;
   showSectionDesign?: boolean;
+  showPeriodBarHeight?: boolean;
   surfaceExtras?: ReactNode;
   hideGradient?: boolean;
   hideTitleBand?: boolean;
@@ -36,6 +37,7 @@ export default function SectionStylePanel({
   style,
   cardStyle,
   showSectionDesign = true,
+  showPeriodBarHeight = false,
   surfaceExtras,
   hideGradient = false,
   hideTitleBand = false,
@@ -294,6 +296,20 @@ export default function SectionStylePanel({
             onChange={(next) => onStyleChange({ layout: { radius: next } })}
           />
         </FieldRow>
+        {showPeriodBarHeight ? (
+          <FieldRow label="期間バー高さ">
+            <NumberField
+              value={style.layout.minHeight}
+              min={0}
+              max={200}
+              step={2}
+              ariaLabel="期間バー高さ"
+              onChange={(next) =>
+                onStyleChange({ layout: { minHeight: next } })
+              }
+            />
+          </FieldRow>
+        ) : null}
         <FieldRow label={t.inspector.section.fields.paddingTop}>
           <NumberField
             value={style.layout.padding.t}

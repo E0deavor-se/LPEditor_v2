@@ -954,7 +954,8 @@ body {
   width: 100%;
   margin: 0;
   padding: 0;
-  height: 48px;
+  height: auto;
+  min-height: 48px;
   border-radius: 0;
   background: var(--lp-periodbar-bg, #EB5505);
   color: var(--lp-periodbar-text, #ffffff);
@@ -1078,7 +1079,7 @@ body {
 
 @media (max-width: 640px) {
   .lp-periodbar {
-    height: 44px;
+    min-height: 44px;
   }
   .lp-periodbar__label {
     font-size: 12px;
@@ -1095,7 +1096,7 @@ body {
 
 @media (max-width: 480px) {
   .lp-periodbar {
-    height: 52px;
+    min-height: 52px;
   }
   .lp-periodbar__center {
     flex-direction: column;
