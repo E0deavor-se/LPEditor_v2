@@ -66,6 +66,7 @@ const createDefaultStyle = (): SectionStyle => ({
     align: "center",
     radius: 12,
     fullWidth: false,
+    minHeight: 0,
   },
 });
 
