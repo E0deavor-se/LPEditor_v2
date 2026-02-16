@@ -347,7 +347,7 @@ export default function InspectorPanel() {
       setMvBackground(spec);
     }
   };
-  const isSection = selected.kind === "section" && selectedSection;
+  const isSection = selected.kind === "section" && Boolean(selectedSection);
   const isSimpleMode = uiMode === "simple";
   const isLocked = Boolean(selectedSection?.locked);
   const isVisible = Boolean(selectedSection?.visible ?? true);
