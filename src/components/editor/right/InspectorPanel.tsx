@@ -2504,7 +2504,7 @@ export default function InspectorPanel() {
                       </>
                     ) : null}
                   </>
-                ) : isSection ? (
+                ) : selectedSection ? (
                   isSimpleMode ? (
                     <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[12px] text-[var(--ui-muted)]">
                       スタイル編集は「内容」タブのクイック設定で行えます。
