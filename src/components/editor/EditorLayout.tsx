@@ -12,6 +12,7 @@ import {
 	TEMPLATE_OPTIONS,
 	TEMPLATE_STORAGE_KEY,
 } from "@/src/lib/templateOptions";
+import type { TemplateOption } from "@/src/lib/templateOptions";
 
 const RIGHT_PANEL_WIDTH = 360;
 const UI_MODE_STORAGE_KEY = "lp-editor.uiMode";
