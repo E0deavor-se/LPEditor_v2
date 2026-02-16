@@ -174,25 +174,25 @@ export default function Home() {
           <section className="space-y-8">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-                Workspace Access / ワークスペース
+                Workspace Access / ワークスペースアクセス
               </p>
               <h1 className="mt-4 text-4xl font-semibold leading-tight sm:text-5xl">
                 LP Editor
               </h1>
               <p className="mt-4 max-w-xl text-base text-slate-600">
-                進行中のLP制作をこの端末で引き継ぎます。 / Resume your
-                landing page production with a focused, minimal workflow.
+                進行中のLP制作をこの端末で引き継ぎます。 / Resume your landing
+                page production with a focused, minimal workflow.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {[
                 {
                   title: "Auto Resume",
-                  body: "最後の作業をすぐ再開 / Pick up where you left off.",
+                  body: "前回の作業をそのまま再開 / Pick up where you left off.",
                 },
                 {
                   title: "Guided Layouts",
-                  body: "テンプレから最短で開始 / Start from curated layouts.",
+                  body: "テンプレートからすぐ開始 / Start from curated layouts.",
                 },
                 {
                   title: "Focused Editing",
@@ -227,7 +227,7 @@ export default function Home() {
                 </p>
                 <h2 className="text-2xl font-semibold">Continue editing</h2>
                 <p className="text-sm text-slate-600">
-                  アカウントでログインして作業を再開。
+                  アカウントでログインして作業を再開します。
                 </p>
               </div>
               <div className="mt-6 space-y-4">
@@ -290,7 +290,7 @@ export default function Home() {
                   type="submit"
                   disabled={!isFormValid}
                 >
-                  Sign in
+                  ログイン
                 </button>
                 <button
                   className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-500 hover:bg-slate-100"
@@ -300,11 +300,11 @@ export default function Home() {
                     setPassword("demo-password");
                   }}
                 >
-                  Quick demo login / デモで入る
+                  Quick demo login / デモでログイン
                 </button>
               </div>
               <div className="mt-6 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <span>Need help? / ヘルプが必要ですか</span>
+                <span>Need help? / お困りですか</span>
                 <div className="flex items-center gap-3">
                   <a className="transition hover:text-slate-900" href="#">
                     サポート
@@ -327,11 +327,13 @@ export default function Home() {
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center gap-12 px-6 py-16">
           <header>
             <p className="text-sm uppercase tracking-[0.2em] text-slate-500">
-              First Launch
+              First Launch / 初回起動
             </p>
-            <h1 className="mt-3 text-4xl font-semibold">Choose a template</h1>
+            <h1 className="mt-3 text-4xl font-semibold">
+              Choose a template / テンプレートを選択
+            </h1>
             <p className="mt-3 text-base text-slate-600">
-              Start from a curated layout and jump into editing.
+              用意されたレイアウトからすぐ編集を始められます。
             </p>
           </header>
           <div className="grid gap-4 md:grid-cols-3">
@@ -349,7 +351,7 @@ export default function Home() {
                   }`}
                 >
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                    Template
+                    Template / テンプレート
                   </p>
                   <h2 className="mt-3 text-xl font-semibold">{template.title}</h2>
                   <p className="mt-2 text-sm text-slate-600">
@@ -365,14 +367,14 @@ export default function Home() {
               type="button"
               onClick={handleTemplateStart}
             >
-              Start editing
+              編集を開始
             </button>
             <button
               className="rounded-lg border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-500 hover:bg-slate-100"
               type="button"
               onClick={handleLogout}
             >
-              Sign out
+              ログアウト
             </button>
           </div>
         </div>
@@ -391,10 +393,10 @@ export default function Home() {
         <div className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center gap-10 px-6 py-16">
           <header>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-              Welcome Back / 再開
+              Welcome Back / おかえりなさい
             </p>
             <h1 className="mt-4 text-4xl font-semibold">
-              Continue or start fresh
+              Continue or start fresh / 続きから再開
             </h1>
             <p className="mt-3 text-base text-slate-600">
               前回の続きから再開するか、テンプレートから新規に始めるかを選択できます。
@@ -407,7 +409,7 @@ export default function Home() {
               className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-left transition hover:border-slate-400"
             >
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-                Resume / 続きから
+                Resume / 前回の続き
               </p>
               <h2 className="mt-3 text-xl font-semibold">Last session</h2>
               <p className="mt-2 text-sm text-slate-600">
@@ -422,7 +424,7 @@ export default function Home() {
               className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-left transition hover:border-slate-400"
             >
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-                Templates / テンプレート
+                Templates / テンプレートから
               </p>
               <h2 className="mt-3 text-xl font-semibold">Start new</h2>
               <p className="mt-2 text-sm text-slate-600">
