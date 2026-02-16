@@ -6,7 +6,18 @@ import {
 
 export type BackgroundStyleResult = {
   style: Record<string, string>;
-  video?: { assetId: string; overlayColor?: string };
+  video?: {
+    assetId: string;
+    overlayColor?: string;
+    opacity?: number;
+    blur?: number;
+    brightness?: number;
+    saturation?: number;
+    autoPlay?: boolean;
+    loop?: boolean;
+    muted?: boolean;
+    playsInline?: boolean;
+  };
 };
 
 export type BackgroundStyleOptions = {
@@ -25,6 +36,14 @@ const DEFAULT_IMAGE_BLUR = 0;
 const DEFAULT_IMAGE_BRIGHTNESS = 1;
 const DEFAULT_IMAGE_SATURATION = 1;
 const DEFAULT_IMAGE_OVERLAY_OPACITY = 0;
+const DEFAULT_VIDEO_OPACITY = 1;
+const DEFAULT_VIDEO_BLUR = 0;
+const DEFAULT_VIDEO_BRIGHTNESS = 1;
+const DEFAULT_VIDEO_SATURATION = 1;
+const DEFAULT_VIDEO_AUTOPLAY = true;
+const DEFAULT_VIDEO_LOOP = true;
+const DEFAULT_VIDEO_MUTED = true;
+const DEFAULT_VIDEO_INLINE = true;
 const MAX_LAYER_COUNT = 5;
 
 const clamp = (value: number, min: number, max: number) =>
@@ -138,7 +157,40 @@ const normalizeSpec = (
             : "normal",
       };
     case "video":
-      return spec;
+      return {
+        type: "video",
+        assetId: spec.assetId,
+        overlayColor:
+          typeof spec.overlayColor === "string" ? spec.overlayColor : undefined,
+        opacity:
+          typeof spec.opacity === "number"
+            ? clamp(spec.opacity, 0, 1)
+            : DEFAULT_VIDEO_OPACITY,
+        blur:
+          typeof spec.blur === "number"
+            ? clamp(spec.blur, 0, 40)
+            : DEFAULT_VIDEO_BLUR,
+        brightness:
+          typeof spec.brightness === "number"
+            ? clamp(spec.brightness, 0, 2)
+            : DEFAULT_VIDEO_BRIGHTNESS,
+        saturation:
+          typeof spec.saturation === "number"
+            ? clamp(spec.saturation, 0, 2)
+            : DEFAULT_VIDEO_SATURATION,
+        autoPlay:
+          typeof spec.autoPlay === "boolean"
+            ? spec.autoPlay
+            : DEFAULT_VIDEO_AUTOPLAY,
+        loop:
+          typeof spec.loop === "boolean" ? spec.loop : DEFAULT_VIDEO_LOOP,
+        muted:
+          typeof spec.muted === "boolean" ? spec.muted : DEFAULT_VIDEO_MUTED,
+        playsInline:
+          typeof spec.playsInline === "boolean"
+            ? spec.playsInline
+            : DEFAULT_VIDEO_INLINE,
+      };
     case "pattern":
       return normalizePatternSpec(spec, fallbackColor);
     case "layers": {
@@ -349,6 +401,14 @@ export const buildBackgroundStyle = (
         video: {
           assetId: normalized.assetId,
           overlayColor: normalized.overlayColor,
+          opacity: normalized.opacity,
+          blur: normalized.blur,
+          brightness: normalized.brightness,
+          saturation: normalized.saturation,
+          autoPlay: normalized.autoPlay,
+          loop: normalized.loop,
+          muted: normalized.muted,
+          playsInline: normalized.playsInline,
         },
       };
     default:
