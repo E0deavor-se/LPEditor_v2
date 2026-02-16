@@ -21,8 +21,10 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
   const setThemeMode = useThemeStore((state) => state.setMode);
   const setSurfaceStyle = useThemeStore((state) => state.setSurfaceStyle);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [rollbackSteps, setRollbackSteps] = useState(1);
   const previewMode = useEditorStore((state) => state.previewMode);
+  const uiMode = useEditorStore((state) => state.uiMode);
   const previewAspect = useEditorStore((state) => state.previewAspect);
   const previewDesktopWidth = useEditorStore(
     (state) => state.previewDesktopWidth
@@ -74,6 +76,7 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
   const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
   const setPreviewBusy = useEditorStore((state) => state.setPreviewBusy);
   const setPreviewMode = useEditorStore((state) => state.setPreviewMode);
+  const setUiMode = useEditorStore((state) => state.setUiMode);
   const setPreviewAspect = useEditorStore((state) => state.setPreviewAspect);
   const setPreviewDesktopWidth = useEditorStore(
     (state) => state.setPreviewDesktopWidth
@@ -121,6 +124,7 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
 
   const isDesktop = previewMode === "desktop";
   const isMobile = previewMode === "mobile";
+  const isSimpleMode = uiMode === "simple";
   const isDev =
     process.env.NODE_ENV === "development" ||
     process.env.NEXT_PUBLIC_APP_ENV === "development";
@@ -167,6 +171,11 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
     { value: "より丁寧に", label: "より丁寧に" },
     { value: "親しみやすく", label: "親しみやすく" },
     { value: "訴求力を上げる", label: "訴求力を上げる" },
+  ] as const;
+
+  const uiModeOptions = [
+    { value: "simple", label: "シンプル" },
+    { value: "advanced", label: "詳細" },
   ] as const;
 
   const sanitizeFilename = (value: string) =>
@@ -272,6 +281,14 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
     return Array.from(types).sort();
   }, [project.sections]);
 
+  const handleLogout = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem("lp-editor-auth", "0");
+    window.location.href = "/";
+  };
+
   return (
     <header
       className={
@@ -316,7 +333,7 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
         >
           JSONを保存
         </button>
-        {isDev ? (
+        {!isSimpleMode && isDev ? (
           <button
             className="ui-button h-8 px-3 text-[11px]"
             type="button"
@@ -359,53 +376,57 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
       </div>
 
       <div className="flex items-center justify-end gap-2">
-        <div
-          className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
-          role="radiogroup"
-          aria-label="プレビューのアスペクト比"
-        >
-          {aspectOptions.map((option) => {
-            const isActive = previewAspect === option.value;
-            const isDisabled = isMobile;
-            return (
-              <button
-                key={option.value}
-                className={
-                  (isActive
-                    ? "ui-chip is-active h-7 px-2"
-                    : "ui-chip h-7 px-2") +
-                  (isDisabled
-                    ? " cursor-not-allowed opacity-50 shadow-none"
-                    : "")
-                }
-                type="button"
-                aria-label={`アスペクト比 ${option.label}`}
-                aria-pressed={isActive}
-                aria-disabled={isDisabled}
-                disabled={isDisabled}
-                onClick={() => setPreviewAspect(option.value)}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-        <button
-          className="ui-button h-8 px-3 text-[11px]"
-          type="button"
-          aria-label="プロジェクトJSONを読み込み"
-          onClick={handleLoadProjectJson}
-        >
-          JSONを読み込み
-        </button>
-        <button
-          className="ui-button h-8 px-3 text-[11px]"
-          type="button"
-          aria-label="ZIPを読み込み"
-          onClick={handleImportZip}
-        >
-          ZIPを読み込み
-        </button>
+        {!isSimpleMode ? (
+          <>
+            <div
+              className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
+              role="radiogroup"
+              aria-label="プレビューのアスペクト比"
+            >
+              {aspectOptions.map((option) => {
+                const isActive = previewAspect === option.value;
+                const isDisabled = isMobile;
+                return (
+                  <button
+                    key={option.value}
+                    className={
+                      (isActive
+                        ? "ui-chip is-active h-7 px-2"
+                        : "ui-chip h-7 px-2") +
+                      (isDisabled
+                        ? " cursor-not-allowed opacity-50 shadow-none"
+                        : "")
+                    }
+                    type="button"
+                    aria-label={`アスペクト比 ${option.label}`}
+                    aria-pressed={isActive}
+                    aria-disabled={isDisabled}
+                    disabled={isDisabled}
+                    onClick={() => setPreviewAspect(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className="ui-button h-8 px-3 text-[11px]"
+              type="button"
+              aria-label="プロジェクトJSONを読み込み"
+              onClick={handleLoadProjectJson}
+            >
+              JSONを読み込み
+            </button>
+            <button
+              className="ui-button h-8 px-3 text-[11px]"
+              type="button"
+              aria-label="ZIPを読み込み"
+              onClick={handleImportZip}
+            >
+              ZIPを読み込み
+            </button>
+          </>
+        ) : null}
         <button
           className="ui-button h-8 px-3 text-[11px]"
           type="button"
@@ -414,6 +435,27 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
         >
           ZIPを書き出し
         </button>
+        <div
+          className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
+          role="radiogroup"
+          aria-label="UIモード"
+        >
+          {uiModeOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={
+                uiMode === option.value
+                  ? "ui-chip is-active h-7 px-3"
+                  : "ui-chip h-7 px-3"
+              }
+              aria-pressed={uiMode === option.value}
+              onClick={() => setUiMode(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <div className="relative">
           <button
             type="button"
@@ -807,6 +849,57 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
                     )}
                   </div>
                 </div>
+
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                  <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                    アカウント
+                  </div>
+                  <div className="mt-2 text-[10px] text-[var(--ui-muted)]">
+                    端末内のログイン状態をリセットします。
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-button mt-3 h-7 px-2 text-[10px]"
+                    onClick={() => setIsLogoutConfirmOpen(true)}
+                  >
+                    ログアウト
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {isLogoutConfirmOpen ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+            <div
+              className={
+                "ui-panel w-full max-w-sm rounded-xl p-4 shadow-[0_20px_60px_rgba(0,0,0,0.35)] " +
+                glassClass
+              }
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="text-sm font-semibold text-[var(--ui-text)]">
+                ログアウトしますか？
+              </div>
+              <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                端末内のログイン状態をリセットします。
+              </div>
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="ui-button h-7 px-2 text-[10px]"
+                  onClick={() => setIsLogoutConfirmOpen(false)}
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  className="ui-button ui-button-primary h-7 px-2 text-[10px]"
+                  onClick={handleLogout}
+                >
+                  ログアウト
+                </button>
               </div>
             </div>
           </div>

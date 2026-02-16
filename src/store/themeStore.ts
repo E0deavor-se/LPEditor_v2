@@ -21,7 +21,7 @@ export type ThemeState = {
 export const THEME_STORAGE_KEY = "editor_theme_v1";
 
 const DEFAULT_THEME: Pick<ThemeState, "mode" | "surfaceStyle" | "presetId"> = {
-  mode: "system",
+  mode: "light",
   surfaceStyle: "glass",
   presetId: "classic",
 };

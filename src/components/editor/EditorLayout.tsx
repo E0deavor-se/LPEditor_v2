@@ -8,83 +8,13 @@ import TooltipLayer from "@/src/components/editor/TooltipLayer";
 import InspectorPanel from "@/src/components/editor/right/InspectorPanel";
 import { getDb } from "@/src/db/db";
 import { createProjectFromTemplate, useEditorStore } from "@/src/store/editorStore";
-import type { ProjectState } from "@/src/types/project";
+import {
+	TEMPLATE_OPTIONS,
+	TEMPLATE_STORAGE_KEY,
+} from "@/src/lib/templateOptions";
 
 const RIGHT_PANEL_WIDTH = 360;
-const TEMPLATE_STORAGE_KEY = "lp-editor.template";
-
-type TemplateOption = {
-  id: string;
-  title: string;
-  description: string;
-  templateType: ProjectState["meta"]["templateType"];
-	sectionOrder: string[];
-};
-
-const TEMPLATE_OPTIONS: TemplateOption[] = [
-  {
-    id: "campaign",
-		title: "クーポン",
-		description: "クーポン施策向けの標準LP構成",
-    templateType: "coupon",
-		sectionOrder: [
-			"brandBar",
-			"heroImage",
-			"campaignPeriodBar",
-			"campaignOverview",
-			"targetStores",
-			"couponFlow",
-			"legalNotes",
-			"footerHtml",
-		],
-	},
-	{
-		id: "point",
-		title: "ポイント施策",
-		description: "ポイント付与向けの標準LP構成",
-		templateType: "point",
-		sectionOrder: [
-			"brandBar",
-			"heroImage",
-			"campaignPeriodBar",
-			"campaignOverview",
-			"targetStores",
-			"legalNotes",
-			"footerHtml",
-		],
-	},
-	{
-		id: "ranking",
-		title: "ランキング施策",
-		description: "ランキング訴求向けのLP構成",
-		templateType: "quickchance",
-		sectionOrder: [
-			"brandBar",
-			"heroImage",
-			"campaignPeriodBar",
-			"campaignOverview",
-			"rankingTable",
-			"paymentHistoryGuide",
-			"targetStores",
-			"legalNotes",
-			"footerHtml",
-		],
-  },
-	{
-		id: "excluded-stores",
-		title: "対象外店舗一覧",
-		description: "対象外店舗の一覧ページ",
-		templateType: "target",
-		sectionOrder: ["brandBar", "excludedStoresList"],
-	},
-	{
-		id: "excluded-brands",
-		title: "対象外ブランド一覧",
-		description: "対象外ブランドの一覧ページ",
-		templateType: "target",
-		sectionOrder: ["brandBar", "excludedBrandsList"],
-	},
-];
+const UI_MODE_STORAGE_KEY = "lp-editor.uiMode";
 
 export default function EditorLayout() {
 	const [leftWidth, setLeftWidth] = useState(320);
@@ -96,11 +26,13 @@ export default function EditorLayout() {
 	const autoSaveIntervalSec = useEditorStore(
 		(state) => state.autoSaveIntervalSec
 	);
+	const uiMode = useEditorStore((state) => state.uiMode);
 	const saveDestination = useEditorStore((state) => state.saveDestination);
 	const setProject = useEditorStore((state) => state.setProject);
 	const replaceProject = useEditorStore((state) => state.replaceProject);
 	const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
 	const setPageBackground = useEditorStore((state) => state.setPageBackground);
+	const setUiMode = useEditorStore((state) => state.setUiMode);
 	const projectRef = useRef(project);
 	const showLeftPanel = true;
 	const lastSavedVersionRef = useRef<string | undefined>(
@@ -122,6 +54,17 @@ export default function EditorLayout() {
 			setSelectedTemplateId(stored);
 		}
 	}, []);
+
+	useEffect(() => {
+		const stored = window.localStorage.getItem(UI_MODE_STORAGE_KEY);
+		if (stored === "simple" || stored === "advanced") {
+			setUiMode(stored);
+		}
+	}, [setUiMode]);
+
+	useEffect(() => {
+		window.localStorage.setItem(UI_MODE_STORAGE_KEY, uiMode);
+	}, [uiMode]);
 
 	useEffect(() => {
 		projectRef.current = project;

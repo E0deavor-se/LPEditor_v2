@@ -58,6 +58,7 @@ export default function SectionPanel() {
   const renameSection = useEditorStore(
     (state: EditorUIState) => state.renameSection
   );
+  const uiMode = useEditorStore((state: EditorUIState) => state.uiMode);
   const toggleSectionVisible = useEditorStore(
     (state: EditorUIState) => state.toggleSectionVisible
   );
@@ -97,6 +98,7 @@ export default function SectionPanel() {
   const selectedSectionId =
     selected.kind === "section" ? selected.id : undefined;
   const isPageSelected = selected.kind === "page";
+  const isSimpleMode = uiMode === "simple";
 
   const handleStartRename = useCallback(
     (sectionId: string, name: string) => {
@@ -201,17 +203,23 @@ export default function SectionPanel() {
 
   const header = (
     <div className="flex items-center justify-between text-[11px] text-[var(--ui-muted)]">
-      <span>ドラッグして並び替え</span>
-      <button
-        type="button"
-        className="ui-button h-7 px-2 text-[10px]"
-        onClick={() => setIsAddMenuOpen((current) => !current)}
-      >
-        <span className="flex items-center gap-1">
-          <Plus size={14} />
-          セクション追加
-        </span>
-      </button>
+      <span>
+        {isSimpleMode
+          ? "並び替えと表示の切替"
+          : "ドラッグして並び替え"}
+      </span>
+      {!isSimpleMode ? (
+        <button
+          type="button"
+          className="ui-button h-7 px-2 text-[10px]"
+          onClick={() => setIsAddMenuOpen((current) => !current)}
+        >
+          <span className="flex items-center gap-1">
+            <Plus size={14} />
+            セクション追加
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 

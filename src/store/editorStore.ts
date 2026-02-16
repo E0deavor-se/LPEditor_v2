@@ -1431,6 +1431,8 @@ const normalizeSections = (sections: SectionBase[]): SectionBase[] =>
 
 type LeftTab = "settings" | "sections" | "design";
 
+type UiMode = "simple" | "advanced";
+
 type PreviewMode = "desktop" | "mobile";
 
 type PreviewAspect = "free" | "16:9" | "4:3" | "1:1";
@@ -1467,6 +1469,7 @@ export type EditorUIState = {
   stickyTopPx: number;
   previewKey: number;
   leftTab: LeftTab;
+  uiMode: UiMode;
   previewMode: PreviewMode;
   previewAspect: PreviewAspect;
   previewDesktopWidth: number;
@@ -1698,6 +1701,7 @@ export type EditorUIState = {
   setStickyTopPx: (px: number) => void;
   bumpPreviewKey: () => void;
   setLeftTab: (tab: LeftTab) => void;
+  setUiMode: (mode: UiMode) => void;
   setPreviewMode: (mode: PreviewMode) => void;
   setPreviewAspect: (aspect: PreviewAspect) => void;
   setPreviewDesktopWidth: (width: number) => void;
@@ -2348,6 +2352,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   stickyTopPx: 0,
   previewKey: 0,
   leftTab: "sections",
+  uiMode: "simple",
   previewMode: "desktop",
   previewAspect: "free",
   previewDesktopWidth: 1100,
@@ -5598,6 +5603,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   bumpPreviewKey: () =>
     set((state) => ({ previewKey: state.previewKey + 1 })),
   setLeftTab: (tab) => set({ leftTab: tab }),
+  setUiMode: (mode) => set({ uiMode: mode }),
   setPreviewMode: (mode) => {
     set((state) => {
       if (state.previewMode === mode) {

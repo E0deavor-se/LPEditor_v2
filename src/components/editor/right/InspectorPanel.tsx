@@ -190,6 +190,25 @@ const isTruthyStoreFlag = (value: string) => {
 
 type TabKey = "style" | "content" | "advanced";
 
+const SIMPLE_GUIDE_STEPS = [
+  {
+    title: "1. セクションを確認",
+    body: "左の一覧で並び順と表示を整えます。",
+  },
+  {
+    title: "2. テキストを差し替え",
+    body: "プレビューの文章をクリックして内容を編集します。",
+  },
+  {
+    title: "3. 画像を差し替え",
+    body: "画像エリアを選択して画像を入れ替えます。",
+  },
+  {
+    title: "4. 仕上げと書き出し",
+    body: "色・余白を調整したらZIPを書き出します。",
+  },
+];
+
 export default function InspectorPanel() {
   const t = useI18n();
   const [activeTab, setActiveTab] = useState<TabKey>("style");
@@ -197,9 +216,12 @@ export default function InspectorPanel() {
   const [isQuickStyleOpen, setIsQuickStyleOpen] = useState(false);
   const [isAnimationsOpen, setIsAnimationsOpen] = useState(false);
   const [isStoreDesignOpen, setIsStoreDesignOpen] = useState(false);
+  const [isSimpleGuideOpen, setIsSimpleGuideOpen] = useState(true);
+  const [simpleGuideStep, setSimpleGuideStep] = useState(0);
   const {
     selected,
     project,
+    uiMode,
     selectedItemId,
     selectedLineId,
     selectedImageIds,
@@ -250,6 +272,7 @@ export default function InspectorPanel() {
     useShallow((state: EditorUIState) => ({
       selected: state.selected,
       project: state.project,
+      uiMode: state.uiMode,
       selectedItemId: state.selectedItemId,
       selectedLineId: state.selectedLineId,
       selectedImageIds: state.selectedImageIds,
@@ -325,6 +348,7 @@ export default function InspectorPanel() {
     }
   };
   const isSection = selected.kind === "section" && selectedSection;
+  const isSimpleMode = uiMode === "simple";
   const isLocked = Boolean(selectedSection?.locked);
   const isVisible = Boolean(selectedSection?.visible ?? true);
   const [imageUrlInput, setImageUrlInput] = useState("");
@@ -349,7 +373,12 @@ export default function InspectorPanel() {
     isTargetStores || isExcludedStoresList || isExcludedBrandsList;
   const isItemlessSection =
     isBrandBar || isHeroImage || isCampaignPeriodBar;
-  const hideStyleTab = isBrandBar || isHeroImage;
+  const hideStyleTab = isBrandBar || isHeroImage || (isSimpleMode && isSection);
+  const guideStepIndex = Math.min(
+    Math.max(simpleGuideStep, 0),
+    SIMPLE_GUIDE_STEPS.length - 1
+  );
+  const guideStep = SIMPLE_GUIDE_STEPS[guideStepIndex];
   const formatBytes = (bytes?: number) => {
     if (!bytes || !Number.isFinite(bytes)) {
       return "";
@@ -379,6 +408,23 @@ export default function InspectorPanel() {
       setActiveTab("content");
     }
   }, [activeTab, hideStyleTab]);
+
+  useEffect(() => {
+    if (!isSimpleMode || isPageSelection) {
+      return;
+    }
+    if (activeTab !== "content") {
+      setActiveTab("content");
+    }
+  }, [activeTab, isPageSelection, isSimpleMode]);
+
+  useEffect(() => {
+    if (!isSimpleMode) {
+      return;
+    }
+    setIsContentCardOpen(true);
+    setIsQuickStyleOpen(true);
+  }, [isSimpleMode]);
 
   useEffect(() => {
     const activeSectionId = selectedSection?.id;
@@ -2104,12 +2150,65 @@ export default function InspectorPanel() {
       />
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
         <div className="flex flex-col gap-3">
+          {isSimpleMode ? (
+            <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)]/70 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12px] font-semibold text-[var(--ui-text)]">
+                  シンプルガイド
+                </div>
+                <button
+                  type="button"
+                  className="ui-button h-6 px-2 text-[10px]"
+                  onClick={() => setIsSimpleGuideOpen((current) => !current)}
+                >
+                  {isSimpleGuideOpen ? "閉じる" : "開く"}
+                </button>
+              </div>
+              {isSimpleGuideOpen ? (
+                <div className="mt-2 space-y-2">
+                  <div className="text-[12px] text-[var(--ui-text)]">
+                    {guideStep.title}
+                  </div>
+                  <div className="text-[11px] text-[var(--ui-muted)]">
+                    {guideStep.body}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="ui-button h-6 px-2 text-[10px]"
+                      disabled={guideStepIndex === 0}
+                      onClick={() =>
+                        setSimpleGuideStep((current) => Math.max(0, current - 1))
+                      }
+                    >
+                      前へ
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-button h-6 px-2 text-[10px]"
+                      onClick={() =>
+                        setSimpleGuideStep((current) =>
+                          current >= SIMPLE_GUIDE_STEPS.length - 1
+                            ? 0
+                            : current + 1
+                        )
+                      }
+                    >
+                      {guideStepIndex >= SIMPLE_GUIDE_STEPS.length - 1
+                        ? "最初へ"
+                        : "次へ"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <InspectorTabs
             value={activeTab}
             onChange={setActiveTab}
             hideStyle={hideStyleTab}
             hideContent={isPageSelection}
-            hideAdvanced={isPageSelection}
+            hideAdvanced={isPageSelection || isSimpleMode}
           />
           <div className={bodyClass}>
             {activeTab === "style" ? (
@@ -2121,7 +2220,7 @@ export default function InspectorPanel() {
                       onChange={setPageTypography}
                       defaultOpen
                     />
-                    {designTargetSection ? (
+                    {!isSimpleMode && designTargetSection ? (
                       <Accordion title="サーフェス" icon={<LayoutGrid size={14} />}>
                         <FieldRow label={t.inspector.section.fields.gradient}>
                           <ToggleField
@@ -2357,14 +2456,16 @@ export default function InspectorPanel() {
                         </div>
                       </Accordion>
                     ) : null}
-                    <PageStyleBackground
-                      target={backgroundTarget}
-                      onTargetChange={setBackgroundTarget}
-                      spec={activeBackgroundSpec}
-                      onChange={applyBackgroundSpec}
-                      resolveAssetUrl={(assetId) => assets?.[assetId]?.data}
-                      onAddAsset={addAsset}
-                    />
+                    {!isSimpleMode ? (
+                      <PageStyleBackground
+                        target={backgroundTarget}
+                        onTargetChange={setBackgroundTarget}
+                        spec={activeBackgroundSpec}
+                        onChange={applyBackgroundSpec}
+                        resolveAssetUrl={(assetId) => assets?.[assetId]?.data}
+                        onAddAsset={addAsset}
+                      />
+                    ) : null}
                     <PageStyleColors
                       value={pageStyle.colors}
                       onChange={setPageColors}
@@ -2373,7 +2474,7 @@ export default function InspectorPanel() {
                       value={pageStyle.spacing}
                       onChange={setPageSpacing}
                     />
-                    {designTargetSection ? (
+                    {!isSimpleMode && designTargetSection ? (
                       <Accordion
                         title="セクションデザイン"
                         icon={<LayoutGrid size={14} />}
@@ -2390,256 +2491,266 @@ export default function InspectorPanel() {
                         />
                       </Accordion>
                     ) : null}
-                    <PageStyleLayout
-                      value={pageStyle.layout}
-                      onChange={setPageLayout}
-                    />
-                    <PageStyleSectionAnimation
-                      value={pageStyle.sectionAnimation}
-                      onChange={setPageSectionAnimation}
-                    />
+                    {!isSimpleMode ? (
+                      <>
+                        <PageStyleLayout
+                          value={pageStyle.layout}
+                          onChange={setPageLayout}
+                        />
+                        <PageStyleSectionAnimation
+                          value={pageStyle.sectionAnimation}
+                          onChange={setPageSectionAnimation}
+                        />
+                      </>
+                    ) : null}
                   </>
                 ) : isSection ? (
-                  <SectionStylePanel
-                    style={selectedSection.style}
-                    cardStyle={
-                      selectedSection.sectionCardStyle ??
-                      DEFAULT_SECTION_CARD_STYLE
-                    }
-                    showSectionDesign={!isInquiry}
-                    showPeriodBarHeight={
-                      selectedSection.type === "campaignPeriodBar"
-                    }
-                    hideGradient={isTabbedNotes}
-                    hideTitleBand={isTabbedNotes}
-                    surfaceExtras={
-                      isTabbedNotes ? (
-                        <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
-                          <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
-                            付箋タブ帯
-                          </div>
-                          <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
-                            デザイン
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {tabbedNotesDesignPresets.map((preset) => {
-                              const isActivePreset =
-                                tabbedNotesData.tabStyle.variant === preset.id;
-                              return (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  className={
-                                    "rounded-full border px-3 py-1 text-[11px] transition " +
-                                    (isActivePreset
-                                      ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
-                                      : "border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 hover:border-[var(--ui-border)]")
-                                  }
-                                  onClick={() =>
-                                    updateSectionData(selectedSection.id, {
-                                      tabStyle: {
-                                        ...tabbedNotesData.tabStyle,
-                                        variant: preset.id,
-                                      },
-                                    })
-                                  }
-                                >
-                                  {preset.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
-                            プリセット
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {tabbedNotesBandPresets.map((preset) => {
-                              const isActivePreset =
-                                tabbedNotesData.tabStyle.activeBg === preset.activeBg &&
-                                tabbedNotesData.tabStyle.inactiveBg ===
-                                  preset.inactiveBg &&
-                                tabbedNotesData.tabStyle.activeText ===
-                                  preset.activeText &&
-                                tabbedNotesData.tabStyle.inactiveText ===
-                                  preset.inactiveText;
-                              return (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  className={
-                                    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] transition " +
-                                    (isActivePreset
-                                      ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
-                                      : "border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 hover:border-[var(--ui-border)]")
-                                  }
-                                  onClick={() =>
-                                    updateSectionData(selectedSection.id, {
-                                      tabStyle: {
-                                        ...tabbedNotesData.tabStyle,
-                                        activeBg: preset.activeBg,
-                                        inactiveBg: preset.inactiveBg,
-                                        activeText: preset.activeText,
-                                        inactiveText: preset.inactiveText,
-                                      },
-                                    })
-                                  }
-                                >
-                                  <span className="font-semibold text-[var(--ui-text)]">
+                  isSimpleMode ? (
+                    <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[12px] text-[var(--ui-muted)]">
+                      スタイル編集は「内容」タブのクイック設定で行えます。
+                    </div>
+                  ) : (
+                    <SectionStylePanel
+                      style={selectedSection.style}
+                      cardStyle={
+                        selectedSection.sectionCardStyle ??
+                        DEFAULT_SECTION_CARD_STYLE
+                      }
+                      showSectionDesign={!isInquiry}
+                      showPeriodBarHeight={
+                        selectedSection.type === "campaignPeriodBar"
+                      }
+                      hideGradient={isTabbedNotes}
+                      hideTitleBand={isTabbedNotes}
+                      surfaceExtras={
+                        isTabbedNotes ? (
+                          <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
+                            <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
+                              付箋タブ帯
+                            </div>
+                            <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
+                              デザイン
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {tabbedNotesDesignPresets.map((preset) => {
+                                const isActivePreset =
+                                  tabbedNotesData.tabStyle.variant === preset.id;
+                                return (
+                                  <button
+                                    key={preset.id}
+                                    type="button"
+                                    className={
+                                      "rounded-full border px-3 py-1 text-[11px] transition " +
+                                      (isActivePreset
+                                        ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
+                                        : "border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 hover:border-[var(--ui-border)]")
+                                    }
+                                    onClick={() =>
+                                      updateSectionData(selectedSection.id, {
+                                        tabStyle: {
+                                          ...tabbedNotesData.tabStyle,
+                                          variant: preset.id,
+                                        },
+                                      })
+                                    }
+                                  >
                                     {preset.label}
-                                  </span>
-                                  <span className="inline-flex overflow-hidden rounded-full border border-[var(--ui-border)]/60">
-                                    <span
-                                      className="px-2 py-0.5 text-[10px] font-semibold"
-                                      style={{
-                                        background: preset.activeBg,
-                                        color: preset.activeText,
-                                      }}
-                                    >
-                                      タブ
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
+                              プリセット
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {tabbedNotesBandPresets.map((preset) => {
+                                const isActivePreset =
+                                  tabbedNotesData.tabStyle.activeBg === preset.activeBg &&
+                                  tabbedNotesData.tabStyle.inactiveBg ===
+                                    preset.inactiveBg &&
+                                  tabbedNotesData.tabStyle.activeText ===
+                                    preset.activeText &&
+                                  tabbedNotesData.tabStyle.inactiveText ===
+                                    preset.inactiveText;
+                                return (
+                                  <button
+                                    key={preset.id}
+                                    type="button"
+                                    className={
+                                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] transition " +
+                                      (isActivePreset
+                                        ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
+                                        : "border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 hover:border-[var(--ui-border)]")
+                                    }
+                                    onClick={() =>
+                                      updateSectionData(selectedSection.id, {
+                                        tabStyle: {
+                                          ...tabbedNotesData.tabStyle,
+                                          activeBg: preset.activeBg,
+                                          inactiveBg: preset.inactiveBg,
+                                          activeText: preset.activeText,
+                                          inactiveText: preset.inactiveText,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <span className="font-semibold text-[var(--ui-text)]">
+                                      {preset.label}
                                     </span>
-                                    <span
-                                      className="px-2 py-0.5 text-[10px] font-semibold"
-                                      style={{
-                                        background: preset.inactiveBg,
-                                        color: preset.inactiveText,
-                                      }}
-                                    >
-                                      タブ
+                                    <span className="inline-flex overflow-hidden rounded-full border border-[var(--ui-border)]/60">
+                                      <span
+                                        className="px-2 py-0.5 text-[10px] font-semibold"
+                                        style={{
+                                          background: preset.activeBg,
+                                          color: preset.activeText,
+                                        }}
+                                      >
+                                        タブ
+                                      </span>
+                                      <span
+                                        className="px-2 py-0.5 text-[10px] font-semibold"
+                                        style={{
+                                          background: preset.inactiveBg,
+                                          color: preset.inactiveText,
+                                        }}
+                                      >
+                                        タブ
+                                      </span>
                                     </span>
-                                  </span>
-                                </button>
-                              );
-                            })}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <FieldRow label="帯背景1">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.activeBg}
+                                ariaLabel="帯背景1"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      activeBg: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="帯背景2">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.inactiveBg}
+                                ariaLabel="帯背景2"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      inactiveBg: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="帯文字1">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.activeText}
+                                ariaLabel="帯文字1"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      activeText: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="帯文字2">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.inactiveText}
+                                ariaLabel="帯文字2"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      inactiveText: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="境界線">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.border}
+                                ariaLabel="境界線"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      border: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="本文背景">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.contentBg}
+                                ariaLabel="本文背景"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      contentBg: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="本文枠線">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.contentBorder}
+                                ariaLabel="本文枠線"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      contentBorder: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="強調文字色">
+                              <ColorField
+                                value={tabbedNotesData.tabStyle.accent}
+                                ariaLabel="強調文字色"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    tabStyle: {
+                                      ...tabbedNotesData.tabStyle,
+                                      accent: next,
+                                    },
+                                  })
+                                }
+                              />
+                            </FieldRow>
                           </div>
-                          <FieldRow label="帯背景1">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.activeBg}
-                              ariaLabel="帯背景1"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    activeBg: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="帯背景2">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.inactiveBg}
-                              ariaLabel="帯背景2"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    inactiveBg: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="帯文字1">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.activeText}
-                              ariaLabel="帯文字1"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    activeText: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="帯文字2">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.inactiveText}
-                              ariaLabel="帯文字2"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    inactiveText: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="境界線">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.border}
-                              ariaLabel="境界線"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    border: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="本文背景">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.contentBg}
-                              ariaLabel="本文背景"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    contentBg: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="本文枠線">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.contentBorder}
-                              ariaLabel="本文枠線"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    contentBorder: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="強調文字色">
-                            <ColorField
-                              value={tabbedNotesData.tabStyle.accent}
-                              ariaLabel="強調文字色"
-                              onChange={(next) =>
-                                updateSectionData(selectedSection.id, {
-                                  tabStyle: {
-                                    ...tabbedNotesData.tabStyle,
-                                    accent: next,
-                                  },
-                                })
-                              }
-                            />
-                          </FieldRow>
-                        </div>
-                      ) : null
-                    }
-                    onStyleChange={(patch) =>
-                      updateSectionStyle(selectedSection.id, patch)
-                    }
-                    onCardStyleChange={(patch) =>
-                      updateSectionCardStyle(selectedSection.id, patch)
-                    }
-                    onApplyStyleToAll={applyStyleToAllSections}
-                    onApplySectionDesignPreset={(presetId) =>
-                      applySectionDesignPreset(presetId)
-                    }
-                    onResetSectionDesignPreset={(presetId) =>
-                      applySectionDesignPreset(presetId, { reset: true })
-                    }
-                  />
+                        ) : null
+                      }
+                      onStyleChange={(patch) =>
+                        updateSectionStyle(selectedSection.id, patch)
+                      }
+                      onCardStyleChange={(patch) =>
+                        updateSectionCardStyle(selectedSection.id, patch)
+                      }
+                      onApplyStyleToAll={applyStyleToAllSections}
+                      onApplySectionDesignPreset={(presetId) =>
+                        applySectionDesignPreset(presetId)
+                      }
+                      onResetSectionDesignPreset={(presetId) =>
+                        applySectionDesignPreset(presetId, { reset: true })
+                      }
+                    />
+                  )
                 ) : (
                   <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[12px] text-[var(--ui-muted)]">
                     {t.inspector.placeholders.blockComingSoon}
@@ -6155,496 +6266,504 @@ export default function InspectorPanel() {
                     ) : null}
                   </div>
                 ) : null}
-                {!isBrandBar && !isInquiry ? (
-                  <div className={cardClass}>
-                    <button
-                      type="button"
-                      className={cardHeaderClass + " w-full"}
-                      aria-expanded={isAnimationsOpen}
-                      onClick={() => setIsAnimationsOpen((current) => !current)}
-                    >
-                      <span>{t.inspector.section.cards.animations}</span>
-                      <ChevronDown
-                        size={14}
-                        className={
-                          isAnimationsOpen ? "rotate-180 transition" : "transition"
-                        }
-                      />
-                    </button>
-                    {isAnimationsOpen ? (
-                      <div
-                        className={
-                          cardBodyClass +
-                          (isContentReady ? "" : " pointer-events-none opacity-60")
-                        }
-                      >
-                        {!isContentReady ? (
-                          <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
-                            {t.inspector.section.placeholders.selectContent}
-                          </div>
-                        ) : isHeroImage ? (
-                          <div className="flex flex-col gap-2">
-                          <FieldRow label={t.inspector.section.fields.animationPreset}>
-                            <SelectField
-                              value={heroAnimation?.preset ?? "none"}
-                              ariaLabel={t.inspector.section.fields.animationPreset}
-                              onChange={(next) => {
-                                if (next === "none") {
-                                  updateSectionData(selectedSection.id, {
-                                    heroAnimation: undefined,
-                                  });
-                                  return;
-                                }
-                                updateSectionData(selectedSection.id, {
-                                  heroAnimation: {
-                                    preset: next as "fade" | "slideUp" | "zoom",
-                                    durationMs: heroAnimation?.durationMs ?? 400,
-                                    delayMs: heroAnimation?.delayMs ?? 0,
-                                  },
-                                });
-                              }}
-                            >
-                              <option value="none">
-                                {t.inspector.section.animationOptions.none}
-                              </option>
-                              <option value="fade">
-                                {t.inspector.section.animationOptions.fade}
-                              </option>
-                              <option value="slideUp">
-                                {t.inspector.section.animationOptions.slideUp}
-                              </option>
-                              <option value="zoom">
-                                {t.inspector.section.animationOptions.zoom}
-                              </option>
-                            </SelectField>
-                          </FieldRow>
-                          {heroAnimation ? (
-                            <>
-                              <FieldRow label={t.inspector.section.fields.animationDuration}>
-                                <NumberField
-                                  value={heroAnimation.durationMs ?? 400}
-                                  min={100}
-                                  max={5000}
-                                  step={50}
-                                  ariaLabel={t.inspector.section.fields.animationDuration}
-                                  onChange={(next) =>
+                {!isSimpleMode ? (
+                  <>
+                    {!isBrandBar && !isInquiry ? (
+                      <div className={cardClass}>
+                        <button
+                          type="button"
+                          className={cardHeaderClass + " w-full"}
+                          aria-expanded={isAnimationsOpen}
+                          onClick={() => setIsAnimationsOpen((current) => !current)}
+                        >
+                          <span>{t.inspector.section.cards.animations}</span>
+                          <ChevronDown
+                            size={14}
+                            className={
+                              isAnimationsOpen
+                                ? "rotate-180 transition"
+                                : "transition"
+                            }
+                          />
+                        </button>
+                        {isAnimationsOpen ? (
+                          <div
+                            className={
+                              cardBodyClass +
+                              (isContentReady ? "" : " pointer-events-none opacity-60")
+                            }
+                          >
+                            {!isContentReady ? (
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                {t.inspector.section.placeholders.selectContent}
+                              </div>
+                            ) : isHeroImage ? (
+                              <div className="flex flex-col gap-2">
+                              <FieldRow label={t.inspector.section.fields.animationPreset}>
+                                <SelectField
+                                  value={heroAnimation?.preset ?? "none"}
+                                  ariaLabel={t.inspector.section.fields.animationPreset}
+                                  onChange={(next) => {
+                                    if (next === "none") {
+                                      updateSectionData(selectedSection.id, {
+                                        heroAnimation: undefined,
+                                      });
+                                      return;
+                                    }
                                     updateSectionData(selectedSection.id, {
                                       heroAnimation: {
-                                        ...heroAnimation,
-                                        durationMs: next,
+                                        preset: next as "fade" | "slideUp" | "zoom",
+                                        durationMs: heroAnimation?.durationMs ?? 400,
+                                        delayMs: heroAnimation?.delayMs ?? 0,
                                       },
-                                    })
-                                  }
-                                />
+                                    });
+                                  }}
+                                >
+                                  <option value="none">
+                                    {t.inspector.section.animationOptions.none}
+                                  </option>
+                                  <option value="fade">
+                                    {t.inspector.section.animationOptions.fade}
+                                  </option>
+                                  <option value="slideUp">
+                                    {t.inspector.section.animationOptions.slideUp}
+                                  </option>
+                                  <option value="zoom">
+                                    {t.inspector.section.animationOptions.zoom}
+                                  </option>
+                                </SelectField>
                               </FieldRow>
-                              <FieldRow label={t.inspector.section.fields.animationDelay}>
-                                <NumberField
-                                  value={heroAnimation.delayMs ?? 0}
-                                  min={0}
-                                  max={3000}
-                                  step={50}
-                                  ariaLabel={t.inspector.section.fields.animationDelay}
-                                  onChange={(next) =>
-                                    updateSectionData(selectedSection.id, {
-                                      heroAnimation: {
-                                        ...heroAnimation,
-                                        delayMs: next,
-                                      },
-                                    })
-                                  }
-                                />
-                              </FieldRow>
-                            </>
-                          ) : null}
-                        </div>
-                      ) : isCampaignPeriodBar ? (
-                        <div className="flex flex-col gap-2">
-                          <FieldRow label={t.inspector.section.fields.animationPreset}>
-                            <SelectField
-                              value={periodBarAnimation?.preset ?? "none"}
-                              ariaLabel={t.inspector.section.fields.animationPreset}
-                              onChange={(next) => {
-                                if (next === "none") {
-                                  updateSectionData(selectedSection.id, {
-                                    periodBarAnimation: undefined,
-                                  });
-                                  return;
-                                }
-                                updateSectionData(selectedSection.id, {
-                                  periodBarAnimation: {
-                                    preset: next as "fade" | "slideUp" | "zoom",
-                                    durationMs: periodBarAnimation?.durationMs ?? 400,
-                                    delayMs: periodBarAnimation?.delayMs ?? 0,
-                                  },
-                                });
-                              }}
-                            >
-                              <option value="none">
-                                {t.inspector.section.animationOptions.none}
-                              </option>
-                              <option value="fade">
-                                {t.inspector.section.animationOptions.fade}
-                              </option>
-                              <option value="slideUp">
-                                {t.inspector.section.animationOptions.slideUp}
-                              </option>
-                              <option value="zoom">
-                                {t.inspector.section.animationOptions.zoom}
-                              </option>
-                            </SelectField>
-                          </FieldRow>
-                          {periodBarAnimation ? (
-                            <>
-                              <FieldRow label={t.inspector.section.fields.animationDuration}>
-                                <NumberField
-                                  value={periodBarAnimation.durationMs ?? 400}
-                                  min={100}
-                                  max={5000}
-                                  step={50}
-                                  ariaLabel={t.inspector.section.fields.animationDuration}
-                                  onChange={(next) =>
-                                    updateSectionData(selectedSection.id, {
-                                      periodBarAnimation: {
-                                        ...periodBarAnimation,
-                                        durationMs: next,
-                                      },
-                                    })
-                                  }
-                                />
-                              </FieldRow>
-                              <FieldRow label={t.inspector.section.fields.animationDelay}>
-                                <NumberField
-                                  value={periodBarAnimation.delayMs ?? 0}
-                                  min={0}
-                                  max={3000}
-                                  step={50}
-                                  ariaLabel={t.inspector.section.fields.animationDelay}
-                                  onChange={(next) =>
-                                    updateSectionData(selectedSection.id, {
-                                      periodBarAnimation: {
-                                        ...periodBarAnimation,
-                                        delayMs: next,
-                                      },
-                                    })
-                                  }
-                                />
-                              </FieldRow>
-                            </>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          <FieldRow label={t.inspector.section.fields.animationPreset}>
-                            <SelectField
-                              value={
-                                selectedTitleItem?.animation?.preset ??
-                                selectedButtonItem?.animation?.preset ??
-                                selectedLine?.animation?.preset ??
-                                (selectedImageIds.length > 0 &&
-                                selectedImageItem?.images.find((image) =>
-                                  selectedImageIds.includes(image.id)
-                                )?.animation?.preset
-                                  ? selectedImageItem.images.find((image) =>
-                                      selectedImageIds.includes(image.id)
-                                    )?.animation?.preset
-                                  : "none") ??
-                                "none"
-                              }
-                              ariaLabel={t.inspector.section.fields.animationPreset}
-                              onChange={(next) => {
-                                if (next === "none") {
-                                  if (selectedLine && selectedTextItem) {
-                                    updateTextLineAnimation(
-                                      selectedSection.id,
-                                      selectedTextItem.id,
-                                      selectedLine.id,
-                                      undefined
-                                    );
-                                    return;
-                                  }
-                                  if (selectedImageItem && selectedImageIds.length > 0) {
-                                    updateImageAnimation(
-                                      selectedSection.id,
-                                      selectedImageItem.id,
-                                      selectedImageIds,
-                                      undefined
-                                    );
-                                    return;
-                                  }
-                                  if (selectedItem) {
-                                    updateContentItemAnimation(
-                                      selectedSection.id,
-                                      selectedItem.id,
-                                      undefined
-                                    );
-                                  }
-                                  return;
-                                }
-                                if (selectedLine && selectedTextItem) {
-                                  updateTextLineAnimation(
-                                    selectedSection.id,
-                                    selectedTextItem.id,
-                                    selectedLine.id,
-                                    { preset: next as "fade" | "slideUp" | "zoom" }
-                                  );
-                                  return;
-                                }
-                                if (selectedImageItem && selectedImageIds.length > 0) {
-                                  updateImageAnimation(
-                                    selectedSection.id,
-                                    selectedImageItem.id,
-                                    selectedImageIds,
-                                    { preset: next as "fade" | "slideUp" | "zoom" }
-                                  );
-                                  return;
-                                }
-                                if (selectedItem) {
-                                  updateContentItemAnimation(
-                                    selectedSection.id,
-                                    selectedItem.id,
-                                    { preset: next as "fade" | "slideUp" | "zoom" }
-                                  );
-                                }
-                              }}
-                            >
-                              <option value="none">
-                                {t.inspector.section.animationOptions.none}
-                              </option>
-                              <option value="fade">
-                                {t.inspector.section.animationOptions.fade}
-                              </option>
-                              <option value="slideUp">
-                                {t.inspector.section.animationOptions.slideUp}
-                              </option>
-                              <option value="zoom">
-                                {t.inspector.section.animationOptions.zoom}
-                              </option>
-                            </SelectField>
-                          </FieldRow>
-                          {(selectedLine?.animation ||
-                            selectedImageItem?.images.find((image) =>
-                              selectedImageIds.includes(image.id)
-                            )?.animation ||
-                            selectedItem.animation) ? (
-                            <>
-                              <FieldRow label={t.inspector.section.fields.animationDuration}>
-                                <NumberField
-                                  value={
-                                    selectedLine?.animation?.durationMs ??
-                                    selectedImageItem?.images.find((image) =>
-                                      selectedImageIds.includes(image.id)
-                                    )?.animation?.durationMs ??
-                                    selectedItem.animation?.durationMs ??
-                                    400
-                                  }
-                                  min={100}
-                                  max={5000}
-                                  step={50}
-                                  ariaLabel={t.inspector.section.fields.animationDuration}
-                                  onChange={(next) =>
-                                    {
-                                      if (selectedLine && selectedTextItem) {
-                                        updateTextLineAnimation(
-                                          selectedSection.id,
-                                          selectedTextItem.id,
-                                          selectedLine.id,
-                                          { durationMs: next }
-                                        );
-                                        return;
+                              {heroAnimation ? (
+                                <>
+                                  <FieldRow label={t.inspector.section.fields.animationDuration}>
+                                    <NumberField
+                                      value={heroAnimation.durationMs ?? 400}
+                                      min={100}
+                                      max={5000}
+                                      step={50}
+                                      ariaLabel={t.inspector.section.fields.animationDuration}
+                                      onChange={(next) =>
+                                        updateSectionData(selectedSection.id, {
+                                          heroAnimation: {
+                                            ...heroAnimation,
+                                            durationMs: next,
+                                          },
+                                        })
                                       }
-                                      if (selectedImageItem && selectedImageIds.length > 0) {
-                                        updateImageAnimation(
-                                          selectedSection.id,
-                                          selectedImageItem.id,
-                                          selectedImageIds,
-                                          { durationMs: next }
-                                        );
-                                        return;
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label={t.inspector.section.fields.animationDelay}>
+                                    <NumberField
+                                      value={heroAnimation.delayMs ?? 0}
+                                      min={0}
+                                      max={3000}
+                                      step={50}
+                                      ariaLabel={t.inspector.section.fields.animationDelay}
+                                      onChange={(next) =>
+                                        updateSectionData(selectedSection.id, {
+                                          heroAnimation: {
+                                            ...heroAnimation,
+                                            delayMs: next,
+                                          },
+                                        })
                                       }
-                                      if (selectedItem) {
-                                        updateContentItemAnimation(
-                                          selectedSection.id,
-                                          selectedItem.id,
-                                          { durationMs: next }
-                                        );
-                                      }
-                                    }
-                                  }
-                                />
-                              </FieldRow>
-                              <FieldRow label={t.inspector.section.fields.animationDelay}>
-                                <NumberField
-                                  value={
-                                    selectedLine?.animation?.delayMs ??
-                                    selectedImageItem?.images.find((image) =>
-                                      selectedImageIds.includes(image.id)
-                                    )?.animation?.delayMs ??
-                                    selectedItem.animation?.delayMs ??
-                                    0
-                                  }
-                                  min={0}
-                                  max={3000}
-                                  step={50}
-                                  ariaLabel={t.inspector.section.fields.animationDelay}
-                                  onChange={(next) =>
-                                    {
-                                      if (selectedLine && selectedTextItem) {
-                                        updateTextLineAnimation(
-                                          selectedSection.id,
-                                          selectedTextItem.id,
-                                          selectedLine.id,
-                                          { delayMs: next }
-                                        );
-                                        return;
-                                      }
-                                      if (selectedImageItem && selectedImageIds.length > 0) {
-                                        updateImageAnimation(
-                                          selectedSection.id,
-                                          selectedImageItem.id,
-                                          selectedImageIds,
-                                          { delayMs: next }
-                                        );
-                                        return;
-                                      }
-                                      if (selectedItem) {
-                                        updateContentItemAnimation(
-                                          selectedSection.id,
-                                          selectedItem.id,
-                                          { delayMs: next }
-                                        );
-                                      }
-                                    }
-                                  }
-                                />
-                              </FieldRow>
-                            </>
-                          ) : null}
-                        </div>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {selectedSection && isTargetStores ? (
-                  <div className={cardClass}>
-                    <button
-                      type="button"
-                      className={cardHeaderClass + " w-full"}
-                      aria-expanded={isStoreDesignOpen}
-                      onClick={() => setIsStoreDesignOpen((current) => !current)}
-                    >
-                      <span>ストアデザイン</span>
-                      <ChevronDown
-                        size={14}
-                        className={
-                          isStoreDesignOpen ? "rotate-180 transition" : "transition"
-                        }
-                      />
-                    </button>
-                    {isStoreDesignOpen ? (
-                      <div className={cardBodyClass}>
-                        <div className="flex flex-col gap-3">
-                          {!hasStoresData ? (
-                            <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-[11px] text-[var(--ui-muted)]">
-                              CSV取り込み後にラベル設定が表示されます。
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : null}
                             </div>
-                          ) : targetStoresExtraColumns.length === 0 ? (
-                            <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-[11px] text-[var(--ui-muted)]">
-                              自由列がありません。
+                          ) : isCampaignPeriodBar ? (
+                            <div className="flex flex-col gap-2">
+                              <FieldRow label={t.inspector.section.fields.animationPreset}>
+                                <SelectField
+                                  value={periodBarAnimation?.preset ?? "none"}
+                                  ariaLabel={t.inspector.section.fields.animationPreset}
+                                  onChange={(next) => {
+                                    if (next === "none") {
+                                      updateSectionData(selectedSection.id, {
+                                        periodBarAnimation: undefined,
+                                      });
+                                      return;
+                                    }
+                                    updateSectionData(selectedSection.id, {
+                                      periodBarAnimation: {
+                                        preset: next as "fade" | "slideUp" | "zoom",
+                                        durationMs: periodBarAnimation?.durationMs ?? 400,
+                                        delayMs: periodBarAnimation?.delayMs ?? 0,
+                                      },
+                                    });
+                                  }}
+                                >
+                                  <option value="none">
+                                    {t.inspector.section.animationOptions.none}
+                                  </option>
+                                  <option value="fade">
+                                    {t.inspector.section.animationOptions.fade}
+                                  </option>
+                                  <option value="slideUp">
+                                    {t.inspector.section.animationOptions.slideUp}
+                                  </option>
+                                  <option value="zoom">
+                                    {t.inspector.section.animationOptions.zoom}
+                                  </option>
+                                </SelectField>
+                              </FieldRow>
+                              {periodBarAnimation ? (
+                                <>
+                                  <FieldRow label={t.inspector.section.fields.animationDuration}>
+                                    <NumberField
+                                      value={periodBarAnimation.durationMs ?? 400}
+                                      min={100}
+                                      max={5000}
+                                      step={50}
+                                      ariaLabel={t.inspector.section.fields.animationDuration}
+                                      onChange={(next) =>
+                                        updateSectionData(selectedSection.id, {
+                                          periodBarAnimation: {
+                                            ...periodBarAnimation,
+                                            durationMs: next,
+                                          },
+                                        })
+                                      }
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label={t.inspector.section.fields.animationDelay}>
+                                    <NumberField
+                                      value={periodBarAnimation.delayMs ?? 0}
+                                      min={0}
+                                      max={3000}
+                                      step={50}
+                                      ariaLabel={t.inspector.section.fields.animationDelay}
+                                      onChange={(next) =>
+                                        updateSectionData(selectedSection.id, {
+                                          periodBarAnimation: {
+                                            ...periodBarAnimation,
+                                            delayMs: next,
+                                          },
+                                        })
+                                      }
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : null}
                             </div>
                           ) : (
-                            <div className="flex flex-col gap-3">
-                              <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] p-3">
-                                <div className="text-[11px] font-semibold text-[var(--ui-text)]">
-                                  ラベル条件
-                                </div>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <SegmentedField
-                                    value={storeFilterOperator}
-                                    ariaLabel="ラベル条件"
-                                    options={[
-                                      { value: "AND", label: "すべて満たす" },
-                                      { value: "OR", label: "いずれか" },
-                                    ]}
-                                    onChange={(next) =>
-                                      updateTargetStoresContent(selectedSection.id, {
-                                        storeFilterOperator: next as "AND" | "OR",
-                                      })
+                            <div className="flex flex-col gap-2">
+                              <FieldRow label={t.inspector.section.fields.animationPreset}>
+                                <SelectField
+                                  value={
+                                    selectedTitleItem?.animation?.preset ??
+                                    selectedButtonItem?.animation?.preset ??
+                                    selectedLine?.animation?.preset ??
+                                    (selectedImageIds.length > 0 &&
+                                    selectedImageItem?.images.find((image) =>
+                                      selectedImageIds.includes(image.id)
+                                    )?.animation?.preset
+                                      ? selectedImageItem.images.find((image) =>
+                                          selectedImageIds.includes(image.id)
+                                        )?.animation?.preset
+                                      : "none") ??
+                                    "none"
+                                  }
+                                  ariaLabel={t.inspector.section.fields.animationPreset}
+                                  onChange={(next) => {
+                                    if (next === "none") {
+                                      if (selectedLine && selectedTextItem) {
+                                        updateTextLineAnimation(
+                                          selectedSection.id,
+                                          selectedTextItem.id,
+                                          selectedLine.id,
+                                          undefined
+                                        );
+                                        return;
+                                      }
+                                      if (selectedImageItem && selectedImageIds.length > 0) {
+                                        updateImageAnimation(
+                                          selectedSection.id,
+                                          selectedImageItem.id,
+                                          selectedImageIds,
+                                          undefined
+                                        );
+                                        return;
+                                      }
+                                      if (selectedItem) {
+                                        updateContentItemAnimation(
+                                          selectedSection.id,
+                                          selectedItem.id,
+                                          undefined
+                                        );
+                                      }
+                                      return;
                                     }
-                                  />
-                                </div>
-                                <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
-                                  {storeFilterOperator === "AND"
-                                    ? "選択したラベルを“すべて”満たす店舗のみ表示"
-                                    : "選択したラベルの“どれか1つ”でも満たす店舗を表示"}
-                                </div>
-                                {selectedFilterLabels.length >= 2 ? (
-                                  <div className="mt-1 text-[11px] text-[var(--ui-muted)]">
-                                    例: {selectedFilterLabels.slice(0, 2).join(
-                                      storeFilterOperator === "AND" ? " ∧ " : " ∨ "
-                                    )}
-                                  </div>
-                                ) : null}
-                              </div>
-                              <div className="text-[11px] text-[var(--ui-muted)]">
-                                ラベル設定
-                              </div>
-                              {targetStoresExtraColumns.map((column) => {
-                                const label = resolvedStoreLabels[column];
-                                if (!label) {
-                                  return null;
-                                }
-                                return (
-                                  <div
-                                    key={column}
-                                    className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] p-3"
-                                  >
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <span
-                                            className="inline-flex items-center rounded-full border border-[var(--ui-border)] px-2 py-0.5 text-[11px] text-[var(--ui-text)]"
-                                            style={{ backgroundColor: label.color }}
-                                          >
-                                            {label.displayName}
-                                          </span>
-                                        </div>
-                                        <input
-                                          type="text"
-                                          className="ui-input mt-2 h-7 w-full text-[12px]"
-                                          value={label.displayName}
-                                          placeholder={label.columnKey}
-                                          onChange={(event) =>
-                                            updateStoreLabelConfig(column, {
-                                              displayName: event.target.value,
-                                            })
+                                    if (selectedLine && selectedTextItem) {
+                                      updateTextLineAnimation(
+                                        selectedSection.id,
+                                        selectedTextItem.id,
+                                        selectedLine.id,
+                                        { preset: next as "fade" | "slideUp" | "zoom" }
+                                      );
+                                      return;
+                                    }
+                                    if (selectedImageItem && selectedImageIds.length > 0) {
+                                      updateImageAnimation(
+                                        selectedSection.id,
+                                        selectedImageItem.id,
+                                        selectedImageIds,
+                                        { preset: next as "fade" | "slideUp" | "zoom" }
+                                      );
+                                      return;
+                                    }
+                                    if (selectedItem) {
+                                      updateContentItemAnimation(
+                                        selectedSection.id,
+                                        selectedItem.id,
+                                        { preset: next as "fade" | "slideUp" | "zoom" }
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <option value="none">
+                                    {t.inspector.section.animationOptions.none}
+                                  </option>
+                                  <option value="fade">
+                                    {t.inspector.section.animationOptions.fade}
+                                  </option>
+                                  <option value="slideUp">
+                                    {t.inspector.section.animationOptions.slideUp}
+                                  </option>
+                                  <option value="zoom">
+                                    {t.inspector.section.animationOptions.zoom}
+                                  </option>
+                                </SelectField>
+                              </FieldRow>
+                              {(selectedLine?.animation ||
+                                selectedImageItem?.images.find((image) =>
+                                  selectedImageIds.includes(image.id)
+                                )?.animation ||
+                                selectedItem.animation) ? (
+                                <>
+                                  <FieldRow label={t.inspector.section.fields.animationDuration}>
+                                    <NumberField
+                                      value={
+                                        selectedLine?.animation?.durationMs ??
+                                        selectedImageItem?.images.find((image) =>
+                                          selectedImageIds.includes(image.id)
+                                        )?.animation?.durationMs ??
+                                        selectedItem.animation?.durationMs ??
+                                        400
+                                      }
+                                      min={100}
+                                      max={5000}
+                                      step={50}
+                                      ariaLabel={t.inspector.section.fields.animationDuration}
+                                      onChange={(next) =>
+                                        {
+                                          if (selectedLine && selectedTextItem) {
+                                            updateTextLineAnimation(
+                                              selectedSection.id,
+                                              selectedTextItem.id,
+                                              selectedLine.id,
+                                              { durationMs: next }
+                                            );
+                                            return;
                                           }
-                                        />
-                                        <div className="mt-1 text-[10px] text-[var(--ui-muted)]">
-                                          元: {label.columnKey}
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <ColorField
-                                          value={label.color}
-                                          ariaLabel={`${label.displayName} の色`}
-                                          onChange={(next) =>
-                                            updateStoreLabelConfig(column, {
-                                              color: next,
-                                            })
+                                          if (selectedImageItem && selectedImageIds.length > 0) {
+                                            updateImageAnimation(
+                                              selectedSection.id,
+                                              selectedImageItem.id,
+                                              selectedImageIds,
+                                              { durationMs: next }
+                                            );
+                                            return;
                                           }
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                          if (selectedItem) {
+                                            updateContentItemAnimation(
+                                              selectedSection.id,
+                                              selectedItem.id,
+                                              { durationMs: next }
+                                            );
+                                          }
+                                        }
+                                      }
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label={t.inspector.section.fields.animationDelay}>
+                                    <NumberField
+                                      value={
+                                        selectedLine?.animation?.delayMs ??
+                                        selectedImageItem?.images.find((image) =>
+                                          selectedImageIds.includes(image.id)
+                                        )?.animation?.delayMs ??
+                                        selectedItem.animation?.delayMs ??
+                                        0
+                                      }
+                                      min={0}
+                                      max={3000}
+                                      step={50}
+                                      ariaLabel={t.inspector.section.fields.animationDelay}
+                                      onChange={(next) =>
+                                        {
+                                          if (selectedLine && selectedTextItem) {
+                                            updateTextLineAnimation(
+                                              selectedSection.id,
+                                              selectedTextItem.id,
+                                              selectedLine.id,
+                                              { delayMs: next }
+                                            );
+                                            return;
+                                          }
+                                          if (selectedImageItem && selectedImageIds.length > 0) {
+                                            updateImageAnimation(
+                                              selectedSection.id,
+                                              selectedImageItem.id,
+                                              selectedImageIds,
+                                              { delayMs: next }
+                                            );
+                                            return;
+                                          }
+                                          if (selectedItem) {
+                                            updateContentItemAnimation(
+                                              selectedSection.id,
+                                              selectedItem.id,
+                                              { delayMs: next }
+                                            );
+                                          }
+                                        }
+                                      }
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : null}
                             </div>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
-                  </div>
+                    {selectedSection && isTargetStores ? (
+                      <div className={cardClass}>
+                        <button
+                          type="button"
+                          className={cardHeaderClass + " w-full"}
+                          aria-expanded={isStoreDesignOpen}
+                          onClick={() => setIsStoreDesignOpen((current) => !current)}
+                        >
+                          <span>ストアデザイン</span>
+                          <ChevronDown
+                            size={14}
+                            className={
+                              isStoreDesignOpen
+                                ? "rotate-180 transition"
+                                : "transition"
+                            }
+                          />
+                        </button>
+                        {isStoreDesignOpen ? (
+                          <div className={cardBodyClass}>
+                            <div className="flex flex-col gap-3">
+                              {!hasStoresData ? (
+                                <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                  CSV取り込み後にラベル設定が表示されます。
+                                </div>
+                              ) : targetStoresExtraColumns.length === 0 ? (
+                                <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                  自由列がありません。
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-3">
+                                  <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] p-3">
+                                    <div className="text-[11px] font-semibold text-[var(--ui-text)]">
+                                      ラベル条件
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <SegmentedField
+                                        value={storeFilterOperator}
+                                        ariaLabel="ラベル条件"
+                                        options={[
+                                          { value: "AND", label: "すべて満たす" },
+                                          { value: "OR", label: "いずれか" },
+                                        ]}
+                                        onChange={(next) =>
+                                          updateTargetStoresContent(selectedSection.id, {
+                                            storeFilterOperator: next as "AND" | "OR",
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                    <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                      {storeFilterOperator === "AND"
+                                        ? "選択したラベルを“すべて”満たす店舗のみ表示"
+                                        : "選択したラベルの“どれか1つ”でも満たす店舗を表示"}
+                                    </div>
+                                    {selectedFilterLabels.length >= 2 ? (
+                                      <div className="mt-1 text-[11px] text-[var(--ui-muted)]">
+                                        例: {selectedFilterLabels.slice(0, 2).join(
+                                          storeFilterOperator === "AND" ? " ∧ " : " ∨ "
+                                        )}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  <div className="text-[11px] text-[var(--ui-muted)]">
+                                    ラベル設定
+                                  </div>
+                                  {targetStoresExtraColumns.map((column) => {
+                                    const label = resolvedStoreLabels[column];
+                                    if (!label) {
+                                      return null;
+                                    }
+                                    return (
+                                      <div
+                                        key={column}
+                                        className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] p-3"
+                                      >
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                              <span
+                                                className="inline-flex items-center rounded-full border border-[var(--ui-border)] px-2 py-0.5 text-[11px] text-[var(--ui-text)]"
+                                                style={{ backgroundColor: label.color }}
+                                              >
+                                                {label.displayName}
+                                              </span>
+                                            </div>
+                                            <input
+                                              type="text"
+                                              className="ui-input mt-2 h-7 w-full text-[12px]"
+                                              value={label.displayName}
+                                              placeholder={label.columnKey}
+                                              onChange={(event) =>
+                                                updateStoreLabelConfig(column, {
+                                                  displayName: event.target.value,
+                                                })
+                                              }
+                                            />
+                                            <div className="mt-1 text-[10px] text-[var(--ui-muted)]">
+                                              元: {label.columnKey}
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <ColorField
+                                              value={label.color}
+                                              ariaLabel={`${label.displayName} の色`}
+                                              onChange={(next) =>
+                                                updateStoreLabelConfig(column, {
+                                                  color: next,
+                                                })
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             ) : selected.kind === "page" ? (
