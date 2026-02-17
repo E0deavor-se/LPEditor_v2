@@ -44,6 +44,7 @@ import PageStyleSpacing from "@/src/components/editor/right/groups/PageStyleSpac
 import PageStyleLayout from "@/src/components/editor/right/groups/PageStyleLayout";
 import PageStyleBackground from "@/src/components/editor/right/groups/PageStyleBackground";
 import PageStyleSectionAnimation from "@/src/components/editor/right/groups/PageStyleSectionAnimation";
+import PageMetaPanel from "./groups/PageMetaPanel";
 import Accordion from "@/src/components/editor/right/primitives/Accordion";
 import SectionCardPresetGallery from "@/src/components/editor/right/section/SectionCardPresetGallery";
 import SectionStylePanel from "@/src/components/editor/right/section/SectionStylePanel";
@@ -232,6 +233,7 @@ export default function InspectorPanel() {
     setPageSectionAnimation,
     setPageBackground,
     setMvBackground,
+    setPageMeta,
     updateSectionContent,
     updateSectionData,
     updateSectionStyle,
@@ -283,6 +285,7 @@ export default function InspectorPanel() {
       setPageSectionAnimation: state.setPageSectionAnimation,
       setPageBackground: state.setPageBackground,
       setMvBackground: state.setMvBackground,
+      setPageMeta: state.setPageMeta,
       updateSectionContent: state.updateSectionContent,
       updateSectionData: state.updateSectionData,
       updateSectionStyle: state.updateSectionStyle,
@@ -333,6 +336,7 @@ export default function InspectorPanel() {
   }, [project.sections, selected]);
 
   const pageStyle = project.pageBaseStyle as PageBaseStyle;
+  const pageMeta = project.settings?.pageMeta;
   const [backgroundTarget, setBackgroundTarget] = useState<
     "page" | "mv"
   >("page");
@@ -2215,6 +2219,12 @@ export default function InspectorPanel() {
               <div className="flex flex-col gap-2">
                 {selected.kind === "page" ? (
                   <>
+                    <PageMetaPanel
+                      value={pageMeta}
+                      onChange={setPageMeta}
+                      assets={assets}
+                      onAddAsset={addAsset}
+                    />
                     <PageStyleTypography
                       value={pageStyle.typography}
                       onChange={setPageTypography}

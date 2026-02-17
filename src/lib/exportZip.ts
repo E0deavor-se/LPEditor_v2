@@ -19,6 +19,167 @@ const formatDate = (value?: unknown) =>
     ? value.replaceAll("-", "/")
     : "";
 
+const TITLE_SUFFIX = " | au PAYキャンペーン";
+
+const ensureTitleSuffix = (value: string, enabled: boolean) => {
+  if (!enabled) {
+    return value;
+  }
+  if (!value) {
+    return TITLE_SUFFIX.trim();
+  }
+  return value.includes(TITLE_SUFFIX) ? value : `${value}${TITLE_SUFFIX}`;
+};
+
+const resolveCampaignPeriod = (project: ProjectState) => {
+  const section = project.sections.find(
+    (entry) => entry.type === "campaignPeriodBar"
+  );
+  const start = formatDate(section?.data?.startDate);
+  const end = formatDate(section?.data?.endDate);
+  if (start && end) {
+    return `${start} - ${end}`;
+  }
+  return start || end || "";
+};
+
+const resolveHeroImageUrl = (project: ProjectState) => {
+  const hero = project.sections.find((entry) => entry.type === "heroImage");
+  if (!hero) {
+    return "";
+  }
+  const assets = project.assets ?? {};
+  const data = hero.data ?? {};
+  const slidesPc = Array.isArray(data.heroSlidesPc)
+    ? data.heroSlidesPc
+    : [];
+  const slidesSp = Array.isArray(data.heroSlidesSp)
+    ? data.heroSlidesSp
+    : [];
+  const slide = slidesPc[0] ?? slidesSp[0];
+  if (slide && typeof slide === "object") {
+    const slideEntry = slide as { assetId?: string; src?: string };
+    const slideAsset = slideEntry.assetId
+      ? assets[slideEntry.assetId]?.data
+      : "";
+    return slideAsset || str(slideEntry.src || "");
+  }
+  const assetId =
+    typeof data.imageAssetIdPc === "string"
+      ? data.imageAssetIdPc
+      : typeof data.imageAssetId === "string"
+      ? data.imageAssetId
+      : typeof data.imageAssetIdSp === "string"
+      ? data.imageAssetIdSp
+      : "";
+  return (
+    (assetId ? assets[assetId]?.data : "") ||
+    str(data.imageUrl || "") ||
+    str(data.imageUrlSp || "")
+  );
+};
+
+const resolveMvBackgroundImageUrl = (project: ProjectState) => {
+  const mv = project.settings?.backgrounds?.mv;
+  if (!mv || mv.type !== "image") {
+    return "";
+  }
+  const assets = project.assets ?? {};
+  const assetId = mv.assetId || "";
+  return (assetId ? assets[assetId]?.data : "") || "";
+};
+
+const resolvePageMeta = (project: ProjectState) => {
+  const pageMeta = (project.settings?.pageMeta ?? {}) as {
+    title?: string;
+    description?: string;
+    faviconUrl?: string;
+    faviconAssetId?: string;
+    ogpImageUrl?: string;
+    ogpImageAssetId?: string;
+    ogpTitle?: string;
+    ogpDescription?: string;
+    presets?: {
+      appendAuPayTitle?: boolean;
+      ogpFromMv?: boolean;
+      injectCampaignPeriod?: boolean;
+    };
+  };
+  const presets = pageMeta.presets ?? {};
+  const baseTitle =
+    str(pageMeta.title) || str(project.meta.projectName) || "キャンペーンLP";
+  const title = ensureTitleSuffix(baseTitle, Boolean(presets.appendAuPayTitle));
+  const baseDescription = str(pageMeta.description);
+  const campaignPeriod = resolveCampaignPeriod(project);
+  const applyPeriod = (value: string) => {
+    if (!presets.injectCampaignPeriod || !campaignPeriod) {
+      return value;
+    }
+    const label = `キャンペーン期間: ${campaignPeriod}`;
+    if (!value) {
+      return label;
+    }
+    return value.includes(label) ? value : `${value} ${label}`;
+  };
+  const description = applyPeriod(baseDescription);
+  const ogpTitleBase = str(pageMeta.ogpTitle) || baseTitle;
+  const ogpTitle = ensureTitleSuffix(
+    ogpTitleBase,
+    Boolean(presets.appendAuPayTitle)
+  );
+  const ogpDescription = applyPeriod(
+    str(pageMeta.ogpDescription) || description
+  );
+  const assets = project.assets ?? {};
+  const faviconUrl =
+    str(pageMeta.faviconUrl) ||
+    (pageMeta.faviconAssetId
+      ? assets[pageMeta.faviconAssetId]?.data
+      : "");
+  const manualOgp =
+    str(pageMeta.ogpImageUrl) ||
+    (pageMeta.ogpImageAssetId
+      ? assets[pageMeta.ogpImageAssetId]?.data
+      : "");
+  const mvImage = resolveHeroImageUrl(project) || resolveMvBackgroundImageUrl(project);
+  const ogpImageUrl = presets.ogpFromMv && mvImage ? mvImage : manualOgp;
+  return {
+    title,
+    description,
+    faviconUrl,
+    ogpTitle,
+    ogpDescription,
+    ogpImageUrl,
+  };
+};
+
+const buildMetaHeadTags = (project: ProjectState) => {
+  const meta = resolvePageMeta(project);
+  const tags = [
+    meta.description
+      ? `<meta name="description" content="${escapeHtml(meta.description)}" />`
+      : "",
+    meta.faviconUrl
+      ? `<link rel="icon" href="${escapeHtml(meta.faviconUrl)}" />`
+      : "",
+    meta.ogpTitle
+      ? `<meta property="og:title" content="${escapeHtml(meta.ogpTitle)}" />`
+      : "",
+    meta.ogpDescription
+      ? `<meta property="og:description" content="${escapeHtml(
+          meta.ogpDescription
+        )}" />`
+      : "",
+    meta.ogpImageUrl
+      ? `<meta property="og:image" content="${escapeHtml(meta.ogpImageUrl)}" />`
+      : "",
+  ];
+  if (meta.ogpTitle || meta.ogpDescription || meta.ogpImageUrl) {
+    tags.unshift('<meta property="og:type" content="website" />');
+  }
+  return tags.filter(Boolean).join("\n    ");
+};
+
 const resolveTargetStoresConfig = (project: ProjectState) => {
   const section = project.sections.find(
     (entry) => entry.type === "targetStores"
@@ -524,7 +685,8 @@ export const buildIndexHtml = (project: ProjectState): string => {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(project.meta.projectName || "キャンペーンLP")}</title>
+    <title>${escapeHtml(resolvePageMeta(project).title)}</title>
+    ${buildMetaHeadTags(project)}
     <link rel="stylesheet" href="assets/main.css" />
   </head>
   <body>

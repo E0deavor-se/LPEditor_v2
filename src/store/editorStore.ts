@@ -9,6 +9,7 @@ import type {
   ImageContentItem,
   ImageItem,
   PageBaseStyle,
+  PageMetaSettings,
   ProjectSettings,
   ProjectState,
   PrimaryLine,
@@ -191,6 +192,45 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
     page: { type: "solid", color: "#ffffff" },
     mv: { type: "solid", color: "#ffffff" },
   },
+  pageMeta: {
+    title: "",
+    description: "",
+    faviconUrl: "",
+    faviconAssetId: "",
+    ogpImageUrl: "",
+    ogpImageAssetId: "",
+    ogpTitle: "",
+    ogpDescription: "",
+    presets: {
+      appendAuPayTitle: false,
+      ogpFromMv: false,
+      injectCampaignPeriod: false,
+    },
+  },
+};
+
+const normalizePageMetaSettings = (
+  value?: Partial<PageMetaSettings>
+): PageMetaSettings => {
+  const presets = value?.presets ?? {};
+  return {
+    title: typeof value?.title === "string" ? value.title : "",
+    description: typeof value?.description === "string" ? value.description : "",
+    faviconUrl: typeof value?.faviconUrl === "string" ? value.faviconUrl : "",
+    faviconAssetId:
+      typeof value?.faviconAssetId === "string" ? value.faviconAssetId : "",
+    ogpImageUrl: typeof value?.ogpImageUrl === "string" ? value.ogpImageUrl : "",
+    ogpImageAssetId:
+      typeof value?.ogpImageAssetId === "string" ? value.ogpImageAssetId : "",
+    ogpTitle: typeof value?.ogpTitle === "string" ? value.ogpTitle : "",
+    ogpDescription:
+      typeof value?.ogpDescription === "string" ? value.ogpDescription : "",
+    presets: {
+      appendAuPayTitle: Boolean(presets.appendAuPayTitle),
+      ogpFromMv: Boolean(presets.ogpFromMv),
+      injectCampaignPeriod: Boolean(presets.injectCampaignPeriod),
+    },
+  };
 };
 
 const normalizePageBaseStyle = (
@@ -330,12 +370,16 @@ const normalizeProjectSettings = (
   const mv = isBackgroundSpec(normalizedBackgrounds.mv)
     ? normalizedBackgrounds.mv
     : DEFAULT_PROJECT_SETTINGS.backgrounds?.mv;
+  const pageMeta = normalizePageMetaSettings(
+    (raw as ProjectSettings).pageMeta
+  );
   return {
     ...raw,
     backgrounds: {
       page,
       mv,
     },
+    pageMeta,
   };
 };
 
@@ -1671,6 +1715,7 @@ export type EditorUIState = {
   ) => void;
   setPageBackground: (spec: BackgroundSpec) => void;
   setMvBackground: (spec: BackgroundSpec) => void;
+  setPageMeta: (patch: Partial<PageMetaSettings>) => void;
   updateProjectStores: (stores: ProjectState["stores"]) => void;
   updateStoresData: (
     sectionId: string,
@@ -5099,6 +5144,52 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           ...settings.backgrounds,
           mv: spec,
         },
+      };
+      const nextProject: ProjectState = {
+        ...state.project,
+        meta: {
+          ...state.project.meta,
+          updatedAt: new Date().toISOString(),
+        },
+        settings: nextSettings,
+      };
+
+      if (projectsEqual(state.project, nextProject)) {
+        return state;
+      }
+
+      const nextUndoStack = pushStack(
+        state.undoStack,
+        cloneProject(state.project)
+      );
+
+      return {
+        ...state,
+        project: nextProject,
+        undoStack: nextUndoStack,
+        redoStack: [],
+        canUndo: nextUndoStack.length > 0,
+        canRedo: false,
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  setPageMeta: (patch) =>
+    set((state) => {
+      const settings = normalizeProjectSettings(state.project.settings);
+      const baseMeta = normalizePageMetaSettings(settings.pageMeta);
+      const nextMeta: PageMetaSettings = {
+        ...baseMeta,
+        ...patch,
+        presets: {
+          ...baseMeta.presets,
+          ...patch.presets,
+        },
+      };
+      const nextSettings: ProjectState["settings"] = {
+        ...settings,
+        pageMeta: nextMeta,
       };
       const nextProject: ProjectState = {
         ...state.project,

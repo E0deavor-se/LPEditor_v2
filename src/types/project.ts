@@ -388,11 +388,30 @@ export type PageBaseStyle = {
   };
 };
 
+export type PageMetaPresets = {
+  appendAuPayTitle?: boolean;
+  ogpFromMv?: boolean;
+  injectCampaignPeriod?: boolean;
+};
+
+export type PageMetaSettings = {
+  title: string;
+  description: string;
+  faviconUrl?: string;
+  faviconAssetId?: string;
+  ogpImageUrl?: string;
+  ogpImageAssetId?: string;
+  ogpTitle?: string;
+  ogpDescription?: string;
+  presets?: PageMetaPresets;
+};
+
 export type ProjectSettings = {
   backgrounds?: {
     page?: BackgroundSpec;
     mv?: BackgroundSpec;
   };
+  pageMeta?: PageMetaSettings;
   [key: string]: unknown;
 };
 
