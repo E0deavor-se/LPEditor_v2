@@ -7,6 +7,7 @@ import NumberField from "@/src/components/editor/right/primitives/NumberField";
 import SelectField from "@/src/components/editor/right/primitives/SelectField";
 import type { PageBaseStyle } from "@/src/types/project";
 import { useI18n } from "@/src/i18n";
+import { FONT_OPTIONS } from "@/src/lib/fontOptions";
 
 type PageStyleTypographyProps = {
   value: PageBaseStyle["typography"];
@@ -32,9 +33,11 @@ export default function PageStyleTypography({
           ariaLabel={t.inspector.page.fields.font}
           onChange={(next) => onChange({ fontFamily: next })}
         >
-          <option value="system-ui">system-ui</option>
-          <option value="Inter">Inter</option>
-          <option value="Noto Sans JP">Noto Sans JP</option>
+          {FONT_OPTIONS.map((font) => (
+            <option key={font.value} value={font.value}>
+              {font.label}
+            </option>
+          ))}
         </SelectField>
       </FieldRow>
       <FieldRow label={t.inspector.page.fields.baseSize}>

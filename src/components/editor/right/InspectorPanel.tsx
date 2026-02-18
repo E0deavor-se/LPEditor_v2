@@ -49,6 +49,7 @@ import Accordion from "@/src/components/editor/right/primitives/Accordion";
 import SectionCardPresetGallery from "@/src/components/editor/right/section/SectionCardPresetGallery";
 import SectionStylePanel from "@/src/components/editor/right/section/SectionStylePanel";
 import TextLineList from "@/src/components/editor/right/section/TextLineList";
+import RichTextInput from "@/src/components/editor/right/section/RichTextInput";
 import CsvImportPreviewModal from "@/src/components/editor/right/section/CsvImportPreviewModal";
 import type {
   BackgroundSpec,
@@ -668,6 +669,12 @@ export default function InspectorPanel() {
       ? selectedSection?.data?.items.map((item: string) => String(item))
       : []
     : [];
+  const legalNotesBullet =
+    selectedSection?.data?.bullet === "none" ? "none" : "disc";
+  const legalNotesWidth =
+    typeof selectedSection?.data?.noteWidthPct === "number"
+      ? selectedSection?.data?.noteWidthPct
+      : 100;
   const rankingRankLabel = useMemo(() => {
     const data = selectedSection?.data ?? {};
     const headers = data.headers && typeof data.headers === "object"
@@ -3317,6 +3324,14 @@ export default function InspectorPanel() {
                                     value
                                   )
                                 }
+                                onChangeMarks={(lineId, patch) =>
+                                  updateTextLineMarks(
+                                    selectedSection.id,
+                                    targetStoresNoticeItem.id,
+                                    lineId,
+                                    patch
+                                  )
+                                }
                                 onAddLine={() =>
                                   addTargetStoresNoticeLine(
                                     targetStoresNoticeItem.id
@@ -3337,6 +3352,8 @@ export default function InspectorPanel() {
                                     lineId
                                   )
                                 }
+                                sectionId={selectedSection.id}
+                                itemId={targetStoresNoticeItem.id}
                                 disabled={isLocked}
                                 onRemoveLast={() => {
                                   const lastLine =
@@ -3437,6 +3454,36 @@ export default function InspectorPanel() {
                                 }
                               />
                             </FieldRow>
+                            <FieldRow label="箇条書き">
+                              <SegmentedField
+                                value={legalNotesBullet}
+                                ariaLabel="箇条書き"
+                                options={[
+                                  { value: "disc", label: "・あり" },
+                                  { value: "none", label: "なし" },
+                                ]}
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    bullet: next,
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="幅(%)">
+                              <NumberField
+                                value={legalNotesWidth}
+                                min={40}
+                                max={100}
+                                step={5}
+                                ariaLabel="注意文言の幅"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    noteWidthPct: next,
+                                  })
+                                }
+                                disabled={isLocked}
+                              />
+                            </FieldRow>
                           </div>
                         ) : null}
                         {isLegalNotes ? (
@@ -3445,64 +3492,49 @@ export default function InspectorPanel() {
                               注意文言
                             </div>
                             {legalNotesTextItem ? (
-                              <div className="flex flex-col gap-2">
-                                <div className="flex flex-col gap-1">
-                                  {legalNotesTextItem.lines.map((line, index) => (
-                                    <div
-                                      key={line.id}
-                                      className="flex items-center gap-2"
-                                    >
-                                      <span className="w-5 text-right text-[11px] text-[var(--ui-muted)]">
-                                        {index + 1}
-                                      </span>
-                                      <input
-                                        type="text"
-                                        className="ui-input h-7 w-full text-[12px]"
-                                        value={String(line.text ?? "")}
-                                        onFocus={() => {
-                                          setSelectedItemId(legalNotesTextItem.id);
-                                          setSelectedLineId(line.id);
-                                        }}
-                                        onChange={(event) => {
-                                          updateTextLineText(
-                                            selectedSection.id,
-                                            legalNotesTextItem.id,
-                                            line.id,
-                                            event.target.value
-                                          );
-                                        }}
-                                        disabled={isLocked}
-                                      />
-                                      <button
-                                        type="button"
-                                        className="ui-button h-7 w-7 px-0"
-                                        onClick={() =>
-                                          removeTextLine(
-                                            selectedSection.id,
-                                            legalNotesTextItem.id,
-                                            line.id
-                                          )
-                                        }
-                                        aria-label={t.inspector.section.buttons.deleteItem}
-                                        title={t.inspector.section.buttons.deleteItem}
-                                        disabled={isLocked}
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                                <button
-                                  type="button"
-                                  className="ui-button h-7 px-2 text-[11px]"
-                                  onClick={() =>
-                                    addTextLine(selectedSection.id, legalNotesTextItem.id)
-                                  }
-                                  disabled={isLocked}
-                                >
-                                  注意文言を追加
-                                </button>
-                              </div>
+                              <TextLineList
+                                lines={legalNotesTextItem.lines}
+                                selectedLineId={selectedLine?.id}
+                                onSelect={(lineId) => {
+                                  setSelectedItemId(legalNotesTextItem.id);
+                                  setSelectedLineId(lineId);
+                                }}
+                                onChangeText={(lineId, value) =>
+                                  updateTextLineText(
+                                    selectedSection.id,
+                                    legalNotesTextItem.id,
+                                    lineId,
+                                    value
+                                  )
+                                }
+                                onChangeMarks={(lineId, patch) =>
+                                  updateTextLineMarks(
+                                    selectedSection.id,
+                                    legalNotesTextItem.id,
+                                    lineId,
+                                    patch
+                                  )
+                                }
+                                onAddLine={() =>
+                                  addTextLine(selectedSection.id, legalNotesTextItem.id)
+                                }
+                                onReorderLine={(fromIndex, toIndex) =>
+                                  reorderTextLines(
+                                    selectedSection.id,
+                                    legalNotesTextItem.id,
+                                    fromIndex,
+                                    toIndex
+                                  )
+                                }
+                                onRemoveLine={(lineId) =>
+                                  removeTextLine(
+                                    selectedSection.id,
+                                    legalNotesTextItem.id,
+                                    lineId
+                                  )
+                                }
+                                disabled={isLocked}
+                              />
                             ) : (
                               <button
                                 type="button"
@@ -4390,15 +4422,12 @@ export default function InspectorPanel() {
                           <div className="flex flex-col gap-2">
                             {titleItem ? (
                               <FieldRow label="タイトル">
-                                <input
-                                  type="text"
-                                  className="ui-input h-7 w-full text-[12px]"
+                                <RichTextInput
                                   value={
                                     titleItem.text ||
                                     String(selectedSection.data.title ?? "")
                                   }
-                                  onChange={(event) => {
-                                    const nextTitle = event.target.value;
+                                  onChange={(nextTitle) => {
                                     updateTitleItemText(
                                       selectedSection.id,
                                       titleItem.id,
@@ -4408,6 +4437,13 @@ export default function InspectorPanel() {
                                       title: nextTitle,
                                     });
                                   }}
+                                  onAlignChange={(align) =>
+                                    updateTitleItemMarks(
+                                      selectedSection.id,
+                                      titleItem.id,
+                                      { textAlign: align }
+                                    )
+                                  }
                                   disabled={isLocked}
                                 />
                               </FieldRow>
@@ -5158,6 +5194,14 @@ export default function InspectorPanel() {
                                   value
                                 )
                               }
+                              onChangeMarks={(lineId, patch) =>
+                                updateTextLineMarks(
+                                  selectedSection.id,
+                                  selectedTextItem.id,
+                                  lineId,
+                                  patch
+                                )
+                              }
                               onAddLine={() =>
                                 addTextLine(selectedSection.id, selectedTextItem.id)
                               }
@@ -5176,6 +5220,8 @@ export default function InspectorPanel() {
                                   lineId
                                 )
                               }
+                              sectionId={selectedSection.id}
+                              itemId={selectedTextItem.id}
                               disabled={isLocked}
                               onRemoveLast={() => {
                                 const lastLine =
@@ -5307,40 +5353,48 @@ export default function InspectorPanel() {
                                 })
                               )}
                             </div>
-                            {selectedImageIds.length >= 2 ? (
+                            {selectedImageItem.images.length >= 2 ? (
                               <FieldRow label={t.inspector.section.fields.imageLayout}>
-                                <SegmentedField
-                                  value={selectedImageItem.layout ?? "vertical"}
+                                <SelectField
+                                  value={selectedImageItem.layout ?? "auto"}
                                   ariaLabel={t.inspector.section.fields.imageLayout}
-                                  options={[
-                                    {
-                                      value: "vertical",
-                                      label:
-                                        t.inspector.section.imageLayouts.vertical,
-                                    },
-                                    {
-                                      value: "horizontal",
-                                      label:
-                                        t.inspector.section.imageLayouts.horizontal,
-                                    },
-                                    {
-                                      value: "grid",
-                                      label: t.inspector.section.imageLayouts.grid,
-                                    },
-                                    {
-                                      value: "slideshow",
-                                      label:
-                                        t.inspector.section.imageLayouts.slideshow,
-                                    },
-                                  ]}
                                   onChange={(next) =>
                                     setImageItemLayout(
                                       selectedSection.id,
                                       selectedImageItem.id,
-                                      next as "vertical" | "horizontal" | "grid" | "slideshow"
+                                      next as
+                                        | "auto"
+                                        | "vertical"
+                                        | "horizontal"
+                                        | "columns2"
+                                        | "columns3"
+                                        | "grid"
+                                        | "slideshow"
                                     )
                                   }
-                                />
+                                >
+                                  <option value="auto">
+                                    {t.inspector.section.imageLayouts.auto}
+                                  </option>
+                                  <option value="vertical">
+                                    {t.inspector.section.imageLayouts.vertical}
+                                  </option>
+                                  <option value="horizontal">
+                                    {t.inspector.section.imageLayouts.horizontal}
+                                  </option>
+                                  <option value="columns2">
+                                    {t.inspector.section.imageLayouts.columns2}
+                                  </option>
+                                  <option value="columns3">
+                                    {t.inspector.section.imageLayouts.columns3}
+                                  </option>
+                                  <option value="grid">
+                                    {t.inspector.section.imageLayouts.grid}
+                                  </option>
+                                  <option value="slideshow">
+                                    {t.inspector.section.imageLayouts.slideshow}
+                                  </option>
+                                </SelectField>
                               </FieldRow>
                             ) : null}
                           </div>
@@ -6181,15 +6235,20 @@ export default function InspectorPanel() {
                                   {t.inspector.section.fields.lineText}
                                 </div>
                                 <div className={quickControlClass}>
-                                  <input
-                                    type="text"
-                                    className="ui-input h-8 w-full text-[12px]"
+                                  <RichTextInput
                                     value={selectedTitleItem.text}
-                                    onChange={(event) =>
+                                    onChange={(nextValue) =>
                                       updateTitleItemText(
                                         selectedSection.id,
                                         selectedTitleItem.id,
-                                        event.target.value
+                                        nextValue
+                                      )
+                                    }
+                                    onAlignChange={(align) =>
+                                      updateTitleItemMarks(
+                                        selectedSection.id,
+                                        selectedTitleItem.id,
+                                        { textAlign: align }
                                       )
                                     }
                                   />

@@ -4,6 +4,7 @@ import type {
   SectionCardStyle,
   SectionStyle,
 } from "@/src/types/project";
+import { renderRichText } from "@/src/lib/richText";
 import {
   clampCardShadowOpacity,
   getSectionCardPreset,
@@ -111,11 +112,12 @@ export default function SectionCard({
   };
 
   const showHeader = Boolean(resolvedTitle);
+  const renderedTitle = resolvedTitle ? renderRichText(resolvedTitle) : null;
   const bodyContent =
     headerLayout === "inner" && showHeader ? (
       <>
         <h2 className="lp-section-title lp-section-title--inner" style={titleStyle}>
-          {resolvedTitle}
+          {renderedTitle}
         </h2>
         {children}
       </>
@@ -135,12 +137,12 @@ export default function SectionCard({
         {showHeader && headerLayout === "band" ? (
           <div className="lp-section-header">
             <h2 className="lp-section-title" style={titleStyle}>
-              {resolvedTitle}
+              {renderedTitle}
             </h2>
           </div>
         ) : null}
         {showHeader && headerLayout === "chip" ? (
-          <span className="lp-card__titlechip">{resolvedTitle}</span>
+          <span className="lp-card__titlechip">{renderedTitle}</span>
         ) : null}
         <div className="lp-section-body">{bodyContent}</div>
       </div>

@@ -836,10 +836,14 @@ const normalizeSectionContent = (
           .filter((image) => image.src.trim().length > 0)
       : [];
     const layout =
-      item.layout === "horizontal" || item.layout === "grid"
+      item.layout === "auto" ||
+      item.layout === "vertical" ||
+      item.layout === "horizontal" ||
+      item.layout === "columns2" ||
+      item.layout === "columns3" ||
+      item.layout === "grid" ||
+      item.layout === "slideshow"
         ? item.layout
-        : item.layout === "vertical"
-        ? "vertical"
         : undefined;
     return {
       id: typeof item.id === "string" && item.id.trim() ? item.id : createItemId(),
@@ -2335,6 +2339,8 @@ const createSection = (type: string): SectionBase => {
           title: "注意事項",
           items: [...DEFAULT_LEGAL_NOTES_LINES],
           text: "",
+          bullet: "disc",
+          noteWidthPct: 100,
         },
         content: normalizeSectionContent(),
         style: normalizeSectionStyle(),
@@ -2648,6 +2654,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           id: createItemId(),
           type: "image",
           images: [],
+          layout: "auto",
         };
       } else if (type === "button") {
         nextItem = {
@@ -3799,6 +3806,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         return {
           ...item,
           images: [...item.images, nextImage],
+          layout: item.layout ?? "auto",
         };
       });
 

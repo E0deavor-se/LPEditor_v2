@@ -127,8 +127,11 @@ const ja = {
         hint: "行を選択すると装飾できます",
       },
       imageLayouts: {
+        auto: "自動",
         vertical: "縦スライド",
         horizontal: "横スライド",
+        columns2: "2枚横並び",
+        columns3: "3枚横並び",
         grid: "グリッド",
         slideshow: "スライドショー",
       },

@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { PrimaryLine } from "@/src/types/project";
+import type { LineMarks, PrimaryLine } from "@/src/types/project";
 import { useI18n } from "@/src/i18n";
 
 type TextLineListProps = {
@@ -29,8 +29,12 @@ type TextLineListProps = {
   onReorderLine?: (fromIndex: number, toIndex: number) => void;
   onRemoveLine: (lineId: string) => void;
   onRemoveLast?: () => void;
+  onChangeMarks?: (lineId: string, patch: LineMarks) => void;
+  sectionId?: string;
+  itemId?: string;
   disabled?: boolean;
 };
+
 
 export default function TextLineList({
   lines,
@@ -41,6 +45,9 @@ export default function TextLineList({
   onReorderLine,
   onRemoveLine,
   onRemoveLast,
+  onChangeMarks,
+  sectionId,
+  itemId,
   disabled,
 }: TextLineListProps) {
   const t = useI18n();
@@ -127,13 +134,19 @@ export default function TextLineList({
               event.stopPropagation();
               event.currentTarget.focus();
             }}
-            onFocus={() => onSelect(line.id)}
+            onFocus={() => {
+              onSelect(line.id);
+            }}
             onChange={(event) => {
               const nextValue = event.target.value;
               setLocalText(nextValue);
               onChangeText?.(line.id, nextValue);
             }}
             disabled={disabled}
+            data-kind="line"
+            data-section-id={sectionId}
+            data-item-id={itemId}
+            data-line-id={line.id}
             placeholder={t.inspector.section.placeholders.emptyLine}
           />
         </div>

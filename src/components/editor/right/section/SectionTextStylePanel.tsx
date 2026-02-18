@@ -9,6 +9,7 @@ import SegmentedField from "@/src/components/editor/right/primitives/SegmentedFi
 import SelectField from "@/src/components/editor/right/primitives/SelectField";
 import ToggleField from "@/src/components/editor/right/primitives/ToggleField";
 import { useI18n } from "@/src/i18n";
+import { FONT_OPTIONS } from "@/src/lib/fontOptions";
 import type {
   SectionStyle,
   SectionStylePatch,
@@ -20,8 +21,6 @@ type SectionTextStylePanelProps = {
   onStyleChange: (patch: SectionStylePatch) => void;
   defaultOpen?: boolean;
 };
-
-const FONT_OPTIONS = ["system-ui", "Inter", "Noto Sans JP"];
 
 export default function SectionTextStylePanel({
   style,
@@ -49,8 +48,8 @@ export default function SectionTextStylePanel({
           onChange={(next) => onStyleChange({ typography: { fontFamily: next } })}
         >
           {FONT_OPTIONS.map((font) => (
-            <option key={font} value={font}>
-              {font}
+            <option key={font.value} value={font.value}>
+              {font.label}
             </option>
           ))}
         </SelectField>

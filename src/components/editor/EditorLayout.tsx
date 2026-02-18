@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LeftPanel from "@/src/components/editor/LeftPanel";
 import PreviewPane from "@/src/components/editor/PreviewPane";
 import TopBar from "@/src/components/editor/TopBar";
+import TopTextToolbar from "@/src/components/editor/TopTextToolbar";
 import TooltipLayer from "@/src/components/editor/TooltipLayer";
 import InspectorPanel from "@/src/components/editor/right/InspectorPanel";
 import { getDb } from "@/src/db/db";
@@ -242,6 +243,7 @@ export default function EditorLayout() {
 	return (
 		<div className="lp-editor flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
 			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} />
+			<TopTextToolbar />
 			<div className="flex min-h-0 flex-1">
 				{showLeftPanel ? (
 					<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />

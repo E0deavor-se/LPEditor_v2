@@ -269,7 +269,14 @@ export type ImageContentItem = {
   id: string;
   type: "image";
   images: ImageItem[];
-  layout?: "vertical" | "horizontal" | "grid" | "slideshow";
+  layout?:
+    | "auto"
+    | "vertical"
+    | "horizontal"
+    | "columns2"
+    | "columns3"
+    | "grid"
+    | "slideshow";
   animation?: ContentItemAnimation;
 };
 

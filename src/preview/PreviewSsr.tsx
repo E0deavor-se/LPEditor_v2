@@ -6,6 +6,7 @@ import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
 import { resolveBackgroundPreset } from "@/src/lib/backgroundPresets";
 import { normalizeSectionCardStyle } from "@/src/lib/sections/sectionCardPresets";
 import { buildFooterHtml } from "@/src/lib/footerTemplate";
+import { renderRichText } from "@/src/lib/richText";
 import {
   getStableLabelColor,
   getUniqueLabelColorMap,
@@ -1094,6 +1095,44 @@ const getTargetStoresNoticeLines = (items?: ContentItem[]) => {
     .filter((text) => text.length > 0);
 };
 
+const resolveImageLayout = (
+  layout: ImageContentItem["layout"],
+  count: number
+) => {
+  if (layout === "auto") {
+    if (count <= 1) {
+      return "vertical" as const;
+    }
+    if (count === 2) {
+      return "columns2" as const;
+    }
+    if (count === 3) {
+      return "columns3" as const;
+    }
+    return "grid" as const;
+  }
+  if (!layout) {
+    return count > 1 ? ("slideshow" as const) : ("vertical" as const);
+  }
+  return layout;
+};
+
+const getImageLayoutClass = (layout: ImageContentItem["layout"]) => {
+  if (layout === "horizontal") {
+    return "flex flex-row gap-3 overflow-x-auto";
+  }
+  if (layout === "columns2") {
+    return "grid grid-cols-2 gap-3";
+  }
+  if (layout === "columns3") {
+    return "grid grid-cols-2 gap-3 sm:grid-cols-3";
+  }
+  if (layout === "grid") {
+    return "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4";
+  }
+  return "flex flex-col gap-3";
+};
+
 function TargetStoresSection({
   section,
   stores,
@@ -1112,7 +1151,7 @@ function TargetStoresSection({
     () =>
       imageItems.map((item) => ({
         ...item,
-        layout: item.layout ?? (item.images.length > 1 ? "slideshow" : "vertical"),
+        layout: resolveImageLayout(item.layout, item.images.length),
       })),
     [imageItems]
   );
@@ -1317,7 +1356,7 @@ function TargetStoresSection({
                 </div>
               );
             }
-            const layout = item.layout ?? "vertical";
+            const layout = resolveImageLayout(item.layout, item.images.length);
             if (layout === "slideshow") {
               const current = item.images[0];
               const resolvedSrc = current?.assetId
@@ -1360,12 +1399,7 @@ function TargetStoresSection({
                 </div>
               );
             }
-            const layoutClass =
-              layout === "horizontal"
-                ? "flex flex-row gap-3 overflow-x-auto"
-                : layout === "grid"
-                ? "grid grid-cols-2 gap-3"
-                : "flex flex-col gap-3";
+            const layoutClass = getImageLayoutClass(layout);
             return (
               <div
                 key={item.id}
@@ -1398,7 +1432,9 @@ function TargetStoresSection({
               <span aria-hidden="true">⚠</span>
               <div className="space-y-1">
                 {noticeLines.map((text, index) => (
-                  <p key={`notice-${section.id}-${index}`}>{text}</p>
+                  <p key={`notice-${section.id}-${index}`}>
+                    {renderRichText(text)}
+                  </p>
                 ))}
               </div>
             </div>
@@ -2073,6 +2109,7 @@ const renderContentItems = (
                 const textAlign =
                   line.marks?.textAlign ?? section.style.typography.textAlign;
                 const text = typeof line.text === "string" ? line.text : "";
+                const lineContent = text.length > 0 ? renderRichText(text) : "\u00a0";
                 const callout = line.marks?.callout;
                 const lineWrap = Boolean(callout?.enabled) && !wrapAll;
                 const lineClass = lineWrap
@@ -2096,7 +2133,7 @@ const renderContentItems = (
                       ...buildAnimationStyle(line.animation ?? item.animation),
                     }}
                   >
-                    {text.length > 0 ? text : "\u00a0"}
+                    {lineContent}
                   </p>
                 );
               })}
@@ -2116,8 +2153,7 @@ const renderContentItems = (
               </div>
             );
           }
-          const layout =
-            item.layout ?? (item.images.length > 1 ? "slideshow" : "vertical");
+          const layout = resolveImageLayout(item.layout, item.images.length);
           if (layout === "slideshow") {
             return (
               <div key={item.id} style={buildAnimationStyle(item.animation)}>
@@ -2125,12 +2161,7 @@ const renderContentItems = (
               </div>
             );
           }
-          const layoutClass =
-            layout === "horizontal"
-              ? "flex flex-row gap-3 overflow-x-auto"
-              : layout === "grid"
-              ? "grid grid-cols-2 gap-3"
-              : "flex flex-col gap-3";
+          const layoutClass = getImageLayoutClass(layout);
           return (
             <div
               key={item.id}
@@ -2634,7 +2665,7 @@ const renderSection = (
               <p className="text-center text-[13px] font-semibold leading-relaxed sm:text-[14px]">
                 {bodyLines.map((line, index) => (
                   <span key={`payment-body-${index}`}>
-                    {line}
+                    {renderRichText(line)}
                     {index < bodyLines.length - 1 ? <br /> : null}
                   </span>
                 ))}
@@ -2656,7 +2687,7 @@ const renderSection = (
               <p className="text-center text-[13px] font-bold leading-relaxed text-[#bf1d20] sm:text-[14px]">
                 {alertLines.map((line, index) => (
                   <span key={`payment-alert-${index}`}>
-                    {line}
+                    {renderRichText(line)}
                     {index < alertLines.length - 1 ? <br /> : null}
                   </span>
                 ))}
@@ -3215,14 +3246,31 @@ const renderSection = (
       const legalItems = Array.isArray(section.data.items)
         ? (section.data.items as string[])
         : [];
+      const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
+      const legalListClass =
+        legalBullet === "disc"
+          ? "mt-3 list-disc space-y-2 pl-5 text-sm text-[var(--lp-muted)]"
+          : "mt-3 list-none space-y-2 pl-0 text-sm text-[var(--lp-muted)]";
+      const rawNoteWidth = section.data?.noteWidthPct;
+      const noteWidthPct =
+        typeof rawNoteWidth === "number" && Number.isFinite(rawNoteWidth)
+          ? Math.min(100, Math.max(40, rawNoteWidth))
+          : 100;
       return (
         <section className="w-full">
           <ul
-            className="mt-3 list-disc space-y-2 pl-5 text-sm text-[var(--lp-muted)]"
-            style={cardTextColor ? { color: cardTextColor } : undefined}
+            className={legalListClass}
+            style={{
+              ...(cardTextColor ? { color: cardTextColor } : {}),
+              width: `${noteWidthPct}%`,
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
           >
             {legalItems.map((item, index) => (
-              <li key={`${section.id}-note-${index}`}>{item}</li>
+              <li key={`${section.id}-note-${index}`}>
+                {renderRichText(item)}
+              </li>
             ))}
           </ul>
         </section>

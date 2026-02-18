@@ -6,6 +6,7 @@ import type {
   SectionStyle,
   StoresTable,
 } from "@/src/types/project";
+import { normalizeSectionCardStyle } from "@/src/lib/sections/sectionCardPresets";
 
 const DEFAULT_TARGET_STORES_CONFIG = {
   labelKeys: [],
@@ -84,6 +85,11 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
       typeof section.style === "object" && section.style
         ? ({ ...section.style } as SectionStyle)
         : createDefaultStyle(),
+    sectionCardStyle: normalizeSectionCardStyle(
+      typeof section.sectionCardStyle === "object" && section.sectionCardStyle
+        ? section.sectionCardStyle
+        : undefined
+    ),
   };
 
   switch (base.type) {
@@ -121,6 +127,12 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
         ? base.data.items.map((item: unknown) => str(item))
         : [];
       base.data.text = str(base.data.text ?? "");
+      base.data.bullet = base.data.bullet === "none" ? "none" : "disc";
+      base.data.noteWidthPct =
+        typeof base.data.noteWidthPct === "number" &&
+        Number.isFinite(base.data.noteWidthPct)
+          ? base.data.noteWidthPct
+          : 100;
       break;
     case "footerHtml":
       base.data.html = str(base.data.html ?? "");
