@@ -3481,7 +3481,6 @@ export default function InspectorPanel() {
                                     noteWidthPct: next,
                                   })
                                 }
-                                disabled={isLocked}
                               />
                             </FieldRow>
                           </div>
