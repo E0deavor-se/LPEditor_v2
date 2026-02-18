@@ -4436,13 +4436,6 @@ export default function InspectorPanel() {
                                       title: nextTitle,
                                     });
                                   }}
-                                  onAlignChange={(align) =>
-                                    updateTitleItemMarks(
-                                      selectedSection.id,
-                                      titleItem.id,
-                                      { textAlign: align }
-                                    )
-                                  }
                                   disabled={isLocked}
                                 />
                               </FieldRow>
