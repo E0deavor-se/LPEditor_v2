@@ -62,6 +62,20 @@ type TargetStoresSectionProps = {
 
 type SlideshowImage = ImageItem & { w?: number; h?: number };
 
+/**
+ * 透過PNG/WebPかどうかを判定する（data URL の先頭を見て判定）
+ * PNG または WebP の場合に透過の可能性があるとみなす
+ */
+const isTransparentImage = (url: string): boolean => {
+  if (!url) return false;
+  if (url.startsWith("data:image/png")) return true;
+  if (url.startsWith("data:image/webp")) return true;
+  if (url.startsWith("data:image/gif")) return true;
+  // 外部URL の場合は拡張子で判定
+  const lower = url.toLowerCase().split("?")[0];
+  return lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".gif");
+};
+
 const parseHexColor = (value: string) => {
   const cleaned = value.replace("#", "").trim();
   if (cleaned.length === 3) {
@@ -2402,7 +2416,21 @@ const renderSection = (
                 <ImageSlideshow images={heroSlides} assets={assets} />
               </div>
             ) : heroUrl ? (
-              <div className="w-full" style={heroBoxStyle}>
+              <div
+                className="w-full"
+                style={{
+                  ...heroBoxStyle,
+                  ...(isTransparentImage(heroUrl)
+                    ? {
+                        backgroundImage:
+                          "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)",
+                        backgroundSize: "16px 16px",
+                        backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
+                        backgroundColor: "#fff",
+                      }
+                    : {}),
+                }}
+              >
                 <img
                   src={String(heroUrl)}
                   alt={String(section.data.alt ?? section.data.altText ?? "")}
@@ -3242,24 +3270,35 @@ const renderSection = (
         </section>
       );
     }
-    case "legalNotes":
+    case "legalNotes": {
       const legalItems = Array.isArray(section.data.items)
         ? (section.data.items as string[])
         : [];
       const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
-      const legalListClass =
-        legalBullet === "disc"
-          ? "mt-3 list-disc space-y-2 pl-5 text-sm text-[var(--lp-muted)]"
-          : "mt-3 list-none space-y-2 pl-0 text-sm text-[var(--lp-muted)]";
       const rawNoteWidth = section.data?.noteWidthPct;
       const noteWidthPct =
         typeof rawNoteWidth === "number" && Number.isFinite(rawNoteWidth)
           ? Math.min(100, Math.max(40, rawNoteWidth))
           : 100;
+      // 行ごとの marks.bullet 情報を取得（content.items[0].lines から）
+      const legalContentItems = Array.isArray(section.content?.items)
+        ? section.content!.items
+        : [];
+      const legalTextItem = legalContentItems.find((item) => item.type === "text") as
+        | { type: "text"; lines: Array<{ id: string; text: string; marks?: { bullet?: "disc" | "none" } }> }
+        | undefined;
+      const legalLineMarks = legalTextItem?.lines ?? [];
+      const getLineBullet = (index: number): "disc" | "none" => {
+        const lineMark = legalLineMarks[index];
+        if (lineMark?.marks?.bullet !== undefined) {
+          return lineMark.marks.bullet;
+        }
+        return legalBullet;
+      };
       return (
         <section className="w-full">
           <ul
-            className={legalListClass}
+            className="mt-3 space-y-2 pl-0 text-sm text-[var(--lp-muted)] list-none"
             style={{
               ...(cardTextColor ? { color: cardTextColor } : {}),
               width: `${noteWidthPct}%`,
@@ -3267,14 +3306,39 @@ const renderSection = (
               marginRight: "auto",
             }}
           >
-            {legalItems.map((item, index) => (
-              <li key={`${section.id}-note-${index}`}>
-                {renderRichText(item)}
-              </li>
-            ))}
+            {legalItems.map((item, index) => {
+              const lineBullet = getLineBullet(index);
+              return (
+                <li
+                  key={`${section.id}-note-${index}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: lineBullet === "disc" ? "0.4em" : "0",
+                    paddingLeft: lineBullet === "disc" ? "0" : "0",
+                  }}
+                >
+                  {lineBullet === "disc" && (
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        marginTop: "0.3em",
+                        width: "0.4em",
+                        height: "0.4em",
+                        borderRadius: "50%",
+                        backgroundColor: "currentColor",
+                        display: "inline-block",
+                      }}
+                    />
+                  )}
+                  <span>{renderRichText(item)}</span>
+                </li>
+              );
+            })}
           </ul>
         </section>
       );
+    }
     case "footerHtml":
       const brandBarSection = project?.sections?.find(
         (entry) => entry.type === "brandBar" && entry.visible

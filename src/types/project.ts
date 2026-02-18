@@ -182,6 +182,7 @@ export type LineMarks = {
   color?: string;
   size?: number;
   textAlign?: "left" | "center" | "right";
+  bullet?: "disc" | "none";
   callout?: {
     enabled?: boolean;
     variant?: "note" | "warn" | "info";

@@ -3494,6 +3494,8 @@ export default function InspectorPanel() {
                               <TextLineList
                                 lines={legalNotesTextItem.lines}
                                 selectedLineId={selectedLine?.id}
+                                showBulletToggle={true}
+                                defaultBullet={legalNotesBullet}
                                 onSelect={(lineId) => {
                                   setSelectedItemId(legalNotesTextItem.id);
                                   setSelectedLineId(lineId);

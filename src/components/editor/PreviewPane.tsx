@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/src/store/editorStore";
 
 const busyReasonLabel = {
-  render: "繝励Ξ繝薙Η繝ｼ繧呈緒逕ｻ荳ｭ",
-  ai: "謠先｡医ｒ逕滓・荳ｭ",
-  import: "繧｢繧ｻ繝・ヨ繧定ｪｭ縺ｿ霎ｼ縺ｿ荳ｭ",
-  stores: "繝・・繧ｿ繧貞酔譛滉ｸｭ",
-  assets: "繧｢繧ｻ繝・ヨ繧定ｪｭ縺ｿ霎ｼ縺ｿ荳ｭ",
-  responsive: "繝ｬ繧ｹ繝昴Φ繧ｷ繝悶ｒ驕ｩ逕ｨ荳ｭ",
+  render: "プレビューを描画中",
+  ai: "文章を生成中",
+  import: "アセットを読み込み中",
+  stores: "データを統合中",
+  assets: "アセットを読み込み中",
+  responsive: "レスポンシブを適用中",
 } as const;
 
 const PREVIEW_READY = "CLP_PREVIEW_READY";
@@ -24,7 +24,12 @@ type PreviewTargetStoresFiltersUpdate = {
   storeFilters?: Record<string, boolean>;
 };
 
-export default function PreviewPane() {
+type PreviewPaneProps = {
+  /** 外部からiframeRefを渡すことでスクリーンショット等に利用できる */
+  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
+};
+
+export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPaneProps) {
   const previewMode = useEditorStore((state) => state.previewMode);
   const previewAspect = useEditorStore((state) => state.previewAspect);
   const previewDesktopWidth = useEditorStore(
@@ -69,6 +74,14 @@ export default function PreviewPane() {
   const previewScrollRef = useRef<HTMLElement | null>(null);
   const stickyTopRef = useRef(0);
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+
+  // 外部 iframeRef と内部 iframeRef を同期
+  const setIframeRef = (el: HTMLIFrameElement | null) => {
+    iframeRef.current = el;
+    if (externalIframeRef) {
+      (externalIframeRef as React.MutableRefObject<HTMLIFrameElement | null>).current = el;
+    }
+  };
 
   useEffect(() => {
     if (timerRef.current) {
@@ -425,7 +438,7 @@ export default function PreviewPane() {
                     <div className={scrollClassName}>
                       <iframe
                         key={`preview-${previewKey}-${previewMode}`}
-                        ref={iframeRef}
+                        ref={setIframeRef}
                         onLoad={handleIframeLoad}
                         title="プレビュー"
                         className={iframeClassName}
@@ -473,7 +486,7 @@ export default function PreviewPane() {
                   <div className={scrollClassName}>
                     <iframe
                       key={`preview-${previewKey}-${previewMode}`}
-                      ref={iframeRef}
+                      ref={setIframeRef}
                       onLoad={handleIframeLoad}
                       title="プレビュー"
                       className={iframeClassName}

@@ -10,6 +10,8 @@ const SECTION_HOVER = "CLP_SECTION_HOVER";
 const SECTION_SELECT = "CLP_SECTION_SELECT";
 const EDITOR_SELECT_SECTION = "CLP_EDITOR_SELECT_SECTION";
 const PREVIEW_UPDATE_TARGET_STORES_FILTERS = "CLP_PREVIEW_UPDATE_TARGET_STORES_FILTERS";
+const SCREENSHOT_REQUEST = "CLP_SCREENSHOT_REQUEST";
+const SCREENSHOT_RESULT = "CLP_SCREENSHOT_RESULT";
 
 type PreviewPayload = {
   ui?: {
@@ -52,6 +54,50 @@ export default function PreviewPage() {
       }
       if (data?.type === EDITOR_SELECT_SECTION) {
         setSelectedSectionId(data.id ?? null);
+      }
+      if (data?.type === SCREENSHOT_REQUEST) {
+        // html2canvas を動的インポートしてキャプチャ
+        const requestId = (data as { type: string; requestId?: string }).requestId ?? "";
+        import("html2canvas").then(({ default: html2canvas }) => {
+          const target = rootRef.current;
+          if (!target) {
+            window.parent.postMessage(
+              { type: SCREENSHOT_RESULT, requestId, error: "No preview element" },
+              window.location.origin
+            );
+            return;
+          }
+          // スクロール全体をキャプチャするためにbodyの高さを使う
+          const scrollHeight = Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            target.scrollHeight
+          );
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          html2canvas(target, {
+            useCORS: true,
+            allowTaint: true,
+            background: "#ffffff",
+            height: scrollHeight,
+            logging: false,
+          } as Record<string, unknown>).then((canvas: HTMLCanvasElement) => {
+            const dataUrl = canvas.toDataURL("image/png");
+            window.parent.postMessage(
+              { type: SCREENSHOT_RESULT, requestId, dataUrl },
+              window.location.origin
+            );
+          }).catch((err) => {
+            window.parent.postMessage(
+              { type: SCREENSHOT_RESULT, requestId, error: String(err) },
+              window.location.origin
+            );
+          });
+        }).catch((err) => {
+          window.parent.postMessage(
+            { type: SCREENSHOT_RESULT, requestId, error: String(err) },
+            window.location.origin
+          );
+        });
       }
     };
 

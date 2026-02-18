@@ -22,6 +22,7 @@ export default function EditorLayout() {
 	const [leftWidth, setLeftWidth] = useState(320);
 	const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
 	const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+	const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
 	const manualSaveTick = useEditorStore((state) => state.manualSaveTick);
 	const project = useEditorStore((state) => state.project);
 	const hasUserEdits = useEditorStore((state) => state.hasUserEdits);
@@ -242,13 +243,13 @@ export default function EditorLayout() {
 
 	return (
 		<div className="lp-editor flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
-			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} />
+			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} previewIframeRef={previewIframeRef} />
 			<TopTextToolbar />
 			<div className="flex min-h-0 flex-1">
 				{showLeftPanel ? (
 					<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
 				) : null}
-				<PreviewPane />
+				<PreviewPane iframeRef={previewIframeRef} />
 				<aside
 					className="ui-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] lg:flex"
 					style={{ width: RIGHT_PANEL_WIDTH }}

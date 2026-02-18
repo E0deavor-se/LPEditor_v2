@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import StatusChip from "./StatusChip";
 import { useEditorStore } from "@/src/store/editorStore";
 import { useThemeStore } from "@/src/store/themeStore";
@@ -11,17 +11,24 @@ import {
 import { exportProjectToZip, triggerZipDownload } from "@/src/export/exportZip";
 import { pickAndImportZip } from "@/src/lib/importZip";
 
+const SCREENSHOT_REQUEST = "CLP_SCREENSHOT_REQUEST";
+const SCREENSHOT_RESULT = "CLP_SCREENSHOT_RESULT";
+
 type TopBarProps = {
   onOpenTemplate?: () => void;
+  /** プレビューiframeへの参照 */
+  previewIframeRef?: React.RefObject<HTMLIFrameElement | null>;
 };
 
-export default function TopBar({ onOpenTemplate }: TopBarProps) {
+export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps) {
   const themeMode = useThemeStore((state) => state.mode);
   const surfaceStyle = useThemeStore((state) => state.surfaceStyle);
   const setThemeMode = useThemeStore((state) => state.setMode);
   const setSurfaceStyle = useThemeStore((state) => state.setSurfaceStyle);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isScreenshotting, setIsScreenshotting] = useState(false);
+  const screenshotCallbackRef = useRef<((dataUrl: string | null) => void) | null>(null);
   const [rollbackSteps, setRollbackSteps] = useState(1);
   const previewMode = useEditorStore((state) => state.previewMode);
   const uiMode = useEditorStore((state) => state.uiMode);
@@ -281,6 +288,53 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
     return Array.from(types).sort();
   }, [project.sections]);
 
+  const handleScreenshot = (label: string) => {
+    if (isScreenshotting) return;
+    const iframe = previewIframeRef?.current;
+    if (!iframe?.contentWindow) {
+      setSaveStatus("error", "プレビューが準備できていません");
+      return;
+    }
+    setIsScreenshotting(true);
+    setSaveStatus("saving", `スクショを撮影中…`);
+    const requestId = `ss_${Date.now()}`;
+
+    const handleResult = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as { type?: string; requestId?: string; dataUrl?: string; error?: string };
+      if (data?.type !== SCREENSHOT_RESULT || data.requestId !== requestId) return;
+      window.removeEventListener("message", handleResult);
+      setIsScreenshotting(false);
+      if (data.error || !data.dataUrl) {
+        setSaveStatus("error", "スクショの取得に失敗しました");
+        return;
+      }
+      // ダウンロード
+      const anchor = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      const projectName = project.meta.projectName || "campaign-lp";
+      anchor.download = `${projectName}_${label}_${date}.png`;
+      anchor.href = data.dataUrl;
+      anchor.click();
+      setSaveStatus("saved", `スクショを保存しました`);
+    };
+
+    window.addEventListener("message", handleResult);
+    // 10秒タイムアウト
+    setTimeout(() => {
+      window.removeEventListener("message", handleResult);
+      if (isScreenshotting) {
+        setIsScreenshotting(false);
+        setSaveStatus("error", "スクショがタイムアウトしました");
+      }
+    }, 10000);
+
+    iframe.contentWindow.postMessage(
+      { type: SCREENSHOT_REQUEST, requestId },
+      window.location.origin
+    );
+  };
+
   const handleLogout = () => {
     if (typeof window === "undefined") {
       return;
@@ -435,6 +489,20 @@ export default function TopBar({ onOpenTemplate }: TopBarProps) {
         >
           ZIPを書き出し
         </button>
+        {previewIframeRef ? (
+          <div className="flex items-center gap-1">
+            <button
+              className="ui-button h-8 px-3 text-[11px]"
+              type="button"
+              aria-label="スクリーンショット（現在のプレビュー）"
+              disabled={isScreenshotting}
+              onClick={() => handleScreenshot(previewMode === "mobile" ? "SP" : "PC")}
+              title="現在のプレビュー全体をPNG画像として保存"
+            >
+              {isScreenshotting ? "撮影中…" : `📷 スクショ(${previewMode === "mobile" ? "SP" : "PC"})`}
+            </button>
+          </div>
+        ) : null}
         <div
           className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
           role="radiogroup"

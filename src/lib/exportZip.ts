@@ -484,14 +484,34 @@ export const buildIndexHtml = (project: ProjectState): string => {
             const items = Array.isArray(section.data?.items)
               ? section.data.items
               : [];
+            const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
+            const legalContentItems = Array.isArray(section.content?.items)
+              ? section.content!.items
+              : [];
+            const legalTextItem = legalContentItems.find((item: { type: string }) => item.type === "text") as
+              | { type: "text"; lines: Array<{ marks?: { bullet?: "disc" | "none" } }> }
+              | undefined;
+            const legalLineMarks = legalTextItem?.lines ?? [];
+            const getLineBullet = (index: number): "disc" | "none" => {
+              const lineMark = legalLineMarks[index];
+              if (lineMark?.marks?.bullet !== undefined) {
+                return lineMark.marks.bullet;
+              }
+              return legalBullet;
+            };
           return `
             <section class="container">
               <h2>${escapeHtml(
                 String(section.data.title ?? "注意事項")
               )}</h2>
-              <ul>
+              <ul style="list-style:none;padding-left:0">
                 ${items
-                  .map((item: string) => `<li>${escapeHtml(item)}</li>`)
+                  .map((item: string, index: number) => {
+                    const bullet = getLineBullet(index);
+                    return bullet === "disc"
+                      ? `<li style="display:flex;align-items:flex-start;gap:0.4em"><span style="flex-shrink:0;margin-top:0.3em;width:0.4em;height:0.4em;border-radius:50%;background:currentColor;display:inline-block"></span><span>${escapeHtml(item)}</span></li>`
+                      : `<li>${escapeHtml(item)}</li>`;
+                  })
                   .join("")}
               </ul>
             </section>

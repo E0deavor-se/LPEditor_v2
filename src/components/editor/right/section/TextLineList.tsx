@@ -33,6 +33,10 @@ type TextLineListProps = {
   sectionId?: string;
   itemId?: string;
   disabled?: boolean;
+  /** 行ごとの箇条書きONOFFトグルを表示するか */
+  showBulletToggle?: boolean;
+  /** セクション全体のデフォルトbullet設定（行ごとの上書きがない場合に使用） */
+  defaultBullet?: "disc" | "none";
 };
 
 
@@ -49,6 +53,8 @@ export default function TextLineList({
   sectionId,
   itemId,
   disabled,
+  showBulletToggle = false,
+  defaultBullet = "disc",
 }: TextLineListProps) {
   const t = useI18n();
   const sensors = useSensors(
@@ -101,7 +107,8 @@ export default function TextLineList({
         ref={setNodeRef}
         style={style}
         className={
-          "group flex items-center gap-2 min-w-0 h-8 rounded-md border px-2 text-left text-[12px] transition " +
+          "group flex items-center gap-2 min-w-0 rounded-md border px-2 text-left text-[12px] transition " +
+          (showBulletToggle ? "h-auto py-1 flex-wrap" : "h-8") + " " +
           (isSelected
             ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
             : "border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/60 hover:bg-[var(--ui-panel)]/80")
@@ -160,6 +167,29 @@ export default function TextLineList({
         >
           <Trash2 size={14} />
         </button>
+        {showBulletToggle && onChangeMarks ? (
+          <button
+            type="button"
+            className={
+              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition " +
+              ((line.marks?.bullet ?? defaultBullet) === "disc"
+                ? "bg-[var(--ui-ring)]/20 text-[var(--ui-ring)] border border-[var(--ui-ring)]/40"
+                : "bg-[var(--ui-panel)] text-[var(--ui-muted)] border border-[var(--ui-border)]/50")
+            }
+            title="行ごとの箇条書きON/OFF"
+            onClick={() =>
+              onChangeMarks(line.id, {
+                bullet:
+                  (line.marks?.bullet ?? defaultBullet) === "disc"
+                    ? "none"
+                    : "disc",
+              })
+            }
+            disabled={disabled}
+          >
+            {(line.marks?.bullet ?? defaultBullet) === "disc" ? "・ON" : "・OFF"}
+          </button>
+        ) : null}
       </div>
     );
   };
