@@ -6236,13 +6236,6 @@ export default function InspectorPanel() {
                                         nextValue
                                       )
                                     }
-                                    onAlignChange={(align) =>
-                                      updateTitleItemMarks(
-                                        selectedSection.id,
-                                        selectedTitleItem.id,
-                                        { textAlign: align }
-                                      )
-                                    }
                                   />
                                 </div>
                               </div>
