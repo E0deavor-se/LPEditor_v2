@@ -32,11 +32,14 @@ const resolveActiveTarget = (): ActiveTarget | null => {
   if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
     return null;
   }
-  const { kind, sectionId, itemId, lineId } = element.dataset;
-  if (!kind || !sectionId || !itemId) {
+  const kind = element.dataset.kind;
+  const sectionId = element.dataset.sectionId;
+  const itemId = element.dataset.itemId;
+  const lineId = element.dataset.lineId;
+  if (typeof kind !== "string" || typeof sectionId !== "string" || typeof itemId !== "string") {
     return null;
   }
-  if (kind === "line" && !lineId) {
+  if (kind === "line" && typeof lineId !== "string") {
     return null;
   }
   if (kind === "line") {
