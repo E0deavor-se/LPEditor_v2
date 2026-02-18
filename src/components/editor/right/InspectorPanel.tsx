@@ -693,23 +693,21 @@ export default function InspectorPanel() {
     if (!Array.isArray(items)) {
       return [];
     }
-    return items
-      .map((item) => {
-        if (typeof item === "string") {
-          return { text: item, bullet: defaultBullet };
-        }
-        if (!item || typeof item !== "object") {
-          return null;
-        }
-        const entry = item as Record<string, unknown>;
-        const text = typeof entry.text === "string" ? entry.text : "";
-        const bullet =
-          entry.bullet === "none" || entry.bullet === "disc"
-            ? entry.bullet
-            : defaultBullet;
-        return { text, bullet };
-      })
-      .filter((item): item is LegalNoteItem => Boolean(item));
+    return items.flatMap((item) => {
+      if (typeof item === "string") {
+        return [{ text: item, bullet: defaultBullet }];
+      }
+      if (!item || typeof item !== "object") {
+        return [];
+      }
+      const entry = item as Record<string, unknown>;
+      const text = typeof entry.text === "string" ? entry.text : "";
+      const bullet =
+        entry.bullet === "none" || entry.bullet === "disc"
+          ? entry.bullet
+          : defaultBullet;
+      return [{ text, bullet }];
+    });
   };
   const legalNotesLineItems = useMemo(
     () =>
