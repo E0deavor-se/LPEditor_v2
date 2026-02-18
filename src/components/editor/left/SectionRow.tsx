@@ -89,7 +89,7 @@ function SectionRow({
   }, [isEditing]);
 
   const controlsClass =
-    "absolute right-1 top-0 flex h-full items-center gap-1.5 opacity-0 pointer-events-none transition-opacity duration-100 group-hover:opacity-100 group-hover:pointer-events-auto" +
+    "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-md border border-[var(--ui-border)]/40 bg-[var(--ui-panel)]/85 px-1 py-0.5 opacity-0 pointer-events-none transition-opacity duration-100 group-hover:opacity-100 group-hover:pointer-events-auto" +
     (isSelected ? " opacity-100 pointer-events-auto" : "");
 
   return (
@@ -97,9 +97,9 @@ function SectionRow({
       ref={setNodeRef}
       style={dragStyle}
       className={
-        "group relative flex h-8 items-center gap-2 rounded-md border border-[var(--ui-border)]/40 bg-[var(--ui-panel)]/65 px-2 transition " +
+        "group relative flex h-9 items-center gap-2 rounded-md border border-[var(--ui-border)]/50 bg-[var(--ui-panel-muted)]/70 px-2.5 transition " +
         (isSelected
-          ? " bg-[color-mix(in_oklab,var(--ui-primary)_10%,var(--ui-panel))]"
+          ? " border-[var(--ui-primary)]/50 bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-panel))] shadow-sm"
           : " hover:bg-[var(--ui-panel)]/85") +
         (!section.visible ? " opacity-60" : "") +
         (isDragging ? " ring-1 ring-[var(--ui-primary)]/50" : "")
@@ -125,8 +125,7 @@ function SectionRow({
       ) : null}
       <div
         className={
-          "flex min-w-0 flex-1 items-center gap-2 pr-2 transition-[padding] duration-100 " +
-          (isSelected ? "pr-24" : "group-hover:pr-24")
+          "flex min-w-0 flex-1 items-center gap-2 pr-24"
         }
       >
         <span className="h-2.5 w-2.5 rounded-sm bg-[var(--ui-border)]/80" />

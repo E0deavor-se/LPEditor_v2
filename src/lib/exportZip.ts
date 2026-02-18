@@ -481,24 +481,36 @@ export const buildIndexHtml = (project: ProjectState): string => {
           `;
         case "legalNotes":
           {
-            const items = Array.isArray(section.data?.items)
+            const defaultBullet =
+              section.data?.bullet === "none" ? "none" : "disc";
+            const rawItems = Array.isArray(section.data?.items)
               ? section.data.items
               : [];
-            const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
-            const legalContentItems = Array.isArray(section.content?.items)
-              ? section.content!.items
-              : [];
-            const legalTextItem = legalContentItems.find((item: { type: string }) => item.type === "text") as
-              | { type: "text"; lines: Array<{ marks?: { bullet?: "disc" | "none" } }> }
-              | undefined;
-            const legalLineMarks = legalTextItem?.lines ?? [];
-            const getLineBullet = (index: number): "disc" | "none" => {
-              const lineMark = legalLineMarks[index];
-              if (lineMark?.marks?.bullet !== undefined) {
-                return lineMark.marks.bullet;
-              }
-              return legalBullet;
-            };
+            const legalTextItem = Array.isArray(section.content?.items)
+              ? section.content!.items.find((item: { type: string }) => item.type === "text")
+              : undefined;
+            const items = legalTextItem?.lines?.length
+              ? legalTextItem.lines.map((line: { text?: string; marks?: { bullet?: "disc" | "none" } }) => ({
+                  text: str(line.text ?? ""),
+                  bullet: line.marks?.bullet ?? defaultBullet,
+                }))
+              : rawItems
+                  .map((item: unknown) => {
+                    if (typeof item === "string") {
+                      return { text: item, bullet: defaultBullet };
+                    }
+                    if (!item || typeof item !== "object") {
+                      return null;
+                    }
+                    const entry = item as Record<string, unknown>;
+                    const text = str(entry.text ?? "");
+                    const bullet =
+                      entry.bullet === "none" || entry.bullet === "disc"
+                        ? entry.bullet
+                        : defaultBullet;
+                    return { text, bullet };
+                  })
+                  .filter(Boolean);
           return `
             <section class="container">
               <h2>${escapeHtml(
@@ -506,11 +518,13 @@ export const buildIndexHtml = (project: ProjectState): string => {
               )}</h2>
               <ul style="list-style:none;padding-left:0">
                 ${items
-                  .map((item: string, index: number) => {
-                    const bullet = getLineBullet(index);
-                    return bullet === "disc"
-                      ? `<li style="display:flex;align-items:flex-start;gap:0.4em"><span style="flex-shrink:0;margin-top:0.3em;width:0.4em;height:0.4em;border-radius:50%;background:currentColor;display:inline-block"></span><span>${escapeHtml(item)}</span></li>`
-                      : `<li>${escapeHtml(item)}</li>`;
+                  .map((item) => {
+                    const entry = item as { text: string; bullet: "none" | "disc" };
+                    return entry.bullet === "disc"
+                      ? `<li style=\"display:flex;align-items:flex-start;gap:0.4em\"><span style=\"flex-shrink:0;margin-top:0.3em;width:0.4em;height:0.4em;border-radius:50%;background:currentColor;display:inline-block\"></span><span>${escapeHtml(
+                          entry.text
+                        )}</span></li>`
+                      : `<li>${escapeHtml(entry.text)}</li>`;
                   })
                   .join("")}
               </ul>
@@ -981,6 +995,41 @@ ul {
   padding-left: 18px;
   color: #475569;
   font-size: 14px;
+}
+@media (max-width: 768px) {
+  .container {
+    padding: 0 16px;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 20px 0 10px;
+  }
+  p,
+  ul {
+    font-size: 13px;
+  }
+  .hero img {
+    height: 240px;
+    border-radius: 12px;
+  }
+  .hero-placeholder {
+    height: 220px;
+    border-radius: 12px;
+  }
+}
+@media (max-width: 480px) {
+  .container {
+    padding: 0 12px;
+  }
+  h2 {
+    font-size: 16px;
+  }
+  .hero img {
+    height: 200px;
+  }
+  .hero-placeholder {
+    height: 180px;
+  }
 }
 .stores-link {
   display: inline-block;

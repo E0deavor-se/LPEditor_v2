@@ -7,6 +7,7 @@ type SelectFieldProps = {
   onChange: (value: string) => void;
   children: ReactNode;
   ariaLabel?: string;
+  disabled?: boolean;
 };
 
 export default function SelectField({
@@ -14,6 +15,7 @@ export default function SelectField({
   onChange,
   children,
   ariaLabel,
+  disabled,
 }: SelectFieldProps) {
   return (
     <select
@@ -21,6 +23,7 @@ export default function SelectField({
       value={String(value)}
       aria-label={ariaLabel}
       onChange={(event) => onChange(event.target.value)}
+      disabled={disabled}
     >
       {children}
     </select>

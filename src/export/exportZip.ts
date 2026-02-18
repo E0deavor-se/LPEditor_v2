@@ -2242,33 +2242,45 @@ export const renderProjectToHtml = (
           `;
         }
         case "legalNotes": {
-          const items = Array.isArray(section.data.items) ? section.data.items : [];
-          const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
-          // 行ごとのbullet情報を content.items[0].lines から取得
-          const legalContentItems = Array.isArray(section.content?.items)
-            ? section.content!.items
-            : [];
-          const legalTextItem = legalContentItems.find((item) => item.type === "text") as
-            | { type: "text"; lines: Array<{ marks?: { bullet?: "disc" | "none" } }> }
-            | undefined;
-          const legalLineMarks = legalTextItem?.lines ?? [];
-          const getLineBullet = (index: number): "disc" | "none" => {
-            const lineMark = legalLineMarks[index];
-            if (lineMark?.marks?.bullet !== undefined) {
-              return lineMark.marks.bullet;
-            }
-            return legalBullet;
-          };
+          const defaultBullet = section.data?.bullet === "none" ? "none" : "disc";
+          const rawItems = Array.isArray(section.data.items) ? section.data.items : [];
+          const legalTextItem = Array.isArray(section.content?.items)
+            ? section.content!.items.find((item) => item.type === "text")
+            : undefined;
+          const items = legalTextItem?.lines?.length
+            ? legalTextItem.lines.map((line) => ({
+                text: str(line.text ?? ""),
+                bullet: line.marks?.bullet ?? defaultBullet,
+              }))
+            : rawItems
+                .map((item: unknown) => {
+                  if (typeof item === "string") {
+                    return { text: str(item), bullet: defaultBullet };
+                  }
+                  if (!item || typeof item !== "object") {
+                    return null;
+                  }
+                  const entry = item as Record<string, unknown>;
+                  const text = str(entry.text ?? "");
+                  const bullet =
+                    entry.bullet === "none" || entry.bullet === "disc"
+                      ? entry.bullet
+                      : defaultBullet;
+                  return { text, bullet };
+                })
+                .filter(Boolean);
           return `
             <section class="container">
               <h2>${escapeHtml(str(section.data.title || "注意事項"))}</h2>
               <ul style="list-style:none;padding-left:0">
                 ${items
-                  .map((item, index) => {
-                    const bullet = getLineBullet(index);
-                    return bullet === "disc"
-                      ? `<li style="display:flex;align-items:flex-start;gap:0.4em"><span style="flex-shrink:0;margin-top:0.3em;width:0.4em;height:0.4em;border-radius:50%;background:currentColor;display:inline-block"></span><span>${escapeHtml(str(item))}</span></li>`
-                      : `<li>${escapeHtml(str(item))}</li>`;
+                  .map((item) => {
+                    const entry = item as { text: string; bullet: "none" | "disc" };
+                    return entry.bullet === "disc"
+                      ? `<li style=\"display:flex;align-items:flex-start;gap:0.4em\"><span style=\"flex-shrink:0;margin-top:0.3em;width:0.4em;height:0.4em;border-radius:50%;background:currentColor;display:inline-block\"></span><span>${escapeHtml(
+                          str(entry.text)
+                        )}</span></li>`
+                      : `<li>${escapeHtml(str(entry.text))}</li>`;
                   })
                   .join("")}
               </ul>
@@ -2600,6 +2612,41 @@ ul {
   padding-left: 18px;
   color: #475569;
   font-size: 14px;
+}
+@media (max-width: 768px) {
+  .container {
+    padding: 0 16px;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 20px 0 10px;
+  }
+  p,
+  ul {
+    font-size: 13px;
+  }
+  .hero img {
+    height: 240px;
+    border-radius: 12px;
+  }
+  .hero-placeholder {
+    height: 220px;
+    border-radius: 12px;
+  }
+}
+@media (max-width: 480px) {
+  .container {
+    padding: 0 12px;
+  }
+  h2 {
+    font-size: 16px;
+  }
+  .hero img {
+    height: 200px;
+  }
+  .hero-placeholder {
+    height: 180px;
+  }
 }
 .store-grid {
   display: grid;

@@ -171,6 +171,7 @@ export type SectionStyle = {
 export type SectionStylePatch = {
   typography?: Partial<SectionTypography>;
   background?: Partial<SectionBackground>;
+  backgroundSpec?: BackgroundSpec;
   border?: Partial<SectionBorder>;
   shadow?: SectionShadow;
   layout?: Partial<SectionStyle["layout"]>;
@@ -181,6 +182,7 @@ export type LineMarks = {
   bold?: boolean;
   color?: string;
   size?: number;
+  bullet?: "none" | "disc";
   textAlign?: "left" | "center" | "right";
   bullet?: "disc" | "none";
   callout?: {
@@ -194,6 +196,11 @@ export type LineMarks = {
     padding?: "sm" | "md" | "lg";
     shadow?: "none" | "sm" | "md";
   };
+};
+
+export type LegalNoteItem = {
+  text: string;
+  bullet?: "none" | "disc";
 };
 
 export type PrimaryLine = {

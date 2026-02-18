@@ -599,6 +599,9 @@ const normalizeLineMarks = (marks?: LineMarks): LineMarks | undefined => {
   if (typeof marks.size === "number" && Number.isFinite(marks.size)) {
     next.size = marks.size;
   }
+  if (marks.bullet === "none" || marks.bullet === "disc") {
+    next.bullet = marks.bullet;
+  }
   if (
     marks.textAlign === "left" ||
     marks.textAlign === "center" ||
@@ -1357,28 +1360,67 @@ const normalizeSection = (section: SectionBase): SectionBase => {
   if (section.type === "legalNotes") {
     const trimmedDefaults = DEFAULT_LEGAL_NOTES_LINES.map((line) => line.trim())
       .filter((line) => line.length > 0);
-    const dataItems = Array.isArray(section.data?.items)
-      ? section.data.items.map((item: string) => String(item))
-      : [];
-    const hasDataText = dataItems.some((line) => line.trim().length > 0);
+    const defaultBullet = section.data?.bullet === "none" ? "none" : "disc";
+    const rawItems = Array.isArray(section.data?.items) ? section.data.items : [];
+    const dataItems = rawItems
+      .map((item) => {
+        if (typeof item === "string") {
+          return { text: item, bullet: defaultBullet };
+        }
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const entry = item as Record<string, unknown>;
+        const text = typeof entry.text === "string" ? entry.text : "";
+        const bullet =
+          entry.bullet === "none" || entry.bullet === "disc"
+            ? entry.bullet
+            : defaultBullet;
+        return { text, bullet };
+      })
+      .filter(
+        (item): item is { text: string; bullet: "none" | "disc" } =>
+          Boolean(item)
+      );
+    const hasDataText = dataItems.some((line) => line.text.trim().length > 0);
     const textItems = items.filter((item) => item.type === "text") as TextContentItem[];
-    const sourceLines = hasDataText ? dataItems : trimmedDefaults;
+    const sourceItems = hasDataText
+      ? dataItems
+      : trimmedDefaults.map((text) => ({ text, bullet: defaultBullet }));
+    const sourceLines = sourceItems.map((item) => item.text);
     const firstTextIndex = items.findIndex((item) => item.type === "text");
-    const areLinesEqual = (left: string[], right: string[]) => {
+    const areLinesEqual = (
+      left: Array<{ text: string; bullet: "none" | "disc" }>,
+      right: Array<{ text: string; bullet: "none" | "disc" }>
+    ) => {
       if (left.length !== right.length) {
         return false;
       }
-      return left.every((value, index) => value === right[index]);
+      return left.every(
+        (value, index) =>
+          value.text === right[index]?.text && value.bullet === right[index]?.bullet
+      );
     };
+    const shouldNormalizeDataItems = !areLinesEqual(dataItems, sourceItems);
+    if (shouldNormalizeDataItems && sourceItems.length > 0) {
+      section = {
+        ...section,
+        data: {
+          ...(section.data ?? {}),
+          items: sourceItems,
+        },
+      };
+    }
     if (sourceLines.length > 0 && firstTextIndex === -1) {
       const titleIndex = items.findIndex((item) => item.type === "title");
       const insertIndex = titleIndex >= 0 ? titleIndex + 1 : 0;
       const nextTextItem: TextContentItem = {
         id: createItemId(),
         type: "text",
-        lines: sourceLines.map((text) => ({
+        lines: sourceItems.map((item) => ({
           id: createLineId(),
-          text,
+          text: item.text,
+          marks: normalizeLineMarks({ bullet: item.bullet }),
         })),
       };
       items = [
@@ -1386,23 +1428,25 @@ const normalizeSection = (section: SectionBase): SectionBase => {
         nextTextItem,
         ...items.slice(insertIndex),
       ];
-      if (!hasDataText) {
-        section = {
-          ...section,
-          data: {
-            ...(section.data ?? {}),
-            items: sourceLines,
-          },
-        };
-      }
     } else if (sourceLines.length > 0 && firstTextIndex >= 0) {
       const currentTextItem = items[firstTextIndex] as TextContentItem;
-      const currentLines = currentTextItem.lines.map((line) => line.text);
-      if (!areLinesEqual(currentLines, sourceLines)) {
-        const nextLines = sourceLines.map((text, index) => ({
-          id: currentTextItem.lines[index]?.id ?? createLineId(),
-          text,
-        }));
+      const currentLines = currentTextItem.lines.map((line) => ({
+        text: line.text,
+        bullet: line.marks?.bullet ?? defaultBullet,
+      }));
+      if (!areLinesEqual(currentLines, sourceItems)) {
+        const nextLines = sourceItems.map((item, index) => {
+          const existing = currentTextItem.lines[index];
+          const nextMarks = normalizeLineMarks({
+            ...(existing?.marks ?? {}),
+            bullet: item.bullet,
+          });
+          return {
+            id: existing?.id ?? createLineId(),
+            text: item.text,
+            marks: nextMarks,
+          };
+        });
         items = items.map((item, index) =>
           index === firstTextIndex
             ? {
@@ -1460,7 +1504,8 @@ const normalizeSection = (section: SectionBase): SectionBase => {
   return {
     ...section,
     visible: section.visible ?? true,
-    locked: false,
+    locked: typeof section.locked === "boolean" ? section.locked : false,
+    name: typeof section.name === "string" ? section.name : undefined,
     data:
       section.type === "campaignOverview"
         ? { ...(section.data ?? {}), body: cleanedCampaignBody ?? "" }
@@ -2403,7 +2448,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   stickyTopPx: 0,
   previewKey: 0,
   leftTab: "sections",
-  uiMode: "simple",
+  uiMode: "advanced",
   previewMode: "desktop",
   previewAspect: "free",
   previewDesktopWidth: 1100,

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import StatusChip from "./StatusChip";
 import { useEditorStore } from "@/src/store/editorStore";
 import { useThemeStore } from "@/src/store/themeStore";
@@ -26,12 +27,12 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
   const setThemeMode = useThemeStore((state) => state.setMode);
   const setSurfaceStyle = useThemeStore((state) => state.setSurfaceStyle);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isScreenshotting, setIsScreenshotting] = useState(false);
   const screenshotCallbackRef = useRef<((dataUrl: string | null) => void) | null>(null);
   const [rollbackSteps, setRollbackSteps] = useState(1);
   const previewMode = useEditorStore((state) => state.previewMode);
-  const uiMode = useEditorStore((state) => state.uiMode);
   const previewAspect = useEditorStore((state) => state.previewAspect);
   const previewDesktopWidth = useEditorStore(
     (state) => state.previewDesktopWidth
@@ -83,7 +84,6 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
   const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
   const setPreviewBusy = useEditorStore((state) => state.setPreviewBusy);
   const setPreviewMode = useEditorStore((state) => state.setPreviewMode);
-  const setUiMode = useEditorStore((state) => state.setUiMode);
   const setPreviewAspect = useEditorStore((state) => state.setPreviewAspect);
   const setPreviewDesktopWidth = useEditorStore(
     (state) => state.setPreviewDesktopWidth
@@ -131,7 +131,6 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
 
   const isDesktop = previewMode === "desktop";
   const isMobile = previewMode === "mobile";
-  const isSimpleMode = uiMode === "simple";
   const isDev =
     process.env.NODE_ENV === "development" ||
     process.env.NEXT_PUBLIC_APP_ENV === "development";
@@ -180,10 +179,6 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
     { value: "訴求力を上げる", label: "訴求力を上げる" },
   ] as const;
 
-  const uiModeOptions = [
-    { value: "simple", label: "シンプル" },
-    { value: "advanced", label: "詳細" },
-  ] as const;
 
   const sanitizeFilename = (value: string) =>
     value
@@ -288,6 +283,33 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
     return Array.from(types).sort();
   }, [project.sections]);
 
+  const overflowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOverflowOpen) {
+      return;
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!overflowRef.current?.contains(event.target as Node)) {
+        setIsOverflowOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOverflowOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOverflowOpen]);
+
+  const overflowItemBase =
+    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition hover:bg-[var(--ui-panel-muted)]";
+
   const handleScreenshot = (label: string) => {
     if (isScreenshotting) return;
     const iframe = previewIframeRef?.current;
@@ -296,12 +318,17 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
       return;
     }
     setIsScreenshotting(true);
-    setSaveStatus("saving", `スクショを撮影中…`);
+    setSaveStatus("saving", "スクショを撮影中…");
     const requestId = `ss_${Date.now()}`;
 
     const handleResult = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      const data = event.data as { type?: string; requestId?: string; dataUrl?: string; error?: string };
+      const data = event.data as {
+        type?: string;
+        requestId?: string;
+        dataUrl?: string;
+        error?: string;
+      };
       if (data?.type !== SCREENSHOT_RESULT || data.requestId !== requestId) return;
       window.removeEventListener("message", handleResult);
       setIsScreenshotting(false);
@@ -309,18 +336,16 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
         setSaveStatus("error", "スクショの取得に失敗しました");
         return;
       }
-      // ダウンロード
       const anchor = document.createElement("a");
       const date = new Date().toISOString().slice(0, 10);
       const projectName = project.meta.projectName || "campaign-lp";
       anchor.download = `${projectName}_${label}_${date}.png`;
       anchor.href = data.dataUrl;
       anchor.click();
-      setSaveStatus("saved", `スクショを保存しました`);
+      setSaveStatus("saved", "スクショを保存しました");
     };
 
     window.addEventListener("message", handleResult);
-    // 10秒タイムアウト
     setTimeout(() => {
       window.removeEventListener("message", handleResult);
       if (isScreenshotting) {
@@ -346,11 +371,11 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
   return (
     <header
       className={
-        "ui-panel sticky top-0 z-20 grid h-14 grid-cols-[1fr_auto_1fr] items-center rounded-none border-x-0 border-t-0 px-[var(--ui-space-3)] text-[var(--ui-text)] " +
+        "ui-panel sticky top-0 z-20 grid h-auto grid-cols-1 items-center gap-2 rounded-none border-x-0 border-t-0 px-[var(--ui-space-3)] py-2 text-[var(--ui-text)] md:h-14 md:grid-cols-[1fr_auto_1fr] md:gap-0 md:py-0 " +
         glassClass
       }
     >
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3">
         {onOpenTemplate ? (
           <button
             className="ui-button h-8 px-3 text-[11px]"
@@ -361,42 +386,32 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
             テンプレート選択画面に戻る
           </button>
         ) : null}
-        <button
-          className="ui-button h-8 px-3 text-[11px]"
-          type="button"
-          aria-label="元に戻す"
-          disabled={!canUndo}
-          onClick={() => undo()}
-        >
-          元に戻す
-        </button>
-        <button
-          className="ui-button h-8 px-3 text-[11px]"
-          type="button"
-          aria-label="やり直し"
-          disabled={!canRedo}
-          onClick={() => redo()}
-        >
-          やり直し
-        </button>
-        <button
-          className="ui-button h-8 px-3 text-[11px]"
-          type="button"
-          aria-label="プロジェクトJSONを保存"
-          onClick={handleSaveProjectJson}
-        >
-          JSONを保存
-        </button>
-        {!isSimpleMode && isDev ? (
-          <button
-            className="ui-button h-8 px-3 text-[11px]"
-            type="button"
-            aria-label="デバッグで今すぐ保存"
-            onClick={() => requestManualSave()}
-          >
-            デバッグ: 今すぐ保存
-          </button>
-        ) : null}
+        <div className="hidden h-6 w-px bg-[var(--ui-border)]/70 md:block" />
+        <div className="flex items-center gap-2">
+          <span className="hidden text-[10px] font-semibold text-[var(--ui-muted)] md:inline">
+            履歴
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              className="ui-button h-8 px-3 text-[11px]"
+              type="button"
+              aria-label="元に戻す"
+              disabled={!canUndo}
+              onClick={() => undo()}
+            >
+              元に戻す
+            </button>
+            <button
+              className="ui-button h-8 px-3 text-[11px]"
+              type="button"
+              aria-label="やり直し"
+              disabled={!canRedo}
+              onClick={() => redo()}
+            >
+              やり直し
+            </button>
+          </div>
+        </div>
       </div>
       <div className="flex items-center justify-center gap-2">
         <div className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5">
@@ -429,66 +444,121 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        {!isSimpleMode ? (
-          <>
+      <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
+        <div className="flex items-center gap-2">
+          <span className="hidden text-[10px] font-semibold text-[var(--ui-muted)] md:inline">
+            比率
+          </span>
+          <div
+            className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
+            role="radiogroup"
+            aria-label="プレビューのアスペクト比"
+          >
+            {aspectOptions.map((option) => {
+              const isActive = previewAspect === option.value;
+              const isDisabled = isMobile;
+              return (
+                <button
+                  key={option.value}
+                  className={
+                    (isActive
+                      ? "ui-chip is-active h-7 px-2"
+                      : "ui-chip h-7 px-2") +
+                    (isDisabled
+                      ? " cursor-not-allowed opacity-50 shadow-none"
+                      : "")
+                  }
+                  type="button"
+                  aria-label={`アスペクト比 ${option.label}`}
+                  aria-pressed={isActive}
+                  aria-disabled={isDisabled}
+                  disabled={isDisabled}
+                  onClick={() => setPreviewAspect(option.value)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="hidden text-[10px] font-semibold text-[var(--ui-muted)] md:inline">
+            出力
+          </span>
+          <button
+            className="ui-button ui-button-primary h-8 px-3 text-[11px]"
+            type="button"
+            aria-label="ZIPを書き出し"
+            onClick={handleExportZip}
+          >
+            ZIPを書き出し
+          </button>
+        </div>
+        <div ref={overflowRef} className="relative">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={isOverflowOpen}
+            aria-label="その他"
+            className="ui-button h-8 w-8 px-0 text-[11px]"
+            onClick={() => setIsOverflowOpen((current) => !current)}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {isOverflowOpen ? (
             <div
-              className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
-              role="radiogroup"
-              aria-label="プレビューのアスペクト比"
+              role="menu"
+              className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-[var(--ui-border)]/80 bg-[var(--ui-panel)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
             >
-              {aspectOptions.map((option) => {
-                const isActive = previewAspect === option.value;
-                const isDisabled = isMobile;
-                return (
-                  <button
-                    key={option.value}
-                    className={
-                      (isActive
-                        ? "ui-chip is-active h-7 px-2"
-                        : "ui-chip h-7 px-2") +
-                      (isDisabled
-                        ? " cursor-not-allowed opacity-50 shadow-none"
-                        : "")
-                    }
-                    type="button"
-                    aria-label={`アスペクト比 ${option.label}`}
-                    aria-pressed={isActive}
-                    aria-disabled={isDisabled}
-                    disabled={isDisabled}
-                    onClick={() => setPreviewAspect(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                role="menuitem"
+                className={overflowItemBase}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  handleSaveProjectJson();
+                }}
+              >
+                JSONを保存
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={overflowItemBase}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  void handleLoadProjectJson();
+                }}
+              >
+                JSONを読み込み
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={overflowItemBase}
+                onClick={() => {
+                  setIsOverflowOpen(false);
+                  void handleImportZip();
+                }}
+              >
+                ZIPを読み込み
+              </button>
+              {isDev ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={overflowItemBase}
+                  onClick={() => {
+                    setIsOverflowOpen(false);
+                    requestManualSave();
+                  }}
+                >
+                  デバッグ: 今すぐ保存
+                </button>
+              ) : null}
             </div>
-            <button
-              className="ui-button h-8 px-3 text-[11px]"
-              type="button"
-              aria-label="プロジェクトJSONを読み込み"
-              onClick={handleLoadProjectJson}
-            >
-              JSONを読み込み
-            </button>
-            <button
-              className="ui-button h-8 px-3 text-[11px]"
-              type="button"
-              aria-label="ZIPを読み込み"
-              onClick={handleImportZip}
-            >
-              ZIPを読み込み
-            </button>
-          </>
-        ) : null}
-        <button
-          className="ui-button h-8 px-3 text-[11px]"
-          type="button"
-          aria-label="ZIPを書き出し"
-          onClick={handleExportZip}
-        >
-          ZIPを書き出し
-        </button>
+          ) : null}
+        </div>
         {previewIframeRef ? (
           <div className="flex items-center gap-1">
             <button
@@ -496,34 +566,17 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
               type="button"
               aria-label="スクリーンショット（現在のプレビュー）"
               disabled={isScreenshotting}
-              onClick={() => handleScreenshot(previewMode === "mobile" ? "SP" : "PC")}
+              onClick={() =>
+                handleScreenshot(previewMode === "mobile" ? "SP" : "PC")
+              }
               title="現在のプレビュー全体をPNG画像として保存"
             >
-              {isScreenshotting ? "撮影中…" : `📷 スクショ(${previewMode === "mobile" ? "SP" : "PC"})`}
+              {isScreenshotting
+                ? "撮影中…"
+                : `📷 スクショ(${previewMode === "mobile" ? "SP" : "PC"})`}
             </button>
           </div>
         ) : null}
-        <div
-          className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
-          role="radiogroup"
-          aria-label="UIモード"
-        >
-          {uiModeOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={
-                uiMode === option.value
-                  ? "ui-chip is-active h-7 px-3"
-                  : "ui-chip h-7 px-3"
-              }
-              aria-pressed={uiMode === option.value}
-              onClick={() => setUiMode(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
         <div className="relative">
           <button
             type="button"

@@ -18,6 +18,7 @@ import type {
   ImageItem,
   ImageContentItem,
   LineMarks,
+  TextContentItem,
   ProjectState,
   SectionAnimation,
   SectionBase,
@@ -3271,30 +3272,50 @@ const renderSection = (
       );
     }
     case "legalNotes": {
-      const legalItems = Array.isArray(section.data.items)
-        ? (section.data.items as string[])
-        : [];
       const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
+      const legalTextItem = (section.content?.items ?? []).find(
+        (item) => item.type === "text"
+      ) as TextContentItem | undefined;
+      const normalizeLegalItems = (
+        items: unknown,
+        defaultBullet: "none" | "disc"
+      ) => {
+        if (!Array.isArray(items)) {
+          return [] as Array<{ text: string; bullet: "none" | "disc" }>;
+        }
+        return items
+          .map((item) => {
+            if (typeof item === "string") {
+              return { text: item, bullet: defaultBullet };
+            }
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+            const entry = item as Record<string, unknown>;
+            const text = typeof entry.text === "string" ? entry.text : "";
+            const bullet =
+              entry.bullet === "none" || entry.bullet === "disc"
+                ? entry.bullet
+                : defaultBullet;
+            return { text, bullet };
+          })
+          .filter(
+            (item): item is { text: string; bullet: "none" | "disc" } =>
+              Boolean(item)
+          );
+      };
+      const legalItems =
+        legalTextItem?.lines?.length
+          ? legalTextItem.lines.map((line) => ({
+              text: line.text,
+              bullet: line.marks?.bullet ?? legalBullet,
+            }))
+          : normalizeLegalItems(section.data.items, legalBullet);
       const rawNoteWidth = section.data?.noteWidthPct;
       const noteWidthPct =
         typeof rawNoteWidth === "number" && Number.isFinite(rawNoteWidth)
           ? Math.min(100, Math.max(40, rawNoteWidth))
           : 100;
-      // 行ごとの marks.bullet 情報を取得（content.items[0].lines から）
-      const legalContentItems = Array.isArray(section.content?.items)
-        ? section.content!.items
-        : [];
-      const legalTextItem = legalContentItems.find((item) => item.type === "text") as
-        | { type: "text"; lines: Array<{ id: string; text: string; marks?: { bullet?: "disc" | "none" } }> }
-        | undefined;
-      const legalLineMarks = legalTextItem?.lines ?? [];
-      const getLineBullet = (index: number): "disc" | "none" => {
-        const lineMark = legalLineMarks[index];
-        if (lineMark?.marks?.bullet !== undefined) {
-          return lineMark.marks.bullet;
-        }
-        return legalBullet;
-      };
       return (
         <section className="w-full">
           <ul
@@ -3306,35 +3327,18 @@ const renderSection = (
               marginRight: "auto",
             }}
           >
-            {legalItems.map((item, index) => {
-              const lineBullet = getLineBullet(index);
-              return (
-                <li
-                  key={`${section.id}-note-${index}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: lineBullet === "disc" ? "0.4em" : "0",
-                    paddingLeft: lineBullet === "disc" ? "0" : "0",
-                  }}
-                >
-                  {lineBullet === "disc" && (
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        marginTop: "0.3em",
-                        width: "0.4em",
-                        height: "0.4em",
-                        borderRadius: "50%",
-                        backgroundColor: "currentColor",
-                        display: "inline-block",
-                      }}
-                    />
-                  )}
-                  <span>{renderRichText(item)}</span>
-                </li>
-              );
-            })}
+            {legalItems.map((item, index) => (
+              <li
+                key={`${section.id}-note-${index}`}
+                className={
+                  item.bullet === "disc"
+                    ? "list-disc ml-5"
+                    : "list-none ml-0"
+                }
+              >
+                {renderRichText(item.text)}
+              </li>
+            ))}
           </ul>
         </section>
       );

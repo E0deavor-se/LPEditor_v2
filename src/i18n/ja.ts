@@ -1,9 +1,9 @@
 const ja = {
   inspector: {
     tabs: {
-      style: "スタイル",
-      content: "コンテンツ",
-      advanced: "詳細",
+      style: "デザイン",
+      content: "内容",
+      advanced: "動作",
     },
     breadcrumb: {
       page: "ページ",

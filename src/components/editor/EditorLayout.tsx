@@ -16,7 +16,6 @@ import {
 import type { TemplateOption } from "@/src/lib/templateOptions";
 
 const RIGHT_PANEL_WIDTH = 360;
-const UI_MODE_STORAGE_KEY = "lp-editor.uiMode";
 
 export default function EditorLayout() {
 	const [leftWidth, setLeftWidth] = useState(320);
@@ -29,13 +28,11 @@ export default function EditorLayout() {
 	const autoSaveIntervalSec = useEditorStore(
 		(state) => state.autoSaveIntervalSec
 	);
-	const uiMode = useEditorStore((state) => state.uiMode);
 	const saveDestination = useEditorStore((state) => state.saveDestination);
 	const setProject = useEditorStore((state) => state.setProject);
 	const replaceProject = useEditorStore((state) => state.replaceProject);
 	const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
 	const setPageBackground = useEditorStore((state) => state.setPageBackground);
-	const setUiMode = useEditorStore((state) => state.setUiMode);
 	const projectRef = useRef(project);
 	const showLeftPanel = true;
 	const lastSavedVersionRef = useRef<string | undefined>(
@@ -58,16 +55,6 @@ export default function EditorLayout() {
 		}
 	}, []);
 
-	useEffect(() => {
-		const stored = window.localStorage.getItem(UI_MODE_STORAGE_KEY);
-		if (stored === "simple" || stored === "advanced") {
-			setUiMode(stored);
-		}
-	}, [setUiMode]);
-
-	useEffect(() => {
-		window.localStorage.setItem(UI_MODE_STORAGE_KEY, uiMode);
-	}, [uiMode]);
 
 	useEffect(() => {
 		projectRef.current = project;
@@ -245,13 +232,15 @@ export default function EditorLayout() {
 		<div className="lp-editor flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
 			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} previewIframeRef={previewIframeRef} />
 			<TopTextToolbar />
-			<div className="flex min-h-0 flex-1">
+			<div className="flex min-h-0 flex-1 gap-2 px-2 pb-2 md:gap-3 md:px-3">
 				{showLeftPanel ? (
-					<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
+					<div className="hidden lg:block">
+						<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
+					</div>
 				) : null}
 				<PreviewPane iframeRef={previewIframeRef} />
 				<aside
-					className="ui-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] lg:flex"
+					className="ui-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] xl:flex"
 					style={{ width: RIGHT_PANEL_WIDTH }}
 				>
 					<InspectorPanel />

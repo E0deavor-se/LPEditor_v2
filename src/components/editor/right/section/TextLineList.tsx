@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { LineMarks, PrimaryLine } from "@/src/types/project";
 import { useI18n } from "@/src/i18n";
+import SelectField from "@/src/components/editor/right/primitives/SelectField";
 
 type TextLineListProps = {
   lines: PrimaryLine[];
@@ -33,9 +34,7 @@ type TextLineListProps = {
   sectionId?: string;
   itemId?: string;
   disabled?: boolean;
-  /** 行ごとの箇条書きONOFFトグルを表示するか */
   showBulletToggle?: boolean;
-  /** セクション全体のデフォルトbullet設定（行ごとの上書きがない場合に使用） */
   defaultBullet?: "disc" | "none";
 };
 
@@ -61,6 +60,7 @@ export default function TextLineList({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
   const isDndEnabled = Boolean(onReorderLine) && !disabled;
+  const resolvedDefaultBullet = defaultBullet === "none" ? "none" : "disc";
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!isDndEnabled || !onReorderLine) {
@@ -80,10 +80,21 @@ export default function TextLineList({
     onReorderLine(fromIndex, toIndex);
   };
 
-  const LineRow = ({ line, index }: { line: PrimaryLine; index: number }) => {
+  const SortableLineRow = ({
+    line,
+    index,
+  }: {
+    line: PrimaryLine;
+    index: number;
+  }) => {
     const isSelected = line.id === selectedLineId;
     const [localText, setLocalText] = useState(line.text ?? "");
     const inputRef = useRef<HTMLInputElement | null>(null);
+    const focusInput = () => {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+    };
     const {
       attributes,
       listeners,
@@ -113,6 +124,16 @@ export default function TextLineList({
             ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
             : "border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/60 hover:bg-[var(--ui-panel)]/80")
         }
+        onPointerDown={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (!target) {
+            return;
+          }
+          if (target.closest("button, select, input")) {
+            return;
+          }
+          focusInput();
+        }}
       >
         <button
           type="button"
@@ -135,11 +156,22 @@ export default function TextLineList({
             className="ui-input h-7 flex-1 min-w-0 w-full px-2 text-[12px]"
             value={localText}
             ref={inputRef}
-            onPointerDown={(event) => event.stopPropagation()}
+            onPointerDownCapture={(event) => {
+              event.stopPropagation();
+              focusInput();
+            }}
+            onMouseDownCapture={(event) => {
+              event.stopPropagation();
+              focusInput();
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              focusInput();
+            }}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              event.currentTarget.focus();
+              focusInput();
             }}
             onFocus={() => {
               onSelect(line.id);
@@ -157,6 +189,108 @@ export default function TextLineList({
             placeholder={t.inspector.section.placeholders.emptyLine}
           />
         </div>
+        {showBulletToggle && onChangeMarks ? (
+          <div className="w-[72px]">
+            <SelectField
+              value={line.marks?.bullet ?? resolvedDefaultBullet}
+              ariaLabel="記号"
+              onChange={(next) =>
+                onChangeMarks(line.id, {
+                  bullet: next === "none" ? "none" : "disc",
+                })
+              }
+              disabled={disabled}
+            >
+              <option value="disc">・</option>
+              <option value="none">なし</option>
+            </SelectField>
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="ui-button h-7 w-7 shrink-0 px-0"
+          onClick={() => onRemoveLine(line.id)}
+          aria-label={t.inspector.section.buttons.deleteLine}
+          title={t.inspector.section.buttons.deleteLine}
+          disabled={disabled}
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    );
+  };
+
+  const StaticLineRow = ({
+    line,
+    index,
+  }: {
+    line: PrimaryLine;
+    index: number;
+  }) => {
+    const isSelected = line.id === selectedLineId;
+    const [localText, setLocalText] = useState(line.text ?? "");
+    useEffect(() => {
+      setLocalText(line.text ?? "");
+    }, [line.text]);
+
+    return (
+      <div
+        className={
+          "group flex items-center gap-2 min-w-0 h-8 rounded-md border px-2 text-left text-[12px] transition " +
+          (isSelected
+            ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
+            : "border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/60 hover:bg-[var(--ui-panel)]/80")
+        }
+        onClick={() => onSelect(line.id)}
+      >
+        <button
+          type="button"
+          className="ui-button h-7 w-7 shrink-0 px-0"
+          disabled
+          aria-label="並び替え"
+          title="並び替え"
+        >
+          <GripVertical size={14} />
+        </button>
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <span className="text-[11px] text-[var(--ui-muted)]">{index + 1}</span>
+          <input
+            type="text"
+            className="ui-input h-7 flex-1 min-w-0 w-full px-2 text-[12px]"
+            value={localText}
+            onFocus={() => {
+              onSelect(line.id);
+            }}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setLocalText(nextValue);
+              onChangeText?.(line.id, nextValue);
+            }}
+            disabled={disabled}
+            data-kind="line"
+            data-section-id={sectionId}
+            data-item-id={itemId}
+            data-line-id={line.id}
+            placeholder={t.inspector.section.placeholders.emptyLine}
+          />
+        </div>
+        {showBulletToggle && onChangeMarks ? (
+          <div className="w-[72px]">
+            <SelectField
+              value={line.marks?.bullet ?? resolvedDefaultBullet}
+              ariaLabel="記号"
+              onChange={(next) =>
+                onChangeMarks(line.id, {
+                  bullet: next === "none" ? "none" : "disc",
+                })
+              }
+              disabled={disabled}
+            >
+              <option value="disc">・</option>
+              <option value="none">なし</option>
+            </SelectField>
+          </div>
+        ) : null}
         <button
           type="button"
           className="ui-button h-7 w-7 shrink-0 px-0"
@@ -196,22 +330,30 @@ export default function TextLineList({
 
   return (
     <div className="flex flex-col gap-2">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={lines.map((line) => line.id)}
-          strategy={verticalListSortingStrategy}
+      {isDndEnabled ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          <div className="flex min-w-0 flex-col gap-1">
-            {lines.map((line, index) => (
-              <LineRow key={line.id} line={line} index={index} />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+          <SortableContext
+            items={lines.map((line) => line.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex min-w-0 flex-col gap-1">
+              {lines.map((line, index) => (
+                <SortableLineRow key={line.id} line={line} index={index} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <div className="flex min-w-0 flex-col gap-1">
+          {lines.map((line, index) => (
+            <StaticLineRow key={line.id} line={line} index={index} />
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"

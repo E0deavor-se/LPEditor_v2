@@ -110,6 +110,35 @@ export default function CommonSectionEditor({
   const [activeTab, setActiveTab] = useState<string>("content");
   const [contentDraft, setContentDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const defaultLegalBullet = section.data?.bullet === "none" ? "none" : "disc";
+  const normalizeLegalNoteItems = (
+    items: unknown,
+    defaultBullet: "none" | "disc"
+  ) => {
+    if (!Array.isArray(items)) {
+      return [] as Array<{ text: string; bullet: "none" | "disc" }>;
+    }
+    return items
+      .map((item) => {
+        if (typeof item === "string") {
+          return { text: item, bullet: defaultBullet };
+        }
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const entry = item as Record<string, unknown>;
+        const text = typeof entry.text === "string" ? entry.text : "";
+        const bullet =
+          entry.bullet === "none" || entry.bullet === "disc"
+            ? entry.bullet
+            : defaultBullet;
+        return { text, bullet };
+      })
+      .filter(
+        (item): item is { text: string; bullet: "none" | "disc" } =>
+          Boolean(item)
+      );
+  };
 
   const contentMeta: ContentMeta = useMemo(() => {
     if (Array.isArray(section.data.lines)) {
@@ -161,9 +190,14 @@ export default function CommonSectionEditor({
       }
       if (contentMeta.type === "lines") {
         const lines = Array.isArray(section.data[contentMeta.key])
-          ? (section.data[contentMeta.key] as string[])
+          ? (section.data[contentMeta.key] as unknown[])
           : [];
-        return lines.join("\n");
+        if (section.type === "legalNotes" && contentMeta.key === "items") {
+          return normalizeLegalNoteItems(lines, defaultLegalBullet)
+            .map((item) => item.text)
+            .join("\n");
+        }
+        return (lines as string[]).join("\n");
       }
       const value = section.data[contentMeta.key];
       return typeof value === "string" ? value : "";
@@ -183,6 +217,18 @@ export default function CommonSectionEditor({
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
+      if (section.type === "legalNotes" && contentMeta.key === "items") {
+        const currentItems = normalizeLegalNoteItems(
+          section.data.items,
+          defaultLegalBullet
+        );
+        const nextItems = lines.map((text, index) => ({
+          text,
+          bullet: currentItems[index]?.bullet ?? defaultLegalBullet,
+        }));
+        updateSectionData(section.id, { [contentMeta.key]: nextItems });
+        return;
+      }
       updateSectionData(section.id, { [contentMeta.key]: lines });
       return;
     }
@@ -197,6 +243,18 @@ export default function CommonSectionEditor({
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
+      if (section.type === "legalNotes" && contentMeta.key === "items") {
+        const currentItems = normalizeLegalNoteItems(
+          section.data.items,
+          defaultLegalBullet
+        );
+        const nextItems = lines.map((text, index) => ({
+          text,
+          bullet: currentItems[index]?.bullet ?? defaultLegalBullet,
+        }));
+        updateSectionData(section.id, { [contentMeta.key]: nextItems });
+        return;
+      }
       updateSectionData(section.id, { [contentMeta.key]: lines });
     }
   };
@@ -214,6 +272,18 @@ export default function CommonSectionEditor({
         .split("\n")
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
+      if (section.type === "legalNotes" && contentMeta.key === "items") {
+        const currentItems = normalizeLegalNoteItems(
+          section.data.items,
+          defaultLegalBullet
+        );
+        const nextItems = normalized.map((text, index) => ({
+          text,
+          bullet: currentItems[index]?.bullet ?? defaultLegalBullet,
+        }));
+        updateSectionData(section.id, { [contentMeta.key]: nextItems });
+        return;
+      }
       updateSectionData(section.id, { [contentMeta.key]: normalized });
     }
   };

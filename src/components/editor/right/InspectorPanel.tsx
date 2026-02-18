@@ -6,8 +6,10 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  Eye,
   GripVertical,
   LayoutGrid,
+  MoreHorizontal,
   MousePointerClick,
   RotateCcw,
   Sparkles,
@@ -49,6 +51,7 @@ import Accordion from "@/src/components/editor/right/primitives/Accordion";
 import SectionCardPresetGallery from "@/src/components/editor/right/section/SectionCardPresetGallery";
 import SectionStylePanel from "@/src/components/editor/right/section/SectionStylePanel";
 import TextLineList from "@/src/components/editor/right/section/TextLineList";
+import PrimaryLineEditor from "@/src/components/editor/right/section/PrimaryLineEditor";
 import RichTextInput from "@/src/components/editor/right/section/RichTextInput";
 import CsvImportPreviewModal from "@/src/components/editor/right/section/CsvImportPreviewModal";
 import type {
@@ -58,6 +61,7 @@ import type {
   ImageItem,
   ImageContentItem,
   ButtonContentItem,
+  LegalNoteItem,
   PageBaseStyle,
   PrimaryLine,
   SectionBase,
@@ -220,6 +224,10 @@ export default function InspectorPanel() {
   const [isStoreDesignOpen, setIsStoreDesignOpen] = useState(false);
   const [isSimpleGuideOpen, setIsSimpleGuideOpen] = useState(true);
   const [simpleGuideStep, setSimpleGuideStep] = useState(0);
+  const [inspectorScope, setInspectorScope] = useState<
+    "page" | "section" | "element"
+  >("page");
+  const [openItemMenuId, setOpenItemMenuId] = useState<string | null>(null);
   const {
     selected,
     project,
@@ -260,12 +268,15 @@ export default function InspectorPanel() {
     applyLineMarksToAllLines,
     promoteLineMarksToSectionTypography,
     applyCalloutToSelection,
+    setSelectedSection,
     setSelectedItemId,
     setSelectedLineId,
     setSelectedImageIds,
     applySectionAppearanceToAll,
     toggleSectionLocked,
     toggleSectionVisible,
+    duplicateSection,
+    deleteSection,
     addAsset,
     csvImportDraft,
     isCsvImportModalOpen,
@@ -313,12 +324,15 @@ export default function InspectorPanel() {
       promoteLineMarksToSectionTypography:
         state.promoteLineMarksToSectionTypography,
       applyCalloutToSelection: state.applyCalloutToSelection,
+      setSelectedSection: state.setSelectedSection,
       setSelectedItemId: state.setSelectedItemId,
       setSelectedLineId: state.setSelectedLineId,
       setSelectedImageIds: state.setSelectedImageIds,
       applySectionAppearanceToAll: state.applySectionAppearanceToAll,
       toggleSectionLocked: state.toggleSectionLocked,
       toggleSectionVisible: state.toggleSectionVisible,
+      duplicateSection: state.duplicateSection,
+      deleteSection: state.deleteSection,
       addAsset: state.addAsset,
       csvImportDraft: state.csvImportDraft,
       isCsvImportModalOpen: state.isCsvImportModalOpen,
@@ -400,8 +414,8 @@ export default function InspectorPanel() {
     if (!isPageSelection) {
       return;
     }
-    if (activeTab !== "style") {
-      setActiveTab("style");
+    if (activeTab === "advanced") {
+      setActiveTab("content");
     }
   }, [activeTab, isPageSelection]);
 
@@ -430,6 +444,16 @@ export default function InspectorPanel() {
     setIsContentCardOpen(true);
     setIsQuickStyleOpen(true);
   }, [isSimpleMode]);
+
+  useEffect(() => {
+    if (selected.kind === "page") {
+      setInspectorScope("page");
+      return;
+    }
+    if (selected.kind === "section") {
+      setInspectorScope((current) => (current === "page" ? "section" : current));
+    }
+  }, [selected.kind]);
 
   useEffect(() => {
     const activeSectionId = selectedSection?.id;
@@ -660,17 +684,44 @@ export default function InspectorPanel() {
   const legalNotesTextItem = isLegalNotes
     ? (contentItems.find((item) => item.type === "text") as TextContentItem | undefined)
     : undefined;
-  const legalNotesLineTexts = useMemo(
-    () => legalNotesTextItem?.lines.map((line) => line.text) ?? [],
-    [legalNotesTextItem?.lines]
-  );
-  const legalNotesItems = isLegalNotes
-    ? Array.isArray(selectedSection?.data?.items)
-      ? selectedSection?.data?.items.map((item: string) => String(item))
-      : []
-    : [];
   const legalNotesBullet =
     selectedSection?.data?.bullet === "none" ? "none" : "disc";
+  const normalizeLegalNoteItems = (
+    items: unknown,
+    defaultBullet: "none" | "disc"
+  ): LegalNoteItem[] => {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items
+      .map((item) => {
+        if (typeof item === "string") {
+          return { text: item, bullet: defaultBullet };
+        }
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const entry = item as Record<string, unknown>;
+        const text = typeof entry.text === "string" ? entry.text : "";
+        const bullet =
+          entry.bullet === "none" || entry.bullet === "disc"
+            ? entry.bullet
+            : defaultBullet;
+        return { text, bullet };
+      })
+      .filter((item): item is LegalNoteItem => Boolean(item));
+  };
+  const legalNotesLineItems = useMemo(
+    () =>
+      legalNotesTextItem?.lines.map((line) => ({
+        text: line.text,
+        bullet: line.marks?.bullet ?? legalNotesBullet,
+      })) ?? [],
+    [legalNotesTextItem?.lines, legalNotesBullet]
+  );
+  const legalNotesItems = isLegalNotes
+    ? normalizeLegalNoteItems(selectedSection?.data?.items, legalNotesBullet)
+    : [];
   const legalNotesWidth =
     typeof selectedSection?.data?.noteWidthPct === "number"
       ? selectedSection?.data?.noteWidthPct
@@ -1221,19 +1272,93 @@ export default function InspectorPanel() {
     );
   };
   const breadcrumb = useMemo(() => {
+    const sectionLabel = selectedSection?.name ?? t.inspector.breadcrumb.untitled;
+    const lineLabel = selectedLine?.text?.trim();
+    const itemLabel = selectedItem
+      ? (
+          {
+            title: t.inspector.section.itemTypes.title,
+            text: t.inspector.section.itemTypes.text,
+            image: t.inspector.section.itemTypes.image,
+            button: t.inspector.section.itemTypes.button,
+          } as Record<string, string>
+        )[selectedItem.type] ?? t.inspector.breadcrumb.block
+      : t.inspector.breadcrumb.block;
+    const elementLabel = lineLabel || itemLabel;
+
     if (selected.kind === "page") {
       return [t.inspector.breadcrumb.page];
     }
     if (selected.kind === "section" && selectedSection) {
-      const label = selectedSection.name ?? t.inspector.breadcrumb.untitled;
-      return [t.inspector.breadcrumb.section, label];
+      return [t.inspector.breadcrumb.page, sectionLabel];
     }
     if (selected.kind === "block") {
-      return [t.inspector.breadcrumb.block];
+      return [t.inspector.breadcrumb.page, sectionLabel, elementLabel];
     }
     return [t.inspector.breadcrumb.page];
-  }, [selected, selectedSection, t]);
+  }, [selected, selectedItem, selectedLine, selectedSection, t]);
 
+  const sectionOptions = project.sections.map((section) => ({
+    value: section.id,
+    label: section.name ?? section.type,
+  }));
+  const isElementScope = inspectorScope === "element";
+  const canSelectSection = project.sections.length > 0;
+  const canSelectElement = contentItems.length > 0 && Boolean(selectedSection);
+
+  const selectItemById = (itemId?: string) => {
+    if (!selectedSection || !itemId) {
+      setSelectedItemId(undefined);
+      setSelectedLineId(undefined);
+      setSelectedImageIds([]);
+      return;
+    }
+    const item = contentItems.find((entry) => entry.id === itemId);
+    if (!item) {
+      return;
+    }
+    setSelectedItemId(item.id);
+    if (item.type === "text") {
+      setSelectedLineId(item.lines[0]?.id);
+    } else {
+      setSelectedLineId(undefined);
+    }
+    if (item.type === "image") {
+      setSelectedImageIds(item.images[0] ? [item.images[0].id] : []);
+    } else {
+      setSelectedImageIds([]);
+    }
+  };
+
+  const handleScopeChange = (nextScope: "page" | "section" | "element") => {
+    if (nextScope === "page") {
+      setSelectedSection(undefined);
+      setInspectorScope("page");
+      return;
+    }
+    const nextSectionId = selectedSection?.id ?? project.sections[0]?.id;
+    if (!nextSectionId) {
+      return;
+    }
+    if (nextScope === "section") {
+      if (!selectedSection || selectedSection.id !== nextSectionId) {
+        setSelectedSection(nextSectionId);
+      }
+      setSelectedItemId(undefined);
+      setSelectedLineId(undefined);
+      setSelectedImageIds([]);
+      setInspectorScope("section");
+      return;
+    }
+    if (!selectedSection || selectedSection.id !== nextSectionId) {
+      setSelectedSection(nextSectionId);
+    }
+    const nextItemId = contentItems[0]?.id;
+    if (nextItemId) {
+      selectItemById(nextItemId);
+    }
+    setInspectorScope("element");
+  };
   const isLockedDisplay = isLocked;
   const bodyClass = isSection && isLockedDisplay ? "pointer-events-none opacity-60" : "";
   const isContentReady = selected.kind === "section" && selectedSection;
@@ -1247,11 +1372,14 @@ export default function InspectorPanel() {
   const calloutScope = calloutScopeChoice;
   const isCalloutScopeEnabled =
     calloutScopeChoice === "line" ? isLineScopeEnabled : isItemScopeEnabled;
-  const areStringArraysEqual = (left: string[], right: string[]) => {
+  const areLegalNoteItemsEqual = (left: LegalNoteItem[], right: LegalNoteItem[]) => {
     if (left.length !== right.length) {
       return false;
     }
-    return left.every((value, index) => value === right[index]);
+    return left.every(
+      (value, index) =>
+        value.text === right[index]?.text && value.bullet === right[index]?.bullet
+    );
   };
   const reorderStringArray = (values: string[], fromIndex: number, toIndex: number) => {
     const next = [...values];
@@ -1290,22 +1418,21 @@ export default function InspectorPanel() {
     if (!isLegalNotes || !selectedSection || !legalNotesTextItem) {
       return;
     }
-    const currentItems = Array.isArray(selectedSection.data.items)
-      ? selectedSection.data.items.map((item: string) => String(item))
-      : [];
-    if (areStringArraysEqual(legalNotesLineTexts, currentItems)) {
+    const currentItems = legalNotesItems;
+    if (areLegalNoteItemsEqual(legalNotesLineItems, currentItems)) {
       return;
     }
     updateSectionData(
       selectedSection.id,
-      { items: legalNotesLineTexts },
+      { items: legalNotesLineItems },
       { skipHistory: true }
     );
   }, [
-    areStringArraysEqual,
+    areLegalNoteItemsEqual,
     isLegalNotes,
-    legalNotesLineTexts,
+    legalNotesLineItems,
     legalNotesTextItem,
+    legalNotesItems,
     selectedSection,
     updateSectionData,
   ]);
@@ -1397,6 +1524,24 @@ export default function InspectorPanel() {
     isNoticeItem(item) || (isTargetStores && isTargetStoresNoticeItem(item))
       ? "注意文言"
       : itemTypeLabels[item.type];
+  const itemOptions = contentItems.map((item) => ({
+    value: item.id,
+    label: getItemLabel(item),
+  }));
+  const headerTargetOptions =
+    inspectorScope === "section"
+      ? sectionOptions
+      : inspectorScope === "element"
+      ? itemOptions
+      : [{ value: "page", label: "ページ全体" }];
+  const headerTargetValue =
+    inspectorScope === "section"
+      ? selectedSection?.id ?? ""
+      : inspectorScope === "element"
+      ? selectedItem?.id ?? ""
+      : "page";
+  const isHeaderTargetDisabled =
+    inspectorScope === "page" || headerTargetOptions.length === 0;
   const targetStoresImageItems = isTargetStores
     ? contentItems.filter(
         (item): item is ImageContentItem => item.type === "image"
@@ -1684,6 +1829,15 @@ export default function InspectorPanel() {
     const activeSectionId = selectedSectionId ?? selectedSection?.id;
     const actualIndex = contentItems.findIndex((entry) => entry.id === item.id);
     const isDragDisabled = isLocked || item.type === "title";
+    const isMenuOpen = openItemMenuId === item.id;
+    const canMoveUp =
+      actualIndex > 0 && !isDragDisabled && Boolean(activeSectionId) && !isLocked;
+    const canMoveDown =
+      actualIndex < contentItems.length - 1 &&
+      !isDragDisabled &&
+      Boolean(activeSectionId) &&
+      !isLocked;
+    const canDelete = item.type !== "title" && Boolean(activeSectionId) && !isLocked;
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
       useSortable({ id: item.id, disabled: isDragDisabled });
     const style: CSSProperties = {
@@ -1722,7 +1876,10 @@ export default function InspectorPanel() {
         <button
           type="button"
           className="min-w-0 flex-1 truncate overflow-hidden text-left"
-          onClick={() => setSelectedItemId(item.id)}
+          onClick={() => {
+            selectItemById(item.id);
+            setInspectorScope("element");
+          }}
         >
           {getItemLabel(item)}
         </button>
@@ -1730,51 +1887,84 @@ export default function InspectorPanel() {
           <button
             type="button"
             className="ui-button h-7 w-7 px-0"
+            aria-label="要素を表示"
+            title="要素を表示"
             onClick={() => {
-              if (!activeSectionId) {
-                return;
-              }
-              reorderContentItems(
-                activeSectionId,
-                actualIndex,
-                Math.max(0, actualIndex - 1)
-              );
+              selectItemById(item.id);
+              setInspectorScope("element");
             }}
-            disabled={index === 0 || item.type === "title"}
           >
-            <ArrowUp size={14} />
+            <Eye size={14} />
           </button>
-          <button
-            type="button"
-            className="ui-button h-7 w-7 px-0"
-            onClick={() => {
-              if (!activeSectionId) {
-                return;
+          <div className="relative">
+            <button
+              type="button"
+              className="ui-button h-7 w-7 px-0"
+              aria-label="メニュー"
+              title="メニュー"
+              onClick={() =>
+                setOpenItemMenuId((current) =>
+                  current === item.id ? null : item.id
+                )
               }
-              reorderContentItems(activeSectionId, actualIndex, actualIndex + 1);
-            }}
-            disabled={
-              index === contentItems.length - 1 ||
-              item.type === "title"
-            }
-          >
-            <ArrowDown size={14} />
-          </button>
-          <button
-            type="button"
-            className="ui-button h-7 w-7 px-0"
-            onClick={() => {
-              if (!activeSectionId) {
-                return;
-              }
-              removeContentItem(activeSectionId, item.id);
-            }}
-            aria-label={t.inspector.section.buttons.deleteItem}
-            title={t.inspector.section.buttons.deleteItem}
-            disabled={item.type === "title"}
-          >
-            <Trash2 size={14} />
-          </button>
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            {isMenuOpen ? (
+              <div className="absolute right-0 top-8 z-20 w-36 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/95 p-1 text-[11px] shadow-lg">
+                <button
+                  type="button"
+                  className="ui-button h-7 w-full justify-start px-2 text-[11px]"
+                  onClick={() => {
+                    if (!activeSectionId) {
+                      return;
+                    }
+                    reorderContentItems(
+                      activeSectionId,
+                      actualIndex,
+                      Math.max(0, actualIndex - 1)
+                    );
+                    setOpenItemMenuId(null);
+                  }}
+                  disabled={!canMoveUp}
+                >
+                  上へ移動
+                </button>
+                <button
+                  type="button"
+                  className="ui-button h-7 w-full justify-start px-2 text-[11px]"
+                  onClick={() => {
+                    if (!activeSectionId) {
+                      return;
+                    }
+                    reorderContentItems(
+                      activeSectionId,
+                      actualIndex,
+                      actualIndex + 1
+                    );
+                    setOpenItemMenuId(null);
+                  }}
+                  disabled={!canMoveDown}
+                >
+                  下へ移動
+                </button>
+                <button
+                  type="button"
+                  className="ui-button h-7 w-full justify-start px-2 text-[11px] text-rose-500"
+                  onClick={() => {
+                    if (!activeSectionId) {
+                      return;
+                    }
+                    removeContentItem(activeSectionId, item.id);
+                    setOpenItemMenuId(null);
+                  }}
+                  disabled={!canDelete}
+                >
+                  削除
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     );
@@ -2140,339 +2330,797 @@ export default function InspectorPanel() {
   return (
     <>
       <aside className="ui-panel flex h-full min-h-0 flex-col rounded-none border-y-0 border-r-0">
-      <InspectorHeader
-        breadcrumb={breadcrumb}
-        isSection={Boolean(isSection)}
-        isLocked={isLockedDisplay}
-        isVisible={isVisible}
-        disableLock={false}
-        onToggleLock={() =>
-          selectedSection && toggleSectionLocked(selectedSection.id)
-        }
-        onToggleVisible={() =>
-          selectedSection && toggleSectionVisible(selectedSection.id)
-        }
-        onResetPage={() => {
-          setPageTypography(DEFAULT_PAGE_STYLE.typography);
-          setPageColors(DEFAULT_PAGE_STYLE.colors);
-          setPageSpacing(DEFAULT_PAGE_STYLE.spacing);
-          setPageLayout(DEFAULT_PAGE_STYLE.layout);
-        }}
-      />
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
-        <div className="flex flex-col gap-3">
-          {isSimpleMode ? (
-            <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)]/70 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[12px] font-semibold text-[var(--ui-text)]">
-                  シンプルガイド
-                </div>
-                <button
-                  type="button"
-                  className="ui-button h-6 px-2 text-[10px]"
-                  onClick={() => setIsSimpleGuideOpen((current) => !current)}
-                >
-                  {isSimpleGuideOpen ? "閉じる" : "開く"}
-                </button>
-              </div>
-              {isSimpleGuideOpen ? (
-                <div className="mt-2 space-y-2">
-                  <div className="text-[12px] text-[var(--ui-text)]">
-                    {guideStep.title}
-                  </div>
-                  <div className="text-[11px] text-[var(--ui-muted)]">
-                    {guideStep.body}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="sticky top-0 z-30 bg-[var(--ui-panel)]/95 backdrop-blur">
+            <InspectorHeader
+              breadcrumb={breadcrumb}
+              scope={inspectorScope}
+              canSelectSection={canSelectSection}
+              canSelectElement={canSelectElement}
+              targetLabel="編集対象"
+              targetOptions={headerTargetOptions}
+              targetValue={headerTargetValue}
+              targetDisabled={isHeaderTargetDisabled}
+              onScopeChange={handleScopeChange}
+              onTargetChange={(value) => {
+                if (inspectorScope === "section") {
+                  setSelectedSection(value || undefined);
+                  setSelectedItemId(undefined);
+                  setSelectedLineId(undefined);
+                  setSelectedImageIds([]);
+                  setInspectorScope("section");
+                  return;
+                }
+                if (inspectorScope === "element") {
+                  selectItemById(value);
+                  setInspectorScope("element");
+                }
+              }}
+              isSection={Boolean(isSection)}
+              isLocked={isLockedDisplay}
+              isVisible={isVisible}
+              disableLock={false}
+              onToggleLock={() =>
+                selectedSection && toggleSectionLocked(selectedSection.id)
+              }
+              onToggleVisible={() =>
+                selectedSection && toggleSectionVisible(selectedSection.id)
+              }
+              onDuplicateSection={() =>
+                selectedSection && duplicateSection(selectedSection.id)
+              }
+              onDeleteSection={() =>
+                selectedSection && deleteSection(selectedSection.id)
+              }
+              onResetPage={() => {
+                setPageTypography(DEFAULT_PAGE_STYLE.typography);
+                setPageColors(DEFAULT_PAGE_STYLE.colors);
+                setPageSpacing(DEFAULT_PAGE_STYLE.spacing);
+                setPageLayout(DEFAULT_PAGE_STYLE.layout);
+              }}
+            />
+            <div className="border-b border-[var(--ui-border)]/60 px-3 py-2">
+              <InspectorTabs
+                value={activeTab}
+                onChange={setActiveTab}
+                hideStyle={hideStyleTab}
+                hideAdvanced={isPageSelection || isSimpleMode}
+              />
+            </div>
+          </div>
+          <div className="px-3 py-3">
+            <div className="flex flex-col gap-3">
+              {isSimpleMode ? (
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)]/70 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[12px] font-semibold text-[var(--ui-text)]">
+                      シンプルガイド
+                    </div>
                     <button
                       type="button"
                       className="ui-button h-6 px-2 text-[10px]"
-                      disabled={guideStepIndex === 0}
-                      onClick={() =>
-                        setSimpleGuideStep((current) => Math.max(0, current - 1))
-                      }
+                      onClick={() => setIsSimpleGuideOpen((current) => !current)}
                     >
-                      前へ
-                    </button>
-                    <button
-                      type="button"
-                      className="ui-button h-6 px-2 text-[10px]"
-                      onClick={() =>
-                        setSimpleGuideStep((current) =>
-                          current >= SIMPLE_GUIDE_STEPS.length - 1
-                            ? 0
-                            : current + 1
-                        )
-                      }
-                    >
-                      {guideStepIndex >= SIMPLE_GUIDE_STEPS.length - 1
-                        ? "最初へ"
-                        : "次へ"}
+                      {isSimpleGuideOpen ? "閉じる" : "開く"}
                     </button>
                   </div>
+                  {isSimpleGuideOpen ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="text-[12px] text-[var(--ui-text)]">
+                        {guideStep.title}
+                      </div>
+                      <div className="text-[11px] text-[var(--ui-muted)]">
+                        {guideStep.body}
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="ui-button h-6 px-2 text-[10px]"
+                          disabled={guideStepIndex === 0}
+                          onClick={() =>
+                            setSimpleGuideStep((current) => Math.max(0, current - 1))
+                          }
+                        >
+                          前へ
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-button h-6 px-2 text-[10px]"
+                          onClick={() =>
+                            setSimpleGuideStep((current) =>
+                              current >= SIMPLE_GUIDE_STEPS.length - 1
+                                ? 0
+                                : current + 1
+                            )
+                          }
+                        >
+                          {guideStepIndex >= SIMPLE_GUIDE_STEPS.length - 1
+                            ? "最初へ"
+                            : "次へ"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
-            </div>
-          ) : null}
-          <InspectorTabs
-            value={activeTab}
-            onChange={setActiveTab}
-            hideStyle={hideStyleTab}
-            hideContent={isPageSelection}
-            hideAdvanced={isPageSelection || isSimpleMode}
-          />
-          <div className={bodyClass}>
-            {activeTab === "style" ? (
-              <div className="flex flex-col gap-2">
-                {selected.kind === "page" ? (
-                  <>
-                    <PageMetaPanel
-                      value={pageMeta}
-                      onChange={setPageMeta}
-                      assets={assets}
-                      onAddAsset={addAsset}
-                    />
-                    <PageStyleTypography
-                      value={pageStyle.typography}
-                      onChange={setPageTypography}
-                      defaultOpen
-                    />
-                    {!isSimpleMode && designTargetSection ? (
-                      <Accordion title="サーフェス" icon={<LayoutGrid size={14} />}>
-                        <FieldRow label={t.inspector.section.fields.gradient}>
-                          <ToggleField
-                            value={designTargetSection.style.background.type === "gradient"}
-                            ariaLabel={t.inspector.section.fields.gradient}
-                            onChange={(next) =>
-                              applySectionAppearanceToAll(
-                                mergeSectionStyle(designTargetSection.style, {
-                                  background: {
-                                    type: next ? "gradient" : "solid",
-                                  },
-                                }),
-                                designTargetCardStyle,
-                                { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                              )
+              <div className={bodyClass}>
+                {activeTab === "style" ? (
+              <div className="flex flex-col gap-3">
+                    <Accordion title="基本" defaultOpen>
+                      <div className="flex flex-col gap-3">
+                    {isElementScope && selectedSection ? (
+                      <div className={cardClass}>
+                        <div className={cardHeaderClass}>
+                          <span>クイック装飾</span>
+                          {selectedTextItem && selectedLine && !isLegalNotes ? (
+                            <button
+                              type="button"
+                              className="ui-button h-7 px-2 text-[11px]"
+                              onClick={() => {
+                                const nextItems = contentItems.map((item) => {
+                                  if (
+                                    item.id !== selectedTextItem.id ||
+                                    item.type !== "text"
+                                  ) {
+                                    return item;
+                                  }
+                                  return {
+                                    ...item,
+                                    lines: item.lines.map((line) =>
+                                      line.id === selectedLine.id
+                                        ? { ...line, marks: undefined }
+                                        : line
+                                    ),
+                                  };
+                                });
+                                updateSectionContent(selectedSection.id, {
+                                  items: nextItems,
+                                });
+                              }}
+                              aria-label={t.inspector.header.reset}
+                              title={t.inspector.header.reset}
+                            >
+                              <RotateCcw size={14} />
+                            </button>
+                          ) : null}
+                        </div>
+                        <div
+                          className={
+                            cardBodyClass +
+                            (isContentReady ? "" : " pointer-events-none opacity-60")
+                          }
+                        >
+                          {!isContentReady ? (
+                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              {t.inspector.section.placeholders.selectContent}
+                            </div>
+                          ) : selectedTextItem && selectedLine ? (
+                            !isLegalNotes ? (
+                              <div className="space-y-3">
+                                <div className={quickRowClass}>
+                                  <div className={quickLabelClass}>テキスト位置</div>
+                                  <div className={quickControlClass}>
+                                    <div className={quickSegmentWrapClass}>
+                                      {[
+                                        { id: "left", label: "左" },
+                                        { id: "center", label: "中央" },
+                                        { id: "right", label: "右" },
+                                      ].map((option) => (
+                                        <button
+                                          key={option.id}
+                                          type="button"
+                                          className={
+                                            quickSegmentButtonClass +
+                                            " " +
+                                            (textAlignValue === option.id
+                                              ? quickSegmentActiveClass
+                                              : quickSegmentInactiveClass)
+                                          }
+                                          onClick={() =>
+                                            applyTextAlignToSelection(
+                                              option.id as "left" | "center" | "right"
+                                            )
+                                          }
+                                          disabled={!isTextAlignEnabled}
+                                        >
+                                          {option.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className={quickRowClass}>
+                                  <div className={quickLabelClass}>
+                                    {t.inspector.section.fields.bold}
+                                  </div>
+                                  <div className={quickControlClass}>
+                                    <ToggleField
+                                      value={Boolean(selectedLine?.marks?.bold)}
+                                      ariaLabel={t.inspector.section.fields.bold}
+                                      onChange={(next) =>
+                                        updateTextLineMarks(
+                                          selectedSection.id,
+                                          selectedTextItem.id,
+                                          selectedLine.id,
+                                          { bold: next }
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <div className={quickRowClass}>
+                                  <div className={quickLabelClass}>
+                                    {t.inspector.section.fields.textColor}
+                                  </div>
+                                  <div className={quickControlClass}>
+                                    <QuickColorControl
+                                      value={selectedLine?.marks?.color ?? "#111111"}
+                                      ariaLabel={t.inspector.section.fields.textColor}
+                                      onChange={(next) =>
+                                        updateTextLineMarks(
+                                          selectedSection.id,
+                                          selectedTextItem.id,
+                                          selectedLine.id,
+                                          { color: next }
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <div className={quickRowClass}>
+                                  <div className={quickLabelClass}>
+                                    {t.inspector.section.fields.size}
+                                  </div>
+                                  <div className={quickControlClass}>
+                                    <input
+                                      type="number"
+                                      className="ui-input h-8 w-[96px] text-[12px] text-right"
+                                      value={
+                                        selectedLine?.marks?.size ??
+                                        selectedSection.style.typography.fontSize
+                                      }
+                                      min={10}
+                                      max={48}
+                                      step={1}
+                                      aria-label={t.inspector.section.fields.size}
+                                      onChange={(event) =>
+                                        updateTextLineMarks(
+                                          selectedSection.id,
+                                          selectedTextItem.id,
+                                          selectedLine.id,
+                                          { size: Number(event.target.value) }
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    className="ui-button h-7 w-full px-2 text-[11px]"
+                                    onClick={() =>
+                                      applyLineMarksToAllLines(
+                                        selectedSection.id,
+                                        selectedTextItem.id,
+                                        selectedLine.id
+                                      )
+                                    }
+                                  >
+                                    {t.inspector.section.buttons.applyLineStyleAll}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ui-button h-7 w-full px-2 text-[11px]"
+                                    onClick={() =>
+                                      promoteLineMarksToSectionTypography(
+                                        selectedSection.id,
+                                        selectedTextItem.id,
+                                        selectedLine.id
+                                      )
+                                    }
+                                  >
+                                    {t.inspector.section.buttons.promoteLineStyle}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                装飾は本文から編集できます。
+                              </div>
+                            )
+                          ) : selectedTitleItem ? (
+                            <div className="space-y-3">
+                              <div className={quickRowClass}>
+                                <div className={quickLabelClass}>
+                                  {t.inspector.section.fields.bold}
+                                </div>
+                                <div className={quickControlClass}>
+                                  <ToggleField
+                                    value={Boolean(selectedTitleItem.marks?.bold)}
+                                    ariaLabel={t.inspector.section.fields.bold}
+                                    onChange={(next) =>
+                                      updateTitleItemMarks(
+                                        selectedSection.id,
+                                        selectedTitleItem.id,
+                                        {
+                                          bold: next,
+                                        }
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                              <div className={quickRowClass}>
+                                <div className={quickLabelClass}>
+                                  {t.inspector.section.fields.textColor}
+                                </div>
+                                <div className={quickControlClass}>
+                                  <QuickColorControl
+                                    value={selectedTitleItem.marks?.color ?? "#111111"}
+                                    ariaLabel={t.inspector.section.fields.textColor}
+                                    onChange={(next) =>
+                                      updateTitleItemMarks(
+                                        selectedSection.id,
+                                        selectedTitleItem.id,
+                                        {
+                                          color: next,
+                                        }
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                              <div className={quickRowClass}>
+                                <div className={quickLabelClass}>
+                                  {t.inspector.section.fields.size}
+                                </div>
+                                <div className={quickControlClass}>
+                                  <input
+                                    type="number"
+                                    className="ui-input h-8 w-[96px] text-[12px] text-right"
+                                    value={selectedTitleItem.marks?.size ?? 20}
+                                    min={12}
+                                    max={48}
+                                    step={1}
+                                    aria-label={t.inspector.section.fields.size}
+                                    onChange={(event) =>
+                                      updateTitleItemMarks(
+                                        selectedSection.id,
+                                        selectedTitleItem.id,
+                                        {
+                                          size: Number(event.target.value),
+                                        }
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              {t.inspector.section.placeholders.selectContent}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selected.kind !== "page" &&
+                    !isBrandBar &&
+                    !isHeroImage &&
+                    !isInquiry ? (
+                      <div className={cardClass}>
+                        <button
+                          type="button"
+                          className={cardHeaderClass + " w-full"}
+                          aria-expanded={isQuickStyleOpen}
+                          onClick={() => setIsQuickStyleOpen((current) => !current)}
+                        >
+                          <span>{t.inspector.section.cards.quickStyle}</span>
+                          <ChevronDown
+                            size={14}
+                            className={
+                              isQuickStyleOpen
+                                ? "rotate-180 transition"
+                                : "transition"
                             }
                           />
-                        </FieldRow>
-                        {designTargetSection.style.background.type === "gradient" ? (
-                          <>
-                            <FieldRow label={t.inspector.section.fields.color1}>
-                              <ColorField
-                                value={designTargetSection.style.background.color1}
-                                ariaLabel={t.inspector.section.fields.color1}
-                                onChange={(next) =>
-                                  applySectionAppearanceToAll(
-                                    mergeSectionStyle(designTargetSection.style, {
-                                      background: { color1: next },
-                                    }),
-                                    designTargetCardStyle,
-                                    { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                  )
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label={t.inspector.section.fields.color2}>
-                              <ColorField
-                                value={designTargetSection.style.background.color2}
-                                ariaLabel={t.inspector.section.fields.color2}
-                                onChange={(next) =>
-                                  applySectionAppearanceToAll(
-                                    mergeSectionStyle(designTargetSection.style, {
-                                      background: { color2: next },
-                                    }),
-                                    designTargetCardStyle,
-                                    { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                  )
-                                }
-                              />
-                            </FieldRow>
-                          </>
-                        ) : (
-                          <FieldRow label={t.inspector.section.fields.background}>
-                            <ColorField
-                              value={designTargetSection.style.background.color1}
-                              ariaLabel={t.inspector.section.fields.background}
-                              onChange={(next) =>
-                                applySectionAppearanceToAll(
-                                  mergeSectionStyle(designTargetSection.style, {
-                                    background: { color1: next },
-                                  }),
-                                  designTargetCardStyle,
-                                  { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                )
-                              }
-                            />
-                          </FieldRow>
-                        )}
-                        <FieldRow label={t.inspector.section.fields.border}>
-                          <ToggleField
-                            value={designTargetSection.style.border.enabled}
-                            ariaLabel={t.inspector.section.fields.border}
-                            onChange={(next) =>
-                              applySectionAppearanceToAll(
-                                mergeSectionStyle(designTargetSection.style, {
-                                  border: { enabled: next },
-                                }),
-                                designTargetCardStyle,
-                                { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                              )
-                            }
-                          />
-                        </FieldRow>
-                        {designTargetSection.style.border.enabled ? (
-                          <>
-                            <FieldRow label={t.inspector.section.fields.borderWidth}>
-                              <NumberField
-                                value={designTargetSection.style.border.width}
-                                min={0}
-                                max={12}
-                                step={1}
-                                ariaLabel={t.inspector.section.fields.borderWidth}
-                                onChange={(next) =>
-                                  applySectionAppearanceToAll(
-                                    mergeSectionStyle(designTargetSection.style, {
-                                      border: { width: next },
-                                    }),
-                                    designTargetCardStyle,
-                                    { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                  )
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label={t.inspector.section.fields.borderColor}>
-                              <ColorField
-                                value={designTargetSection.style.border.color}
-                                ariaLabel={t.inspector.section.fields.borderColor}
-                                onChange={(next) =>
-                                  applySectionAppearanceToAll(
-                                    mergeSectionStyle(designTargetSection.style, {
-                                      border: { color: next },
-                                    }),
-                                    designTargetCardStyle,
-                                    { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                  )
-                                }
-                              />
-                            </FieldRow>
-                          </>
-                        ) : null}
-                        <FieldRow label={t.inspector.section.fields.shadow}>
-                          <SelectField
-                            value={designTargetSection.style.shadow}
-                            ariaLabel={t.inspector.section.fields.shadow}
-                            onChange={(next) =>
-                              applySectionAppearanceToAll(
-                                mergeSectionStyle(designTargetSection.style, {
-                                  shadow: next as SectionBase["style"]["shadow"],
-                                }),
-                                designTargetCardStyle,
-                                { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                              )
+                        </button>
+                        {isQuickStyleOpen ? (
+                          <div
+                            className={
+                              cardBodyClass +
+                              (isContentReady
+                                ? ""
+                                : " pointer-events-none opacity-60")
                             }
                           >
-                            <option value="none">{t.inspector.section.shadowOptions.none}</option>
-                            <option value="sm">{t.inspector.section.shadowOptions.sm}</option>
-                            <option value="md">{t.inspector.section.shadowOptions.md}</option>
-                          </SelectField>
-                        </FieldRow>
-                        <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
-                          <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
-                            タイトル帯
+                            {!isContentReady ? (
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                {t.inspector.section.placeholders.selectContent}
+                              </div>
+                            ) : (
+                              <>
+                                {isCampaignPeriodBar ? (
+                                  <div className="space-y-3">
+                                    <div className={quickRowClass}>
+                                      <div className={quickLabelClass}>
+                                        {t.inspector.section.fields.lineText}
+                                      </div>
+                                      <div className={quickControlClass}>
+                                        <input
+                                          type="text"
+                                          className="ui-input h-8 w-full text-[12px]"
+                                          value={periodBarText}
+                                          onChange={(event) =>
+                                            updateSectionData(selectedSection.id, {
+                                              periodBarText: event.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className={quickRowClass}>
+                                      <div className={quickLabelClass}>
+                                        {t.inspector.section.fields.bold}
+                                      </div>
+                                      <div className={quickControlClass}>
+                                        <ToggleField
+                                          value={Boolean(periodBarStyle.bold)}
+                                          ariaLabel={t.inspector.section.fields.bold}
+                                          onChange={(next) =>
+                                            updateSectionData(selectedSection.id, {
+                                              periodBarStyle: {
+                                                ...periodBarStyle,
+                                                bold: next,
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className={quickRowClass}>
+                                      <div className={quickLabelClass}>
+                                        {t.inspector.section.fields.textColor}
+                                      </div>
+                                      <div className={quickControlClass}>
+                                        <QuickColorControl
+                                          value={periodBarStyle.color ?? "#ffffff"}
+                                          ariaLabel={t.inspector.section.fields.textColor}
+                                          onChange={(next) =>
+                                            updateSectionData(selectedSection.id, {
+                                              periodBarStyle: {
+                                                ...periodBarStyle,
+                                                color: next,
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className={quickRowClass}>
+                                      <div className={quickLabelClass}>
+                                        {t.inspector.section.fields.size}
+                                      </div>
+                                      <div className={quickControlClass}>
+                                        <input
+                                          type="number"
+                                          className="ui-input h-8 w-[96px] text-[12px] text-right"
+                                          value={periodBarStyle.size ?? 14}
+                                          min={10}
+                                          max={32}
+                                          step={1}
+                                          aria-label={t.inspector.section.fields.size}
+                                          onChange={(event) =>
+                                            updateSectionData(selectedSection.id, {
+                                              periodBarStyle: {
+                                                ...periodBarStyle,
+                                                size: Number(event.target.value),
+                                              },
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : selectedTextItem && selectedLine ? (
+                                  <div className="space-y-3">
+                                    <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 p-3">
+                                      <div className="mb-3 text-[12px] font-medium text-[var(--ui-text)]">
+                                        付箋デザイン
+                                      </div>
+                                      <div className="space-y-3">
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>有効</div>
+                                          <div className={quickControlClass}>
+                                            <ToggleField
+                                              value={Boolean(
+                                                selectedLine.marks?.callout?.enabled
+                                              )}
+                                              ariaLabel="有効"
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  { enabled: next },
+                                                  calloutScope
+                                                )
+                                              }
+                                              disabled={!isCalloutScopeEnabled}
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>適用範囲</div>
+                                          <div className={quickControlClass}>
+                                            <div className="inline-flex gap-2">
+                                              <button
+                                                type="button"
+                                                className={
+                                                  "ui-button h-6 px-2 text-[10px] " +
+                                                  (calloutScopeChoice === "line"
+                                                    ? " text-[var(--ui-text)]"
+                                                    : " text-[var(--ui-muted)]")
+                                                }
+                                                onClick={() =>
+                                                  setCalloutScopeChoice("line")
+                                                }
+                                                disabled={!isLineScopeEnabled}
+                                              >
+                                                行
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className={
+                                                  "ui-button h-6 px-2 text-[10px] " +
+                                                  (calloutScopeChoice === "item"
+                                                    ? " text-[var(--ui-text)]"
+                                                    : " text-[var(--ui-muted)]")
+                                                }
+                                                onClick={() =>
+                                                  setCalloutScopeChoice("item")
+                                                }
+                                                disabled={!isItemScopeEnabled}
+                                              >
+                                                アイテム
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>種別</div>
+                                          <div className={quickControlClass}>
+                                            <div className={quickSegmentWrapClass}>
+                                              {[
+                                                {
+                                                  id: "note",
+                                                  label: "Note",
+                                                  accent: "bg-amber-500",
+                                                },
+                                                {
+                                                  id: "warn",
+                                                  label: "Warn",
+                                                  accent: "bg-rose-500",
+                                                },
+                                                {
+                                                  id: "info",
+                                                  label: "Info",
+                                                  accent: "bg-sky-500",
+                                                },
+                                              ].map((preset) => (
+                                                <button
+                                                  key={preset.id}
+                                                  type="button"
+                                                  className={
+                                                    quickSegmentButtonClass +
+                                                    " " +
+                                                    (calloutVariant === preset.id
+                                                      ? quickSegmentActiveClass
+                                                      : quickSegmentInactiveClass)
+                                                  }
+                                                  onClick={() =>
+                                                    applyCalloutToSelection(
+                                                      {
+                                                        enabled: true,
+                                                        variant: preset.id as
+                                                          | "note"
+                                                          | "warn"
+                                                          | "info",
+                                                        bg: true,
+                                                        border: true,
+                                                        radius: 12,
+                                                        padding: "md",
+                                                        shadow: "none",
+                                                      },
+                                                      calloutScope
+                                                    )
+                                                  }
+                                                  disabled={!isCalloutScopeEnabled}
+                                                >
+                                                  <span className="inline-flex items-center gap-1">
+                                                    <span
+                                                      className={`h-2 w-2 rounded-full ${preset.accent}`}
+                                                    />
+                                                    {preset.label}
+                                                  </span>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <Accordion
+                                      title="付箋デザイン詳細"
+                                      defaultOpen={false}
+                                    >
+                                      <div
+                                        className={
+                                          "space-y-3 py-2" +
+                                          (isCalloutScopeEnabled
+                                            ? ""
+                                            : " pointer-events-none opacity-60")
+                                        }
+                                      >
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>背景</div>
+                                          <div className={quickControlClass}>
+                                            <ToggleField
+                                              value={Boolean(
+                                                selectedLine.marks?.callout?.bg ?? true
+                                              )}
+                                              ariaLabel="背景"
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  { enabled: true, bg: next },
+                                                  calloutScope
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>背景色</div>
+                                          <div className={quickControlClass}>
+                                            <QuickColorControl
+                                              value={
+                                                selectedLine.marks?.callout?.bgColor ??
+                                                calloutDefaults.bg
+                                              }
+                                              ariaLabel="背景色"
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  { bgColor: next },
+                                                  calloutScope
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>枠線</div>
+                                          <div className={quickControlClass}>
+                                            <ToggleField
+                                              value={Boolean(
+                                                selectedLine.marks?.callout?.border ??
+                                                  true
+                                              )}
+                                              ariaLabel="枠線"
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  { enabled: true, border: next },
+                                                  calloutScope
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>枠線色</div>
+                                          <div className={quickControlClass}>
+                                            <QuickColorControl
+                                              value={
+                                                selectedLine.marks?.callout?.borderColor ??
+                                                calloutDefaults.border
+                                              }
+                                              ariaLabel="枠線色"
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  { borderColor: next },
+                                                  calloutScope
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>角丸</div>
+                                          <div className={quickControlClass}>
+                                            <input
+                                              type="number"
+                                              className="ui-input h-8 w-[96px] text-[12px] text-right"
+                                              value={
+                                                selectedLine.marks?.callout?.radius ?? 12
+                                              }
+                                              min={0}
+                                              max={32}
+                                              step={1}
+                                              aria-label="角丸"
+                                              onChange={(event) =>
+                                                applyCalloutToSelection(
+                                                  {
+                                                    enabled: true,
+                                                    radius: Number(event.target.value),
+                                                  },
+                                                  calloutScope
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>余白</div>
+                                          <div className={quickControlClass}>
+                                            <SegmentedField
+                                              value={
+                                                selectedLine.marks?.callout?.padding ?? "md"
+                                              }
+                                              ariaLabel="余白"
+                                              options={[
+                                                { value: "sm", label: "S" },
+                                                { value: "md", label: "M" },
+                                                { value: "lg", label: "L" },
+                                              ]}
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  { enabled: true, padding: next },
+                                                  calloutScope
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className={quickRowClass}>
+                                          <div className={quickLabelClass}>影</div>
+                                          <div className={quickControlClass}>
+                                            <SelectField
+                                              value={
+                                                selectedLine.marks?.callout?.shadow ?? "none"
+                                              }
+                                              ariaLabel="影"
+                                              onChange={(next) =>
+                                                applyCalloutToSelection(
+                                                  {
+                                                    enabled: true,
+                                                    shadow: next as "none" | "sm" | "md",
+                                                  },
+                                                  calloutScope
+                                                )
+                                              }
+                                            >
+                                              <option value="none">なし</option>
+                                              <option value="sm">小</option>
+                                              <option value="md">中</option>
+                                            </SelectField>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </Accordion>
+                                  </div>
+                                ) : selectedImageItem ? (
+                                  <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                    {t.inspector.section.placeholders.imageQuickStyle}
+                                  </div>
+                                ) : (
+                                  <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                    {t.inspector.section.placeholders.selectContent}
+                                  </div>
+                                )}
+                              </>
+                            )}
                           </div>
-                          <FieldRow label="帯背景色">
-                            <ColorField
-                              value={designTargetCardStyle.headerBgColor || "#5fc2f5"}
-                              ariaLabel="帯背景色"
-                              onChange={(next) =>
-                                applySectionAppearanceToAll(
-                                  designTargetSection.style,
-                                  mergeCardStyle(designTargetSection.sectionCardStyle, {
-                                    headerBgColor: next,
-                                  }),
-                                  { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                )
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="帯文字色">
-                            <ColorField
-                              value={designTargetCardStyle.headerTextColor || "#ffffff"}
-                              ariaLabel="帯文字色"
-                              onChange={(next) =>
-                                applySectionAppearanceToAll(
-                                  designTargetSection.style,
-                                  mergeCardStyle(designTargetSection.sectionCardStyle, {
-                                    headerTextColor: next,
-                                  }),
-                                  { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                )
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="帯高さ">
-                            <SegmentedField
-                              value={designTargetBandSize}
-                              ariaLabel="帯高さ"
-                              options={[
-                                { value: "sm", label: "S" },
-                                { value: "md", label: "M" },
-                                { value: "lg", label: "L" },
-                              ]}
-                              onChange={(next) =>
-                                applySectionAppearanceToAll(
-                                  designTargetSection.style,
-                                  mergeCardStyle(designTargetSection.sectionCardStyle, {
-                                    labelChipBg: next,
-                                  }),
-                                  { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                )
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="帯位置">
-                            <SegmentedField
-                              value={designTargetCardStyle.labelChipEnabled ? "inset" : "top"}
-                              ariaLabel="帯位置"
-                              options={[
-                                { value: "top", label: "上" },
-                                { value: "inset", label: "内側" },
-                              ]}
-                              onChange={(next) =>
-                                applySectionAppearanceToAll(
-                                  designTargetSection.style,
-                                  mergeCardStyle(designTargetSection.sectionCardStyle, {
-                                    labelChipEnabled: next === "inset",
-                                  }),
-                                  { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                )
-                              }
-                            />
-                          </FieldRow>
-                          <FieldRow label="テキスト位置">
-                            <SegmentedField
-                              value={designTargetBandAlign}
-                              ariaLabel="テキスト位置"
-                              options={[
-                                { value: "left", label: "左" },
-                                { value: "center", label: "中央" },
-                                { value: "right", label: "右" },
-                              ]}
-                              onChange={(next) =>
-                                applySectionAppearanceToAll(
-                                  designTargetSection.style,
-                                  mergeCardStyle(designTargetSection.sectionCardStyle, {
-                                    labelChipTextColor: next,
-                                  }),
-                                  { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
-                                )
-                              }
-                            />
-                          </FieldRow>
-                        </div>
-                      </Accordion>
+                        ) : null}
+                      </div>
                     ) : null}
+                {selected.kind === "page" ? (
+                  <>
                     {!isSimpleMode ? (
                       <PageStyleBackground
                         target={backgroundTarget}
@@ -2486,10 +3134,6 @@ export default function InspectorPanel() {
                     <PageStyleColors
                       value={pageStyle.colors}
                       onChange={setPageColors}
-                    />
-                    <PageStyleSpacing
-                      value={pageStyle.spacing}
-                      onChange={setPageSpacing}
                     />
                     {!isSimpleMode && designTargetSection ? (
                       <Accordion
@@ -2507,18 +3151,6 @@ export default function InspectorPanel() {
                           }
                         />
                       </Accordion>
-                    ) : null}
-                    {!isSimpleMode ? (
-                      <>
-                        <PageStyleLayout
-                          value={pageStyle.layout}
-                          onChange={setPageLayout}
-                        />
-                        <PageStyleSectionAnimation
-                          value={pageStyle.sectionAnimation}
-                          onChange={setPageSectionAnimation}
-                        />
-                      </>
                     ) : null}
                   </>
                 ) : selectedSection ? (
@@ -2773,9 +3405,387 @@ export default function InspectorPanel() {
                     {t.inspector.placeholders.blockComingSoon}
                   </div>
                 )}
+                      </div>
+                    </Accordion>
+                    <Accordion title="詳細" defaultOpen={false}>
+                      {selected.kind === "page" ? (
+                        <>
+                          <PageStyleTypography
+                            value={pageStyle.typography}
+                            onChange={setPageTypography}
+                            defaultOpen
+                          />
+                          {!isSimpleMode && designTargetSection ? (
+                            <Accordion title="サーフェス" icon={<LayoutGrid size={14} />}>
+                              <FieldRow label={t.inspector.section.fields.gradient}>
+                                <ToggleField
+                                  value={
+                                    designTargetSection.style.background.type ===
+                                    "gradient"
+                                  }
+                                  ariaLabel={t.inspector.section.fields.gradient}
+                                  onChange={(next) =>
+                                    applySectionAppearanceToAll(
+                                      mergeSectionStyle(designTargetSection.style, {
+                                        background: {
+                                          type: next ? "gradient" : "solid",
+                                        },
+                                      }),
+                                      designTargetCardStyle,
+                                      {
+                                        excludeTypes: [
+                                          "brandBar",
+                                          "heroImage",
+                                          "footerHtml",
+                                        ],
+                                      }
+                                    )
+                                  }
+                                />
+                              </FieldRow>
+                              {designTargetSection.style.background.type ===
+                              "gradient" ? (
+                                <>
+                                  <FieldRow label={t.inspector.section.fields.color1}>
+                                    <ColorField
+                                      value={designTargetSection.style.background.color1}
+                                      ariaLabel={t.inspector.section.fields.color1}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            background: { color1: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label={t.inspector.section.fields.color2}>
+                                    <ColorField
+                                      value={designTargetSection.style.background.color2}
+                                      ariaLabel={t.inspector.section.fields.color2}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            background: { color2: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : (
+                                <FieldRow label={t.inspector.section.fields.background}>
+                                  <ColorField
+                                    value={designTargetSection.style.background.color1}
+                                    ariaLabel={t.inspector.section.fields.background}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        mergeSectionStyle(designTargetSection.style, {
+                                          background: { color1: next },
+                                        }),
+                                        designTargetCardStyle,
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                              )}
+                              <FieldRow label={t.inspector.section.fields.border}>
+                                <ToggleField
+                                  value={designTargetSection.style.border.enabled}
+                                  ariaLabel={t.inspector.section.fields.border}
+                                  onChange={(next) =>
+                                    applySectionAppearanceToAll(
+                                      mergeSectionStyle(designTargetSection.style, {
+                                        border: { enabled: next },
+                                      }),
+                                      designTargetCardStyle,
+                                      {
+                                        excludeTypes: [
+                                          "brandBar",
+                                          "heroImage",
+                                          "footerHtml",
+                                        ],
+                                      }
+                                    )
+                                  }
+                                />
+                              </FieldRow>
+                              {designTargetSection.style.border.enabled ? (
+                                <>
+                                  <FieldRow
+                                    label={t.inspector.section.fields.borderWidth}
+                                  >
+                                    <NumberField
+                                      value={designTargetSection.style.border.width}
+                                      min={0}
+                                      max={12}
+                                      step={1}
+                                      ariaLabel={t.inspector.section.fields.borderWidth}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            border: { width: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                  <FieldRow
+                                    label={t.inspector.section.fields.borderColor}
+                                  >
+                                    <ColorField
+                                      value={designTargetSection.style.border.color}
+                                      ariaLabel={t.inspector.section.fields.borderColor}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            border: { color: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : null}
+                              <FieldRow label={t.inspector.section.fields.shadow}>
+                                <SelectField
+                                  value={designTargetSection.style.shadow}
+                                  ariaLabel={t.inspector.section.fields.shadow}
+                                  onChange={(next) =>
+                                    applySectionAppearanceToAll(
+                                      mergeSectionStyle(designTargetSection.style, {
+                                        shadow: next as SectionBase["style"]["shadow"],
+                                      }),
+                                      designTargetCardStyle,
+                                      {
+                                        excludeTypes: [
+                                          "brandBar",
+                                          "heroImage",
+                                          "footerHtml",
+                                        ],
+                                      }
+                                    )
+                                  }
+                                >
+                                  <option value="none">
+                                    {t.inspector.section.shadowOptions.none}
+                                  </option>
+                                  <option value="sm">
+                                    {t.inspector.section.shadowOptions.sm}
+                                  </option>
+                                  <option value="md">
+                                    {t.inspector.section.shadowOptions.md}
+                                  </option>
+                                </SelectField>
+                              </FieldRow>
+                              <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
+                                <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
+                                  タイトル帯
+                                </div>
+                                <FieldRow label="帯背景色">
+                                  <ColorField
+                                    value={designTargetCardStyle.headerBgColor || "#5fc2f5"}
+                                    ariaLabel="帯背景色"
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          headerBgColor: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="帯文字色">
+                                  <ColorField
+                                    value={designTargetCardStyle.headerTextColor || "#ffffff"}
+                                    ariaLabel="帯文字色"
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          headerTextColor: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="帯高さ">
+                                  <SegmentedField
+                                    value={designTargetBandSize}
+                                    ariaLabel="帯高さ"
+                                    options={[
+                                      { value: "sm", label: "S" },
+                                      { value: "md", label: "M" },
+                                      { value: "lg", label: "L" },
+                                    ]}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          labelChipBg: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="帯位置">
+                                  <SegmentedField
+                                    value={
+                                      designTargetCardStyle.labelChipEnabled
+                                        ? "inset"
+                                        : "top"
+                                    }
+                                    ariaLabel="帯位置"
+                                    options={[
+                                      { value: "top", label: "上" },
+                                      { value: "inset", label: "内側" },
+                                    ]}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          labelChipEnabled: next === "inset",
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="テキスト位置">
+                                  <SegmentedField
+                                    value={designTargetBandAlign}
+                                    ariaLabel="テキスト位置"
+                                    options={[
+                                      { value: "left", label: "左" },
+                                      { value: "center", label: "中央" },
+                                      { value: "right", label: "右" },
+                                    ]}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          labelChipTextColor: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                              </div>
+                            </Accordion>
+                          ) : null}
+                          <PageStyleSpacing
+                            value={pageStyle.spacing}
+                            onChange={setPageSpacing}
+                          />
+                          {!isSimpleMode ? (
+                            <>
+                              <PageStyleLayout
+                                value={pageStyle.layout}
+                                onChange={setPageLayout}
+                              />
+                              <PageStyleSectionAnimation
+                                value={pageStyle.sectionAnimation}
+                                onChange={setPageSectionAnimation}
+                              />
+                            </>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="px-1 py-2 text-[11px] text-[var(--ui-muted)]">
+                          {t.inspector.placeholders.advancedComingSoon}
+                        </div>
+                      )}
+                    </Accordion>
               </div>
             ) : activeTab === "content" ? (
               <div className="flex flex-col gap-3">
+                <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                  基本
+                </div>
+                {selected.kind === "page" ? (
+                  <PageMetaPanel
+                    value={pageMeta}
+                    onChange={setPageMeta}
+                    assets={assets}
+                    onAddAsset={addAsset}
+                  />
+                ) : null}
+                {selected.kind !== "page" ? (
+                  <>
                 <div className={cardClass}>
                   <button
                     type="button"
@@ -2881,6 +3891,23 @@ export default function InspectorPanel() {
                         </div>
                       ) : (
                         <div className="flex flex-col gap-3">
+                        {selectedTitleItem ? (
+                          <div className="flex flex-col gap-2">
+                            <FieldRow label={t.inspector.section.fields.title}>
+                              <RichTextInput
+                                value={selectedTitleItem.text}
+                                onChange={(nextValue) =>
+                                  updateTitleItemText(
+                                    selectedSection.id,
+                                    selectedTitleItem.id,
+                                    nextValue
+                                  )
+                                }
+                                disabled={isLocked}
+                              />
+                            </FieldRow>
+                          </div>
+                        ) : null}
                         {isBrandBar ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
@@ -3491,7 +4518,7 @@ export default function InspectorPanel() {
                               注意文言
                             </div>
                             {legalNotesTextItem ? (
-                              <TextLineList
+                              <PrimaryLineEditor
                                 lines={legalNotesTextItem.lines}
                                 selectedLineId={selectedLine?.id}
                                 showBulletToggle={true}
@@ -3500,7 +4527,7 @@ export default function InspectorPanel() {
                                   setSelectedItemId(legalNotesTextItem.id);
                                   setSelectedLineId(lineId);
                                 }}
-                                onChangeText={(lineId, value) =>
+                                onUpdateText={(lineId, value) =>
                                   updateTextLineText(
                                     selectedSection.id,
                                     legalNotesTextItem.id,
@@ -3519,14 +4546,6 @@ export default function InspectorPanel() {
                                 onAddLine={() =>
                                   addTextLine(selectedSection.id, legalNotesTextItem.id)
                                 }
-                                onReorderLine={(fromIndex, toIndex) =>
-                                  reorderTextLines(
-                                    selectedSection.id,
-                                    legalNotesTextItem.id,
-                                    fromIndex,
-                                    toIndex
-                                  )
-                                }
                                 onRemoveLine={(lineId) =>
                                   removeTextLine(
                                     selectedSection.id,
@@ -3534,6 +4553,23 @@ export default function InspectorPanel() {
                                     lineId
                                   )
                                 }
+                                onRemoveLast={() => {
+                                  const lastLine =
+                                    legalNotesTextItem.lines[
+                                      legalNotesTextItem.lines.length - 1
+                                    ];
+                                  if (lastLine) {
+                                    removeTextLine(
+                                      selectedSection.id,
+                                      legalNotesTextItem.id,
+                                      lastLine.id
+                                    );
+                                  }
+                                }}
+                                showBulletToggle
+                                defaultBullet={legalNotesBullet}
+                                sectionId={selectedSection.id}
+                                itemId={legalNotesTextItem.id}
                                 disabled={isLocked}
                               />
                             ) : (
@@ -5704,624 +6740,6 @@ export default function InspectorPanel() {
                     </div>
                   ) : null}
                 </div>
-                {!isBrandBar && !isHeroImage && !isInquiry ? (
-                  <div className={cardClass}>
-                    <button
-                      type="button"
-                      className={cardHeaderClass + " w-full"}
-                      aria-expanded={isQuickStyleOpen}
-                      onClick={() => setIsQuickStyleOpen((current) => !current)}
-                    >
-                      <span>{t.inspector.section.cards.quickStyle}</span>
-                      <ChevronDown
-                        size={14}
-                        className={
-                          isQuickStyleOpen ? "rotate-180 transition" : "transition"
-                        }
-                      />
-                    </button>
-                    {isQuickStyleOpen ? (
-                      <div
-                        className={
-                          cardBodyClass +
-                          (isContentReady ? "" : " pointer-events-none opacity-60")
-                        }
-                      >
-                        {!isContentReady ? (
-                          <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
-                            {t.inspector.section.placeholders.selectContent}
-                          </div>
-                        ) : (
-                          <>
-                            {isCampaignPeriodBar ? (
-                              <div className="space-y-3">
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.lineText}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <input
-                                    type="text"
-                                    className="ui-input h-8 w-full text-[12px]"
-                                    value={periodBarText}
-                                    onChange={(event) =>
-                                      updateSectionData(selectedSection.id, {
-                                        periodBarText: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </div>
-                              </div>
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.bold}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <ToggleField
-                                    value={Boolean(periodBarStyle.bold)}
-                                    ariaLabel={t.inspector.section.fields.bold}
-                                    onChange={(next) =>
-                                      updateSectionData(selectedSection.id, {
-                                        periodBarStyle: {
-                                          ...periodBarStyle,
-                                          bold: next,
-                                        },
-                                      })
-                                    }
-                                  />
-                                </div>
-                              </div>
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.textColor}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <QuickColorControl
-                                    value={periodBarStyle.color ?? "#ffffff"}
-                                    ariaLabel={t.inspector.section.fields.textColor}
-                                    onChange={(next) =>
-                                      updateSectionData(selectedSection.id, {
-                                        periodBarStyle: {
-                                          ...periodBarStyle,
-                                          color: next,
-                                        },
-                                      })
-                                    }
-                                  />
-                                </div>
-                              </div>
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.size}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <input
-                                    type="number"
-                                    className="ui-input h-8 w-[96px] text-[12px] text-right"
-                                    value={periodBarStyle.size ?? 14}
-                                    min={10}
-                                    max={32}
-                                    step={1}
-                                    aria-label={t.inspector.section.fields.size}
-                                    onChange={(event) =>
-                                      updateSectionData(selectedSection.id, {
-                                        periodBarStyle: {
-                                          ...periodBarStyle,
-                                          size: Number(event.target.value),
-                                        },
-                                      })
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          ) : selectedTextItem && selectedLine ? (
-                            <div className="space-y-3">
-                              {!isLegalNotes ? (
-                              <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 p-3">
-                                <div className="mb-3 flex items-center justify-between text-[12px] font-medium text-[var(--ui-text)]">
-                                  <span>テキスト装飾</span>
-                                  <button
-                                    type="button"
-                                    className="ui-button h-7 px-2 text-[11px]"
-                                    onClick={() => {
-                                      const nextItems = contentItems.map((item) => {
-                                        if (
-                                          item.id !== selectedTextItem.id ||
-                                          item.type !== "text"
-                                        ) {
-                                          return item;
-                                        }
-                                        return {
-                                          ...item,
-                                          lines: item.lines.map((line) =>
-                                            line.id === selectedLine.id
-                                              ? { ...line, marks: undefined }
-                                              : line
-                                          ),
-                                        };
-                                      });
-                                      updateSectionContent(selectedSection.id, {
-                                        items: nextItems,
-                                      });
-                                    }}
-                                    aria-label={t.inspector.header.reset}
-                                    title={t.inspector.header.reset}
-                                  >
-                                    <RotateCcw size={14} />
-                                  </button>
-                                </div>
-                                <div className="space-y-3">
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>テキスト位置</div>
-                                    <div className={quickControlClass}>
-                                      <div className={quickSegmentWrapClass}>
-                                        {[
-                                          { id: "left", label: "左" },
-                                          { id: "center", label: "中央" },
-                                          { id: "right", label: "右" },
-                                        ].map((option) => (
-                                          <button
-                                            key={option.id}
-                                            type="button"
-                                            className={
-                                              quickSegmentButtonClass +
-                                              " " +
-                                              (textAlignValue === option.id
-                                                ? quickSegmentActiveClass
-                                                : quickSegmentInactiveClass)
-                                            }
-                                            onClick={() =>
-                                              applyTextAlignToSelection(
-                                                option.id as "left" | "center" | "right"
-                                              )
-                                            }
-                                            disabled={!isTextAlignEnabled}
-                                          >
-                                            {option.label}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>
-                                      {t.inspector.section.fields.bold}
-                                    </div>
-                                    <div className={quickControlClass}>
-                                      <ToggleField
-                                        value={Boolean(selectedLine?.marks?.bold)}
-                                        ariaLabel={t.inspector.section.fields.bold}
-                                        onChange={(next) =>
-                                          updateTextLineMarks(
-                                            selectedSection.id,
-                                            selectedTextItem.id,
-                                            selectedLine.id,
-                                            { bold: next }
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>
-                                      {t.inspector.section.fields.textColor}
-                                    </div>
-                                    <div className={quickControlClass}>
-                                      <QuickColorControl
-                                        value={selectedLine?.marks?.color ?? "#111111"}
-                                        ariaLabel={t.inspector.section.fields.textColor}
-                                        onChange={(next) =>
-                                          updateTextLineMarks(
-                                            selectedSection.id,
-                                            selectedTextItem.id,
-                                            selectedLine.id,
-                                            { color: next }
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>
-                                      {t.inspector.section.fields.size}
-                                    </div>
-                                    <div className={quickControlClass}>
-                                      <input
-                                        type="number"
-                                        className="ui-input h-8 w-[96px] text-[12px] text-right"
-                                        value={
-                                          selectedLine?.marks?.size ??
-                                          selectedSection.style.typography.fontSize
-                                        }
-                                        min={10}
-                                        max={48}
-                                        step={1}
-                                        aria-label={t.inspector.section.fields.size}
-                                        onChange={(event) =>
-                                          updateTextLineMarks(
-                                            selectedSection.id,
-                                            selectedTextItem.id,
-                                            selectedLine.id,
-                                            { size: Number(event.target.value) }
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                      type="button"
-                                      className="ui-button h-7 w-full px-2 text-[11px]"
-                                      onClick={() =>
-                                        applyLineMarksToAllLines(
-                                          selectedSection.id,
-                                          selectedTextItem.id,
-                                          selectedLine.id
-                                        )
-                                      }
-                                    >
-                                      {t.inspector.section.buttons.applyLineStyleAll}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="ui-button h-7 w-full px-2 text-[11px]"
-                                      onClick={() =>
-                                        promoteLineMarksToSectionTypography(
-                                          selectedSection.id,
-                                          selectedTextItem.id,
-                                          selectedLine.id
-                                        )
-                                      }
-                                    >
-                                      {t.inspector.section.buttons.promoteLineStyle}
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                              ) : null}
-                              <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 p-3">
-                                <div className="mb-3 text-[12px] font-medium text-[var(--ui-text)]">
-                                  付箋デザイン
-                                </div>
-                                <div className="space-y-3">
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>有効</div>
-                                    <div className={quickControlClass}>
-                                      <ToggleField
-                                        value={Boolean(selectedLine.marks?.callout?.enabled)}
-                                        ariaLabel="有効"
-                                        onChange={(next) =>
-                                          applyCalloutToSelection(
-                                            { enabled: next },
-                                            calloutScope
-                                          )
-                                        }
-                                        disabled={!isCalloutScopeEnabled}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>適用範囲</div>
-                                    <div className={quickControlClass}>
-                                      <div className="inline-flex gap-2">
-                                        <button
-                                          type="button"
-                                          className={
-                                            "ui-button h-6 px-2 text-[10px] " +
-                                            (calloutScopeChoice === "line"
-                                              ? " text-[var(--ui-text)]"
-                                              : " text-[var(--ui-muted)]")
-                                          }
-                                          onClick={() => setCalloutScopeChoice("line")}
-                                          disabled={!isLineScopeEnabled}
-                                        >
-                                          行
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={
-                                            "ui-button h-6 px-2 text-[10px] " +
-                                            (calloutScopeChoice === "item"
-                                              ? " text-[var(--ui-text)]"
-                                              : " text-[var(--ui-muted)]")
-                                          }
-                                          onClick={() => setCalloutScopeChoice("item")}
-                                          disabled={!isItemScopeEnabled}
-                                        >
-                                          アイテム
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>種別</div>
-                                    <div className={quickControlClass}>
-                                      <div className={quickSegmentWrapClass}>
-                                        {[
-                                          { id: "note", label: "Note", accent: "bg-amber-500" },
-                                          { id: "warn", label: "Warn", accent: "bg-rose-500" },
-                                          { id: "info", label: "Info", accent: "bg-sky-500" },
-                                        ].map((preset) => (
-                                          <button
-                                            key={preset.id}
-                                            type="button"
-                                            className={
-                                              quickSegmentButtonClass +
-                                              " " +
-                                              (calloutVariant === preset.id
-                                                ? quickSegmentActiveClass
-                                                : quickSegmentInactiveClass)
-                                            }
-                                            onClick={() =>
-                                              applyCalloutToSelection(
-                                                {
-                                                  enabled: true,
-                                                  variant: preset.id as "note" | "warn" | "info",
-                                                  bg: true,
-                                                  border: true,
-                                                  radius: 12,
-                                                  padding: "md",
-                                                  shadow: "none",
-                                                },
-                                                calloutScope
-                                              )
-                                            }
-                                            disabled={!isCalloutScopeEnabled}
-                                          >
-                                            <span className="inline-flex items-center gap-1">
-                                              <span
-                                                className={`h-2 w-2 rounded-full ${preset.accent}`}
-                                              />
-                                              {preset.label}
-                                            </span>
-                                          </button>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              <Accordion title="付箋デザイン詳細" defaultOpen={false}>
-                                <div
-                                  className={
-                                    "space-y-3 py-2" +
-                                    (isCalloutScopeEnabled
-                                      ? ""
-                                      : " pointer-events-none opacity-60")
-                                  }
-                                >
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>背景</div>
-                                    <div className={quickControlClass}>
-                                      <ToggleField
-                                        value={Boolean(selectedLine.marks?.callout?.bg ?? true)}
-                                        ariaLabel="背景"
-                                        onChange={(next) =>
-                                          applyCalloutToSelection(
-                                            { enabled: true, bg: next },
-                                            calloutScope
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>背景色</div>
-                                    <div className={quickControlClass}>
-                                      <QuickColorControl
-                                        value={
-                                          selectedLine.marks?.callout?.bgColor ??
-                                          calloutDefaults.bg
-                                        }
-                                        ariaLabel="背景色"
-                                        onChange={(next) =>
-                                          applyCalloutToSelection({ bgColor: next }, calloutScope)
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>枠線</div>
-                                    <div className={quickControlClass}>
-                                      <ToggleField
-                                        value={Boolean(selectedLine.marks?.callout?.border ?? true)}
-                                        ariaLabel="枠線"
-                                        onChange={(next) =>
-                                          applyCalloutToSelection(
-                                            { enabled: true, border: next },
-                                            calloutScope
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>枠線色</div>
-                                    <div className={quickControlClass}>
-                                      <QuickColorControl
-                                        value={
-                                          selectedLine.marks?.callout?.borderColor ??
-                                          calloutDefaults.border
-                                        }
-                                        ariaLabel="枠線色"
-                                        onChange={(next) =>
-                                          applyCalloutToSelection(
-                                            { borderColor: next },
-                                            calloutScope
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>角丸</div>
-                                    <div className={quickControlClass}>
-                                      <input
-                                        type="number"
-                                        className="ui-input h-8 w-[96px] text-[12px] text-right"
-                                        value={selectedLine.marks?.callout?.radius ?? 12}
-                                        min={0}
-                                        max={32}
-                                        step={1}
-                                        aria-label="角丸"
-                                        onChange={(event) =>
-                                          applyCalloutToSelection(
-                                            {
-                                              enabled: true,
-                                              radius: Number(event.target.value),
-                                            },
-                                            calloutScope
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>余白</div>
-                                    <div className={quickControlClass}>
-                                      <SegmentedField
-                                        value={selectedLine.marks?.callout?.padding ?? "md"}
-                                        ariaLabel="余白"
-                                        options={[
-                                          { value: "sm", label: "S" },
-                                          { value: "md", label: "M" },
-                                          { value: "lg", label: "L" },
-                                        ]}
-                                        onChange={(next) =>
-                                          applyCalloutToSelection(
-                                            { enabled: true, padding: next },
-                                            calloutScope
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className={quickRowClass}>
-                                    <div className={quickLabelClass}>影</div>
-                                    <div className={quickControlClass}>
-                                      <SelectField
-                                        value={selectedLine.marks?.callout?.shadow ?? "none"}
-                                        ariaLabel="影"
-                                        onChange={(next) =>
-                                          applyCalloutToSelection(
-                                            {
-                                              enabled: true,
-                                              shadow: next as "none" | "sm" | "md",
-                                            },
-                                            calloutScope
-                                          )
-                                        }
-                                      >
-                                        <option value="none">なし</option>
-                                        <option value="sm">小</option>
-                                        <option value="md">中</option>
-                                      </SelectField>
-                                    </div>
-                                  </div>
-                                </div>
-                              </Accordion>
-                            </div>
-                          ) : selectedTitleItem ? (
-                            <div className="space-y-3">
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.lineText}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <RichTextInput
-                                    value={selectedTitleItem.text}
-                                    onChange={(nextValue) =>
-                                      updateTitleItemText(
-                                        selectedSection.id,
-                                        selectedTitleItem.id,
-                                        nextValue
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.bold}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <ToggleField
-                                    value={Boolean(selectedTitleItem.marks?.bold)}
-                                    ariaLabel={t.inspector.section.fields.bold}
-                                    onChange={(next) =>
-                                      updateTitleItemMarks(
-                                        selectedSection.id,
-                                        selectedTitleItem.id,
-                                        {
-                                          bold: next,
-                                        }
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.textColor}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <QuickColorControl
-                                    value={selectedTitleItem.marks?.color ?? "#111111"}
-                                    ariaLabel={t.inspector.section.fields.textColor}
-                                    onChange={(next) =>
-                                      updateTitleItemMarks(
-                                        selectedSection.id,
-                                        selectedTitleItem.id,
-                                        {
-                                          color: next,
-                                        }
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                              <div className={quickRowClass}>
-                                <div className={quickLabelClass}>
-                                  {t.inspector.section.fields.size}
-                                </div>
-                                <div className={quickControlClass}>
-                                  <input
-                                    type="number"
-                                    className="ui-input h-8 w-[96px] text-[12px] text-right"
-                                    value={selectedTitleItem.marks?.size ?? 20}
-                                    min={12}
-                                    max={48}
-                                    step={1}
-                                    aria-label={t.inspector.section.fields.size}
-                                    onChange={(event) =>
-                                      updateTitleItemMarks(
-                                        selectedSection.id,
-                                        selectedTitleItem.id,
-                                        {
-                                          size: Number(event.target.value),
-                                        }
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          ) : selectedImageItem ? (
-                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
-                              {t.inspector.section.placeholders.imageQuickStyle}
-                            </div>
-                          ) : (
-                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
-                              {t.inspector.section.placeholders.selectContent}
-                            </div>
-                          )}
-                          </>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
                 {!isSimpleMode ? (
                   <>
                     {!isBrandBar && !isInquiry ? (
@@ -6427,6 +6845,11 @@ export default function InspectorPanel() {
                                   </FieldRow>
                                 </>
                               ) : null}
+                              <Accordion title="詳細" defaultOpen={false}>
+                                <div className="px-1 py-2 text-[11px] text-[var(--ui-muted)]">
+                                  {t.inspector.placeholders.advancedComingSoon}
+                                </div>
+                              </Accordion>
                             </div>
                           ) : isCampaignPeriodBar ? (
                             <div className="flex flex-col gap-2">
@@ -6821,6 +7244,8 @@ export default function InspectorPanel() {
                     ) : null}
                   </>
                 ) : null}
+                </>
+                ) : null}
               </div>
             ) : selected.kind === "page" ? (
               <div className="flex flex-col gap-3">
@@ -6890,6 +7315,7 @@ export default function InspectorPanel() {
             )}
           </div>
         </div>
+      </div>
       </div>
       </aside>
       {isCsvImportModalOpen && csvImportDraft ? (

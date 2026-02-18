@@ -75,7 +75,8 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
     id: section.id ?? `sec_${section.type ?? "section"}_${index}`,
     type: section.type ?? "section",
     visible: section.visible ?? true,
-    locked: false,
+    locked: typeof section.locked === "boolean" ? section.locked : false,
+    name: typeof section.name === "string" ? section.name : undefined,
     data: typeof section.data === "object" && section.data ? { ...section.data } : {},
     content:
       typeof section.content === "object" && section.content
@@ -123,11 +124,29 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
       break;
     case "legalNotes":
       base.data.title = str(base.data.title ?? "注意事項");
-      base.data.items = Array.isArray(base.data.items)
-        ? base.data.items.map((item: unknown) => str(item))
-        : [];
       base.data.text = str(base.data.text ?? "");
       base.data.bullet = base.data.bullet === "none" ? "none" : "disc";
+      {
+        const defaultBullet = base.data.bullet;
+        const rawItems = Array.isArray(base.data.items) ? base.data.items : [];
+        base.data.items = rawItems
+          .map((item: unknown) => {
+            if (typeof item === "string") {
+              return { text: str(item), bullet: defaultBullet };
+            }
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+            const entry = item as Record<string, unknown>;
+            const text = str(entry.text ?? "");
+            const bullet =
+              entry.bullet === "none" || entry.bullet === "disc"
+                ? entry.bullet
+                : defaultBullet;
+            return { text, bullet };
+          })
+          .filter(Boolean);
+      }
       base.data.noteWidthPct =
         typeof base.data.noteWidthPct === "number" &&
         Number.isFinite(base.data.noteWidthPct)

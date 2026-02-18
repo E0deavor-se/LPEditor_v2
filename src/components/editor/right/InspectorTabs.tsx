@@ -21,28 +21,28 @@ export default function InspectorTabs({
 }: InspectorTabsProps) {
   const t = useI18n();
   const tabs: Array<{ key: TabKey; label: string }> = [
-    ...(hideStyle
-      ? []
-      : [{ key: "style" as const, label: t.inspector.tabs.style }]),
     ...(hideContent
       ? []
       : [{ key: "content" as const, label: t.inspector.tabs.content }]),
+    ...(hideStyle
+      ? []
+      : [{ key: "style" as const, label: t.inspector.tabs.style }]),
     ...(hideAdvanced
       ? []
       : [{ key: "advanced" as const, label: t.inspector.tabs.advanced }]),
   ];
 
   return (
-    <div className="flex items-center gap-1 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/70 p-1 text-[12px]">
+    <div className="flex items-center gap-1 rounded-lg border border-[var(--ui-border)]/70 bg-[var(--ui-panel-muted)]/70 p-1 text-[11px]">
       {tabs.map((tab) => (
         <button
           key={tab.key}
           type="button"
           className={
-            "h-7 flex-1 rounded-md px-2 transition " +
+            "h-7 flex-1 rounded-md px-2 font-semibold tracking-wide transition " +
             (value === tab.key
-              ? " bg-[var(--ui-panel)] text-[var(--ui-text)]"
-              : " text-[var(--ui-muted)] hover:text-[var(--ui-text)]")
+              ? " bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm"
+              : " text-[var(--ui-muted)] hover:bg-[var(--ui-panel)]/70 hover:text-[var(--ui-text)]")
           }
           aria-pressed={value === tab.key}
           onClick={() => onChange(tab.key)}

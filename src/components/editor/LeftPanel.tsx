@@ -34,9 +34,16 @@ export default function LeftPanel({ width, onWidthPreset }: LeftPanelProps) {
     >
       <div className="border-b border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-[var(--ui-space-3)] py-[var(--ui-space-2)]">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-[12px] text-[var(--ui-muted)]">Sections</div>
-          <div className="flex items-center gap-1 text-[11px] text-[var(--ui-muted)]">
-            <span>Width</span>
+          <div>
+            <div className="text-[13px] font-semibold text-[var(--ui-text)]">
+              セクション
+            </div>
+            <div className="text-[10px] text-[var(--ui-muted)]">
+              並び替え・表示切替
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-[var(--ui-muted)]">
+            <span>幅</span>
             {[
               { label: "S", value: 300 },
               { label: "M", value: 360 },
@@ -45,7 +52,7 @@ export default function LeftPanel({ width, onWidthPreset }: LeftPanelProps) {
               <button
                 key={preset.label}
                 type="button"
-                className="ui-button h-7 px-2 text-[11px]"
+                className="ui-button h-7 px-2 text-[10px]"
                 aria-label={`パネル幅 ${preset.label}`}
                 onClick={() => onWidthPreset?.(preset.value)}
               >

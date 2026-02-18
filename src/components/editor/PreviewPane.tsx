@@ -416,12 +416,12 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
       {showBusy ? (
         <div className="absolute left-0 right-0 top-0 z-10 h-0.5 bg-[var(--ui-primary)]/70 animate-pulse" />
       ) : null}
-      <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-2 sm:p-3">
         {previewMode === "mobile" ? (
           <div className="flex min-h-0 h-full w-full items-center justify-center">
             <div
               className="flex min-h-0 h-full max-h-[calc(100vh-56px-16px)] max-w-full flex-col rounded-[32px] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] shadow-[var(--ui-shadow-sm)]"
-              style={{ width: previewMobileWidth }}
+              style={{ width: previewMobileWidth, maxWidth: "100%" }}
             >
               <div className="flex items-center justify-center px-6 py-3">
                 <div className="h-1.5 w-16 rounded-full bg-slate-300" />
