@@ -4564,7 +4564,6 @@ export default function InspectorPanel() {
                                     );
                                   }
                                 }}
-                                defaultBullet={legalNotesBullet}
                                 sectionId={selectedSection.id}
                                 itemId={legalNotesTextItem.id}
                                 disabled={isLocked}
