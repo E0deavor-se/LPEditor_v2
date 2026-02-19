@@ -2071,8 +2071,7 @@ const createSection = (type: string): SectionBase => {
           ],
         }),
         style: normalizeSectionStyle({
-          background: { type: "solid", color1: "transparent", color2: "#ffffff" },
-          backgroundTransparent: true,
+          background: { type: "solid", color1: "#ffffff", color2: "#ffffff" },
         }),
       };
       break;
