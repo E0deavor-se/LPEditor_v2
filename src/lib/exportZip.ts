@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import type { ProjectState, StoresTable } from "@/src/types/project";
+import type { ProjectState, StoresTable, TextContentItem } from "@/src/types/project";
 
 const TARGET_STORES_CONFIG_PLACEHOLDER = "__TARGET_STORES_CONFIG__";
 
@@ -487,10 +487,12 @@ export const buildIndexHtml = (project: ProjectState): string => {
               ? section.data.items
               : [];
             const legalTextItem = Array.isArray(section.content?.items)
-              ? section.content!.items.find((item: { type: string }) => item.type === "text")
+              ? section.content!.items.find(
+                  (item): item is TextContentItem => item.type === "text"
+                )
               : undefined;
             const items = legalTextItem?.lines?.length
-              ? legalTextItem.lines.map((line: { text?: string; marks?: { bullet?: "disc" | "none" } }) => ({
+              ? legalTextItem.lines.map((line) => ({
                   text: str(line.text ?? ""),
                   bullet: line.marks?.bullet ?? defaultBullet,
                 }))
@@ -510,7 +512,10 @@ export const buildIndexHtml = (project: ProjectState): string => {
                         : defaultBullet;
                     return { text, bullet };
                   })
-                  .filter(Boolean);
+                  .filter(
+                    (item): item is { text: string; bullet: "none" | "disc" } =>
+                      Boolean(item)
+                  );
           return `
             <section class="container">
               <h2>${escapeHtml(
