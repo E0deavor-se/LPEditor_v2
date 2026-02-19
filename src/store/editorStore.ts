@@ -521,6 +521,7 @@ const normalizeSectionStyle = (
       ),
     },
     customCss: typeof style?.customCss === "string" ? style.customCss : "",
+    backgroundTransparent: style?.backgroundTransparent === true ? true : undefined,
   };
 };
 
