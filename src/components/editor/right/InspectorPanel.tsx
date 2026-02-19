@@ -4559,45 +4559,50 @@ export default function InspectorPanel() {
                                       </div>
                                     );
                                   })}
-                                  <input
-                                    ref={imageOnlyInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    multiple
-                                    className="hidden"
-                                    onChange={(event) => {
-                                      const files = Array.from(event.target.files ?? []);
-                                      if (files.length === 0) return;
-                                      handleImagesImportWithMeta(
-                                        files,
-                                        (entries) => {
-                                          const imageItem2 = selectedSection.content?.items?.find(
-                                            (item) => item.type === "image"
-                                          ) as ImageContentItem | undefined;
-                                          if (!imageItem2) return;
-                                          entries.forEach((entry) => {
-                                            addImageToItem(
-                                              selectedSection.id,
-                                              imageItem2.id,
-                                              {
-                                                src: entry.dataUrl,
-                                                assetId: entry.assetId,
-                                                alt: entry.file.name.replace(/\.[^.]+$/, ""),
-                                              }
-                                            );
-                                          });
-                                        }
-                                      );
-                                      event.target.value = "";
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    className="ui-button h-8 w-full text-[11px]"
-                                    onClick={() => imageOnlyInputRef.current?.click()}
+                                  <label
+                                    className="ui-button flex h-8 w-full cursor-pointer items-center justify-center text-[11px]"
                                   >
                                     + 画像を追加
-                                  </button>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(event) => {
+                                        const files = Array.from(event.target.files ?? []);
+                                        event.target.value = "";
+                                        if (files.length === 0) return;
+                                        // セクションIDを先にキャプチャしておく
+                                        const sectionId = selectedSection.id;
+                                        handleImagesImportWithMeta(
+                                          files,
+                                          (entries) => {
+                                            // 非同期完了後は最新のstoreから取得する
+                                            const latestSection = useEditorStore
+                                              .getState()
+                                              .project.sections.find(
+                                                (s) => s.id === sectionId
+                                              );
+                                            const imageItem2 = latestSection?.content?.items?.find(
+                                              (item) => item.type === "image"
+                                            ) as ImageContentItem | undefined;
+                                            if (!imageItem2) return;
+                                            entries.forEach((entry) => {
+                                              addImageToItem(
+                                                sectionId,
+                                                imageItem2.id,
+                                                {
+                                                  src: entry.dataUrl,
+                                                  assetId: entry.assetId,
+                                                  alt: entry.file.name.replace(/\.[^.]+$/, ""),
+                                                }
+                                              );
+                                            });
+                                          }
+                                        );
+                                      }}
+                                    />
+                                  </label>
                                 </div>
                               );
                             })()}
