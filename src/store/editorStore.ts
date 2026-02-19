@@ -838,10 +838,11 @@ const normalizeSectionContent = (
                 ? image.id
                 : createImageId(),
             src: typeof image.src === "string" ? image.src : "",
+            assetId: typeof image.assetId === "string" && image.assetId.trim() ? image.assetId : undefined,
             alt: typeof image.alt === "string" ? image.alt : "",
             animation: normalizeAnimation(image.animation),
           }))
-          .filter((image) => image.src.trim().length > 0)
+          .filter((image) => image.src.trim().length > 0 || (image.assetId && image.assetId.trim().length > 0))
       : [];
     const layout =
       item.layout === "auto" ||
@@ -3875,12 +3876,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         };
       }
 
-      if (!image.src.trim()) {
+      if (!image.src.trim() && !image.assetId) {
         return state;
       }
 
-      const content = normalizeSectionContent(targetSection.content);
-      const nextItems = (content.items ?? []).map((item) => {
+      // normalizeSectionContent を通すと assetId が失われる可能性があるため、
+      // 直接 content.items を操作して画像を追加する
+      const existingContent = targetSection.content ?? { items: [] };
+      const existingItems: ContentItem[] = Array.isArray(existingContent.items)
+        ? existingContent.items
+        : [];
+      const nextItems = existingItems.map((item) => {
         if (item.id !== itemId || item.type !== "image") {
           return item;
         }
@@ -3892,13 +3898,13 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         };
         return {
           ...item,
-          images: [...item.images, nextImage],
+          images: [...(item.images ?? []), nextImage],
           layout: item.layout ?? "auto",
         };
       });
 
       const nextContent: SectionContent = {
-        ...content,
+        ...existingContent,
         items: pinTitleFirst(nextItems),
       };
 
@@ -3941,8 +3947,11 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         (section) => section.id === sectionId
       );
       if (!targetSection || targetSection.locked) return state;
-      const content = normalizeSectionContent(targetSection.content);
-      const nextItems = (content.items ?? []).map((item) => {
+      const existingContent2 = targetSection.content ?? { items: [] };
+      const existingItems2: ContentItem[] = Array.isArray(existingContent2.items)
+        ? existingContent2.items
+        : [];
+      const nextItems = existingItems2.map((item) => {
         if (item.id !== itemId || item.type !== "image") return item;
         return { ...item, images: item.images.filter((img) => img.id !== imageId) };
       });
@@ -3951,7 +3960,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
         sections: state.project.sections.map((section) =>
           section.id === sectionId
-            ? { ...section, content: { ...content, items: pinTitleFirst(nextItems) } }
+            ? { ...section, content: { ...existingContent2, items: pinTitleFirst(nextItems) } }
             : section
         ),
       };
@@ -3968,8 +3977,11 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         (section) => section.id === sectionId
       );
       if (!targetSection || targetSection.locked) return state;
-      const content = normalizeSectionContent(targetSection.content);
-      const nextItems = (content.items ?? []).map((item) => {
+      const existingContent3 = targetSection.content ?? { items: [] };
+      const existingItems3: ContentItem[] = Array.isArray(existingContent3.items)
+        ? existingContent3.items
+        : [];
+      const nextItems = existingItems3.map((item) => {
         if (item.id !== itemId || item.type !== "image") return item;
         return {
           ...item,
@@ -3983,7 +3995,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
         sections: state.project.sections.map((section) =>
           section.id === sectionId
-            ? { ...section, content: { ...content, items: pinTitleFirst(nextItems) } }
+            ? { ...section, content: { ...existingContent3, items: pinTitleFirst(nextItems) } }
             : section
         ),
       };
