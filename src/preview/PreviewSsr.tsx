@@ -3381,11 +3381,10 @@ const renderSection = (
         const assetUrl = img.assetId ? sectionAssets[img.assetId]?.data : undefined;
         return assetUrl || img.src || "";
       };
-      const imageItem = section.content?.items?.find(
-        (item) => item.type === "image"
-      );
-      const images =
-        imageItem?.type === "image" ? (imageItem.images ?? []) : [];
+      // 全ての image アイテムから画像を集約（複数 image アイテムが存在する場合も対応）
+      const allImages: ImageItem[] = (section.content?.items ?? [])
+        .filter((item) => item.type === "image")
+        .flatMap((item) => (item.type === "image" ? item.images ?? [] : []));
       const layout = (section.data?.layout as string) ?? "single";
 
       const isTransparent = (url: string) =>
@@ -3406,12 +3405,12 @@ const renderSection = (
       return (
         <section className="w-full lp-image-only">
           <div className={gridClass}>
-            {images.length === 0 ? (
+            {allImages.length === 0 ? (
               <div className="flex h-32 w-full items-center justify-center rounded-lg border border-dashed border-[var(--lp-border)] text-sm text-[var(--lp-muted)]">
                 画像なし
               </div>
             ) : (
-              images.map((img: ImageItem) => {
+              allImages.map((img: ImageItem) => {
                 const src = resolveImg(img);
                 const transparent = isTransparent(src);
                 return (

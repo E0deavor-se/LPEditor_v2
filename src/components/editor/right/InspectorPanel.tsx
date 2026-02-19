@@ -4494,13 +4494,21 @@ export default function InspectorPanel() {
                               />
                             </FieldRow>
                             {(() => {
-                              const imageItem = selectedSection.content?.items?.find(
+                              // 全 image アイテムから { parentItemId, img } を集約
+                              const imageItems = (selectedSection.content?.items ?? []).filter(
                                 (item) => item.type === "image"
-                              ) as ImageContentItem | undefined;
-                              const images = imageItem?.images ?? [];
+                              ) as ImageContentItem[];
+                              const flatImages: { parentItemId: string; img: ImageItem; idx: number }[] = [];
+                              let globalIdx = 0;
+                              imageItems.forEach((imgItem) => {
+                                (imgItem.images ?? []).forEach((img) => {
+                                  flatImages.push({ parentItemId: imgItem.id, img, idx: globalIdx });
+                                  globalIdx++;
+                                });
+                              });
                               return (
                                 <div className="flex flex-col gap-2">
-                                  {images.map((img, idx) => {
+                                  {flatImages.map(({ parentItemId, img, idx }) => {
                                     const assetUrl = img.assetId
                                       ? assets[img.assetId]?.data
                                       : undefined;
@@ -4531,10 +4539,9 @@ export default function InspectorPanel() {
                                             placeholder="alt テキスト"
                                             value={img.alt ?? ""}
                                             onChange={(e) => {
-                                              if (!imageItem) return;
                                               updateImageInItem(
                                                 selectedSection.id,
-                                                imageItem.id,
+                                                parentItemId,
                                                 img.id,
                                                 { alt: e.target.value }
                                               );
@@ -4546,10 +4553,9 @@ export default function InspectorPanel() {
                                           className="flex-shrink-0 rounded p-1 text-[var(--ui-muted)] hover:bg-red-100 hover:text-red-500"
                                           aria-label="削除"
                                           onClick={() => {
-                                            if (!imageItem) return;
                                             removeImageFromItem(
                                               selectedSection.id,
-                                              imageItem.id,
+                                              parentItemId,
                                               img.id
                                             );
                                           }}
@@ -4578,19 +4584,31 @@ export default function InspectorPanel() {
                                           files,
                                           (entries) => {
                                             // 非同期完了後は最新のstoreから取得する
-                                            const latestSection = useEditorStore
+                                            let latestSection = useEditorStore
                                               .getState()
                                               .project.sections.find(
                                                 (s) => s.id === sectionId
                                               );
-                                            const imageItem2 = latestSection?.content?.items?.find(
+                                            let imageItem2 = latestSection?.content?.items?.find(
                                               (item) => item.type === "image"
                                             ) as ImageContentItem | undefined;
+                                            // image アイテムが存在しない場合は自動作成してから再取得
+                                            if (!imageItem2) {
+                                              addContentItem(sectionId, "image");
+                                              latestSection = useEditorStore
+                                                .getState()
+                                                .project.sections.find(
+                                                  (s) => s.id === sectionId
+                                                );
+                                              imageItem2 = latestSection?.content?.items?.find(
+                                                (item) => item.type === "image"
+                                              ) as ImageContentItem | undefined;
+                                            }
                                             if (!imageItem2) return;
                                             entries.forEach((entry) => {
                                               addImageToItem(
                                                 sectionId,
-                                                imageItem2.id,
+                                                imageItem2!.id,
                                                 {
                                                   src: entry.dataUrl,
                                                   assetId: entry.assetId,
@@ -6274,7 +6292,8 @@ export default function InspectorPanel() {
                         !isCouponFlow &&
                         !isRankingTable &&
                         !isPaymentHistoryGuide &&
-                        !isTabbedNotes ? (
+                        !isTabbedNotes &&
+                        !isImageOnly ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-[11px] text-[var(--ui-muted)]">
                               {t.inspector.section.labels.itemList}
