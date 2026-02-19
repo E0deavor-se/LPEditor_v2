@@ -184,7 +184,6 @@ export type LineMarks = {
   size?: number;
   bullet?: "none" | "disc";
   textAlign?: "left" | "center" | "right";
-  bullet?: "disc" | "none";
   callout?: {
     enabled?: boolean;
     variant?: "note" | "warn" | "info";

@@ -1358,12 +1358,15 @@ const normalizeSection = (section: SectionBase): SectionBase => {
   }
 
   if (section.type === "legalNotes") {
+    type LegalNoteLine = { text: string; bullet: "none" | "disc" };
     const trimmedDefaults = DEFAULT_LEGAL_NOTES_LINES.map((line) => line.trim())
       .filter((line) => line.length > 0);
     const defaultBullet = section.data?.bullet === "none" ? "none" : "disc";
+    const normalizeBullet = (value: unknown, fallback: "none" | "disc") =>
+      value === "none" || value === "disc" ? value : fallback;
     const rawItems = Array.isArray(section.data?.items) ? section.data.items : [];
     const dataItems = rawItems
-      .map((item) => {
+      .map((item): LegalNoteLine | null => {
         if (typeof item === "string") {
           return { text: item, bullet: defaultBullet };
         }
@@ -1372,21 +1375,18 @@ const normalizeSection = (section: SectionBase): SectionBase => {
         }
         const entry = item as Record<string, unknown>;
         const text = typeof entry.text === "string" ? entry.text : "";
-        const bullet =
-          entry.bullet === "none" || entry.bullet === "disc"
-            ? entry.bullet
-            : defaultBullet;
+        const bullet = normalizeBullet(entry.bullet, defaultBullet);
         return { text, bullet };
       })
-      .filter(
-        (item): item is { text: string; bullet: "none" | "disc" } =>
-          Boolean(item)
-      );
+      .filter((item): item is LegalNoteLine => Boolean(item));
     const hasDataText = dataItems.some((line) => line.text.trim().length > 0);
     const textItems = items.filter((item) => item.type === "text") as TextContentItem[];
-    const sourceItems = hasDataText
+    const sourceItems: LegalNoteLine[] = hasDataText
       ? dataItems
-      : trimmedDefaults.map((text) => ({ text, bullet: defaultBullet }));
+      : trimmedDefaults.map((text): LegalNoteLine => ({
+          text,
+          bullet: defaultBullet,
+        }));
     const sourceLines = sourceItems.map((item) => item.text);
     const firstTextIndex = items.findIndex((item) => item.type === "text");
     const areLinesEqual = (
