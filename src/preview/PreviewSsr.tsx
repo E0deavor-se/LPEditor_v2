@@ -3581,6 +3581,7 @@ export default function PreviewSsr({
             section.type === "campaignPeriodBar" ||
             section.type === "footerHtml" ||
             section.type === "tabbedNotes" ||
+            section.type === "imageOnly" ||
             Boolean(section.data?.footerAssets);
           const sectionCardStyle = normalizeSectionCardStyle(
             section.sectionCardStyle
