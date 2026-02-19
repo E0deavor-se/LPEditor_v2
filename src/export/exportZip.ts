@@ -2464,6 +2464,37 @@ export const renderProjectToHtml = (
               <div class="container">${String(section.data.html ?? "")}</div>
             </footer>
           `;
+        case "imageOnly": {
+          const imageItem = section.content?.items?.find(
+            (item: { type: string }) => item.type === "image"
+          ) as { images?: Array<{ src?: string; assetId?: string; alt?: string }> } | undefined;
+          const images = imageItem?.images ?? [];
+          const layout = str(section.data.layout ?? "single");
+          const gridStyle =
+            layout === "columns2"
+              ? "display:grid;grid-template-columns:repeat(2,1fr);gap:12px;"
+              : layout === "columns3"
+              ? "display:grid;grid-template-columns:repeat(3,1fr);gap:12px;"
+              : layout === "grid"
+              ? "display:grid;grid-template-columns:repeat(2,1fr);gap:12px;"
+              : "display:flex;flex-direction:column;align-items:center;";
+          const imgsHtml = images
+            .map((img) => {
+              const src = escapeHtml(str(img.src ?? ""));
+              const alt = escapeHtml(str(img.alt ?? ""));
+              const assetId = escapeHtml(str(img.assetId ?? ""));
+              return src
+                ? `<img src="${src}" alt="${alt}" data-asset-id="${assetId}" style="width:100%;height:auto;display:block;border-radius:8px;" />`
+                : "";
+            })
+            .filter(Boolean)
+            .join("\n");
+          return `
+            <section class="container image-only">
+              <div style="${gridStyle}">${imgsHtml || '<div style="height:80px;border:1px dashed #ccc;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#999;font-size:13px;">画像なし</div>'}</div>
+            </section>
+          `;
+        }
         default:
           return "";
       }

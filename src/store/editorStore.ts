@@ -1707,6 +1707,17 @@ export type EditorUIState = {
     itemId: string,
     image: { src: string; alt?: string; assetId?: string }
   ) => void;
+  removeImageFromItem: (
+    sectionId: string,
+    itemId: string,
+    imageId: string
+  ) => void;
+  updateImageInItem: (
+    sectionId: string,
+    itemId: string,
+    imageId: string,
+    patch: { alt?: string; src?: string; assetId?: string }
+  ) => void;
   setImageItemLayout: (
     sectionId: string,
     itemId: string,
@@ -2036,6 +2047,32 @@ const createSection = (type: string): SectionBase => {
         data: { imageUrl: "", alt: "", altText: "" },
         content: normalizeSectionContent(),
         style: normalizeSectionStyle(),
+      };
+      break;
+    case "imageOnly":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          layout: "single", // "single" | "columns2" | "columns3" | "grid"
+          imageAlt: "",
+        },
+        content: normalizeSectionContent({
+          items: [
+            {
+              id: createItemId(),
+              type: "image",
+              images: [],
+              layout: "auto",
+            },
+          ],
+        }),
+        style: normalizeSectionStyle({
+          background: { type: "solid", color1: "transparent", color2: "#ffffff" },
+          backgroundTransparent: true,
+        }),
       };
       break;
     case "campaignPeriodBar":
@@ -3895,6 +3932,65 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         canRedo: false,
         saveStatus: "dirty",
         saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  removeImageFromItem: (sectionId, itemId, imageId) =>
+    set((state) => {
+      const targetSection = state.project.sections.find(
+        (section) => section.id === sectionId
+      );
+      if (!targetSection || targetSection.locked) return state;
+      const content = normalizeSectionContent(targetSection.content);
+      const nextItems = (content.items ?? []).map((item) => {
+        if (item.id !== itemId || item.type !== "image") return item;
+        return { ...item, images: item.images.filter((img) => img.id !== imageId) };
+      });
+      const nextProject: ProjectState = {
+        ...state.project,
+        meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+        sections: state.project.sections.map((section) =>
+          section.id === sectionId
+            ? { ...section, content: { ...content, items: pinTitleFirst(nextItems) } }
+            : section
+        ),
+      };
+      return {
+        ...state,
+        project: nextProject,
+        saveStatus: "dirty",
+        hasUserEdits: true,
+      };
+    }),
+  updateImageInItem: (sectionId, itemId, imageId, patch) =>
+    set((state) => {
+      const targetSection = state.project.sections.find(
+        (section) => section.id === sectionId
+      );
+      if (!targetSection || targetSection.locked) return state;
+      const content = normalizeSectionContent(targetSection.content);
+      const nextItems = (content.items ?? []).map((item) => {
+        if (item.id !== itemId || item.type !== "image") return item;
+        return {
+          ...item,
+          images: item.images.map((img) =>
+            img.id === imageId ? { ...img, ...patch } : img
+          ),
+        };
+      });
+      const nextProject: ProjectState = {
+        ...state.project,
+        meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+        sections: state.project.sections.map((section) =>
+          section.id === sectionId
+            ? { ...section, content: { ...content, items: pinTitleFirst(nextItems) } }
+            : section
+        ),
+      };
+      return {
+        ...state,
+        project: nextProject,
+        saveStatus: "dirty",
         hasUserEdits: true,
       };
     }),

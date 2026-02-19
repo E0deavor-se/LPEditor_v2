@@ -3375,6 +3375,79 @@ const renderSection = (
           />
         </section>
       );
+    case "imageOnly": {
+      const sectionAssets = project?.assets ?? {};
+      const resolveImg = (img: ImageItem) => {
+        const assetUrl = img.assetId ? sectionAssets[img.assetId]?.data : undefined;
+        return assetUrl || img.src || "";
+      };
+      const imageItem = section.content?.items?.find(
+        (item) => item.type === "image"
+      );
+      const images =
+        imageItem?.type === "image" ? (imageItem.images ?? []) : [];
+      const layout = (section.data?.layout as string) ?? "single";
+
+      const isTransparent = (url: string) =>
+        /\.(png|gif|webp)(\?|$)/i.test(url) ||
+        (url.startsWith("data:image/png") ||
+          url.startsWith("data:image/gif") ||
+          url.startsWith("data:image/webp"));
+
+      const gridClass =
+        layout === "columns2"
+          ? "grid grid-cols-2 gap-3"
+          : layout === "columns3"
+          ? "grid grid-cols-3 gap-3"
+          : layout === "grid"
+          ? "grid grid-cols-2 gap-3 sm:grid-cols-3"
+          : "flex flex-col items-center";
+
+      return (
+        <section className="w-full lp-image-only">
+          <div className={gridClass}>
+            {images.length === 0 ? (
+              <div className="flex h-32 w-full items-center justify-center rounded-lg border border-dashed border-[var(--lp-border)] text-sm text-[var(--lp-muted)]">
+                画像なし
+              </div>
+            ) : (
+              images.map((img: ImageItem) => {
+                const src = resolveImg(img);
+                const transparent = isTransparent(src);
+                return (
+                  <div
+                    key={img.id}
+                    className="relative overflow-hidden rounded-md"
+                    style={
+                      transparent
+                        ? {
+                            backgroundImage:
+                              "repeating-conic-gradient(#cccccc 0% 25%, #ffffff 0% 50%)",
+                            backgroundSize: "16px 16px",
+                          }
+                        : undefined
+                    }
+                  >
+                    {src ? (
+                      <img
+                        src={src}
+                        alt={img.alt ?? (section.data?.imageAlt as string) ?? ""}
+                        className="block w-full h-auto"
+                        data-asset-id={img.assetId}
+                      />
+                    ) : (
+                      <div className="flex h-32 items-center justify-center text-xs text-[var(--lp-muted)]">
+                        画像なし
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
+      );
+    }
     default:
       return renderPlaceholder(section);
   }

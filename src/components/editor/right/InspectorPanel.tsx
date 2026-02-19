@@ -261,6 +261,8 @@ export default function InspectorPanel() {
     updateTitleItemMarks,
     updateTextLineAnimation,
     addImageToItem,
+    removeImageFromItem,
+    updateImageInItem,
     setImageItemLayout,
     updateImageAnimation,
     updateButtonItem,
@@ -316,6 +318,8 @@ export default function InspectorPanel() {
       updateTitleItemMarks: state.updateTitleItemMarks,
       updateTextLineAnimation: state.updateTextLineAnimation,
       addImageToItem: state.addImageToItem,
+      removeImageFromItem: state.removeImageFromItem,
+      updateImageInItem: state.updateImageInItem,
       setImageItemLayout: state.setImageItemLayout,
       updateImageAnimation: state.updateImageAnimation,
       updateButtonItem: state.updateButtonItem,
@@ -388,6 +392,7 @@ export default function InspectorPanel() {
   const isRankingTable = sectionType === "rankingTable";
   const isPaymentHistoryGuide = sectionType === "paymentHistoryGuide";
   const isTabbedNotes = sectionType === "tabbedNotes";
+  const isImageOnly = sectionType === "imageOnly";
   const isStoreCsvSection =
     isTargetStores || isExcludedStoresList || isExcludedBrandsList;
   const isItemlessSection =
@@ -503,6 +508,7 @@ export default function InspectorPanel() {
   const paymentGuideImageInputRef = useRef<HTMLInputElement | null>(null);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const imageImportInputRef = useRef<HTMLInputElement | null>(null);
+  const imageOnlyInputRef = useRef<HTMLInputElement | null>(null);
   const footerAssetInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
@@ -4463,6 +4469,138 @@ export default function InspectorPanel() {
                                 })}
                               </div>
                             )}
+                          </div>
+                        ) : null}
+                        {isImageOnly ? (
+                          <div className="flex flex-col gap-3">
+                            <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                              画像セクション
+                            </div>
+                            <FieldRow label="レイアウト">
+                              <SegmentedField
+                                value={String(selectedSection.data.layout ?? "single")}
+                                ariaLabel="レイアウト"
+                                options={[
+                                  { value: "single", label: "1枚" },
+                                  { value: "columns2", label: "2列" },
+                                  { value: "columns3", label: "3列" },
+                                  { value: "grid", label: "グリッド" },
+                                ]}
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    layout: next,
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            {(() => {
+                              const imageItem = selectedSection.content?.items?.find(
+                                (item) => item.type === "image"
+                              ) as ImageContentItem | undefined;
+                              const images = imageItem?.images ?? [];
+                              return (
+                                <div className="flex flex-col gap-2">
+                                  {images.map((img, idx) => {
+                                    const assetUrl = img.assetId
+                                      ? assets[img.assetId]?.data
+                                      : undefined;
+                                    const src = assetUrl || img.src || "";
+                                    return (
+                                      <div
+                                        key={img.id}
+                                        className="flex items-center gap-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-1.5"
+                                      >
+                                        {src ? (
+                                          <img
+                                            src={src}
+                                            alt={img.alt ?? ""}
+                                            className="h-10 w-14 flex-shrink-0 rounded object-cover"
+                                          />
+                                        ) : (
+                                          <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded bg-[var(--ui-border)]/30 text-[10px] text-[var(--ui-muted)]">
+                                            なし
+                                          </div>
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <div className="truncate text-[11px] text-[var(--ui-text)]">
+                                            {img.alt || `画像 ${idx + 1}`}
+                                          </div>
+                                          <input
+                                            type="text"
+                                            className="ui-input mt-0.5 h-6 w-full text-[10px]"
+                                            placeholder="alt テキスト"
+                                            value={img.alt ?? ""}
+                                            onChange={(e) => {
+                                              if (!imageItem) return;
+                                              updateImageInItem(
+                                                selectedSection.id,
+                                                imageItem.id,
+                                                img.id,
+                                                { alt: e.target.value }
+                                              );
+                                            }}
+                                          />
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="flex-shrink-0 rounded p-1 text-[var(--ui-muted)] hover:bg-red-100 hover:text-red-500"
+                                          aria-label="削除"
+                                          onClick={() => {
+                                            if (!imageItem) return;
+                                            removeImageFromItem(
+                                              selectedSection.id,
+                                              imageItem.id,
+                                              img.id
+                                            );
+                                          }}
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                  <input
+                                    ref={imageOnlyInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    onChange={(event) => {
+                                      const files = Array.from(event.target.files ?? []);
+                                      if (files.length === 0) return;
+                                      handleImagesImportWithMeta(
+                                        files,
+                                        (entries) => {
+                                          const imageItem2 = selectedSection.content?.items?.find(
+                                            (item) => item.type === "image"
+                                          ) as ImageContentItem | undefined;
+                                          if (!imageItem2) return;
+                                          entries.forEach((entry) => {
+                                            addImageToItem(
+                                              selectedSection.id,
+                                              imageItem2.id,
+                                              {
+                                                src: entry.dataUrl,
+                                                assetId: entry.assetId,
+                                                alt: entry.file.name.replace(/\.[^.]+$/, ""),
+                                              }
+                                            );
+                                          });
+                                        }
+                                      );
+                                      event.target.value = "";
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="ui-button h-8 w-full text-[11px]"
+                                    onClick={() => imageOnlyInputRef.current?.click()}
+                                  >
+                                    + 画像を追加
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : null}
                         {isLegalNotes ? (

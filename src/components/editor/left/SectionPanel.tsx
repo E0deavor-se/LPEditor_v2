@@ -35,6 +35,7 @@ const SectionTypeLabels: Record<string, string> = {
   excludedStoresList: "対象外店舗セクション",
   excludedBrandsList: "対象外ブランドセクション",
   tabbedNotes: "付箋タブセクション",
+  imageOnly: "画像セクション",
 };
 
 const SECTION_CHOICES = Object.entries(SectionTypeLabels).map(
