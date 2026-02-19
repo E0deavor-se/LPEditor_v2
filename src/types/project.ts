@@ -155,6 +155,8 @@ export type SectionStyle = {
   typography: SectionTypography;
   background: SectionBackground;
   backgroundSpec?: BackgroundSpec;
+  /** true のとき背景を完全透明にしてページ背景を透過させる */
+  backgroundTransparent?: boolean;
   border: SectionBorder;
   shadow: SectionShadow;
   layout: {
@@ -172,6 +174,7 @@ export type SectionStylePatch = {
   typography?: Partial<SectionTypography>;
   background?: Partial<SectionBackground>;
   backgroundSpec?: BackgroundSpec;
+  backgroundTransparent?: boolean;
   border?: Partial<SectionBorder>;
   shadow?: SectionShadow;
   layout?: Partial<SectionStyle["layout"]>;

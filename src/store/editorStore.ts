@@ -530,6 +530,10 @@ const mergeSectionStyle = (
 ): SectionStyle => ({
   typography: { ...base.typography, ...(patch.typography ?? {}) },
   background: { ...base.background, ...(patch.background ?? {}) },
+  backgroundTransparent:
+    patch.backgroundTransparent !== undefined
+      ? patch.backgroundTransparent
+      : base.backgroundTransparent,
   border: { ...base.border, ...(patch.border ?? {}) },
   shadow: patch.shadow ?? base.shadow,
   layout: { ...base.layout, ...(patch.layout ?? {}) },

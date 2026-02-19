@@ -1739,7 +1739,10 @@ const buildSectionStyle = (style: SectionStyle | undefined): CSSProperties => {
   result.textAlign = typography.textAlign;
   result.color = typography.textColor;
 
-  if (style.background.type === "gradient") {
+  if (style.backgroundTransparent) {
+    result.backgroundColor = "transparent";
+    result.backgroundImage = "none";
+  } else if (style.background.type === "gradient") {
     result.backgroundImage = `linear-gradient(135deg, ${style.background.color1}, ${style.background.color2})`;
     result.backgroundColor = style.background.color1;
   } else {

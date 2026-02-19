@@ -72,64 +72,73 @@ export default function SectionStylePanel({
         </button>
       </div>
       <Accordion title={t.inspector.section.groups.surface} icon={<Paintbrush size={14} />}>
-        {hideGradient ? (
-          <FieldRow label={t.inspector.section.fields.background}>
-            <ColorField
-              value={style.background.color1}
-              ariaLabel={t.inspector.section.fields.background}
-              onChange={(next) =>
-                onStyleChange({ background: { color1: next } })
-              }
-            />
-          </FieldRow>
-        ) : (
-          <>
-            <FieldRow label={t.inspector.section.fields.gradient}>
-              <ToggleField
-                value={isGradient}
-                ariaLabel={t.inspector.section.fields.gradient}
+        <FieldRow label="背景を透明にする">
+          <ToggleField
+            value={!!style.backgroundTransparent}
+            ariaLabel="背景を透明にする"
+            onChange={(next) => onStyleChange({ backgroundTransparent: next })}
+          />
+        </FieldRow>
+        {!style.backgroundTransparent && (
+          hideGradient ? (
+            <FieldRow label={t.inspector.section.fields.background}>
+              <ColorField
+                value={style.background.color1}
+                ariaLabel={t.inspector.section.fields.background}
                 onChange={(next) =>
-                  onStyleChange({
-                    background: {
-                      type: next ? "gradient" : "solid",
-                    },
-                  })
+                  onStyleChange({ background: { color1: next } })
                 }
               />
             </FieldRow>
-            {isGradient ? (
-              <>
-                <FieldRow label={t.inspector.section.fields.color1}>
+          ) : (
+            <>
+              <FieldRow label={t.inspector.section.fields.gradient}>
+                <ToggleField
+                  value={isGradient}
+                  ariaLabel={t.inspector.section.fields.gradient}
+                  onChange={(next) =>
+                    onStyleChange({
+                      background: {
+                        type: next ? "gradient" : "solid",
+                      },
+                    })
+                  }
+                />
+              </FieldRow>
+              {isGradient ? (
+                <>
+                  <FieldRow label={t.inspector.section.fields.color1}>
+                    <ColorField
+                      value={style.background.color1}
+                      ariaLabel={t.inspector.section.fields.color1}
+                      onChange={(next) =>
+                        onStyleChange({ background: { color1: next } })
+                      }
+                    />
+                  </FieldRow>
+                  <FieldRow label={t.inspector.section.fields.color2}>
+                    <ColorField
+                      value={style.background.color2}
+                      ariaLabel={t.inspector.section.fields.color2}
+                      onChange={(next) =>
+                        onStyleChange({ background: { color2: next } })
+                      }
+                    />
+                  </FieldRow>
+                </>
+              ) : (
+                <FieldRow label={t.inspector.section.fields.background}>
                   <ColorField
                     value={style.background.color1}
-                    ariaLabel={t.inspector.section.fields.color1}
+                    ariaLabel={t.inspector.section.fields.background}
                     onChange={(next) =>
                       onStyleChange({ background: { color1: next } })
                     }
                   />
                 </FieldRow>
-                <FieldRow label={t.inspector.section.fields.color2}>
-                  <ColorField
-                    value={style.background.color2}
-                    ariaLabel={t.inspector.section.fields.color2}
-                    onChange={(next) =>
-                      onStyleChange({ background: { color2: next } })
-                    }
-                  />
-                </FieldRow>
-              </>
-            ) : (
-              <FieldRow label={t.inspector.section.fields.background}>
-                <ColorField
-                  value={style.background.color1}
-                  ariaLabel={t.inspector.section.fields.background}
-                  onChange={(next) =>
-                    onStyleChange({ background: { color1: next } })
-                  }
-                />
-              </FieldRow>
-            )}
-          </>
+              )}
+            </>
+          )
         )}
         <FieldRow label={t.inspector.section.fields.border}>
           <ToggleField
