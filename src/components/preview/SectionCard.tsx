@@ -72,8 +72,9 @@ export default function SectionCard({
     sectionCardStyle.textColor || sectionStyle.typography.textColor;
   const headerTextColor =
     sectionCardStyle.headerTextColor || sectionStyle.typography.textColor;
-  const background =
-    sectionStyle.background.type === "gradient"
+  const background = sectionStyle.backgroundTransparent
+    ? "transparent"
+    : sectionStyle.background.type === "gradient"
       ? `linear-gradient(135deg, ${sectionStyle.background.color1}, ${sectionStyle.background.color2})`
       : sectionStyle.background.color1 || "#ffffff";
   const borderWidth = sectionStyle.border.enabled ? sectionStyle.border.width : 0;

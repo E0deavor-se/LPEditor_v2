@@ -1710,6 +1710,9 @@ const isSurfaceCustomized = (style?: SectionStyle) => {
   if (!style) {
     return false;
   }
+  if (style.backgroundTransparent) {
+    return true;
+  }
   const styleBackground = style.background;
   const styleBorder = style.border;
   const styleShadow = style.shadow;
@@ -2482,7 +2485,9 @@ const renderSection = (
       const hasSurfaceOverride = isSurfaceCustomized(section.style);
       const defaultBandColor = "#EB5505";
       const fallbackBackground = hasSurfaceOverride
-        ? section.style.background.type === "gradient"
+        ? section.style.backgroundTransparent
+          ? "transparent"
+          : section.style.background.type === "gradient"
           ? `linear-gradient(135deg, ${section.style.background.color1}, ${section.style.background.color2})`
           : section.style.background.color1 || defaultBandColor
         : defaultBandColor;
