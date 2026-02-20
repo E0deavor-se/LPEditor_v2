@@ -391,7 +391,6 @@ export default function InspectorPanel() {
   const isRankingTable = sectionType === "rankingTable";
   const isPaymentHistoryGuide = sectionType === "paymentHistoryGuide";
   const isTabbedNotes = sectionType === "tabbedNotes";
-  const isImageOnly = sectionType === "imageOnly";
   const isStoreCsvSection =
     isTargetStores || isExcludedStoresList || isExcludedBrandsList;
   const isItemlessSection =
@@ -497,7 +496,6 @@ export default function InspectorPanel() {
   const brandBarInputRef = useRef<HTMLInputElement | null>(null);
   const heroPcInputRef = useRef<HTMLInputElement | null>(null);
   const heroSpInputRef = useRef<HTMLInputElement | null>(null);
-  const imageOnlyInputRef = useRef<HTMLInputElement | null>(null);
   const paymentGuideImageInputRef = useRef<HTMLInputElement | null>(null);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const imageImportInputRef = useRef<HTMLInputElement | null>(null);
