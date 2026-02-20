@@ -20,10 +20,8 @@ export default function ToggleField({
       aria-label={ariaLabel}
       disabled={disabled}
       className={
-        "relative h-6 w-10 rounded-full border border-[var(--ui-border)]/70 transition " +
-        (value
-          ? " bg-[var(--ui-primary-base)]/70"
-          : " bg-[var(--surface-2)]") +
+        "ui-toggle relative h-6 w-10 rounded-full transition " +
+        (value ? " is-on" : "") +
         (disabled ? " cursor-not-allowed opacity-50" : "")
       }
       onClick={() => onChange(!value)}

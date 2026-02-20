@@ -412,7 +412,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
   };
 
   return (
-    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface-3)]">
+    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--ui-canvas-outer)]">
       {showBusy ? (
         <div className="absolute left-0 right-0 top-0 z-10 h-0.5 bg-[var(--ui-primary-base)]/70 animate-pulse" />
       ) : null}

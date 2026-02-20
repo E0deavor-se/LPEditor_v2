@@ -3,23 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  closestCenter,
-  DndContext,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { Plus } from "lucide-react";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { ChevronRight, Layers } from "lucide-react";
 import { useEditorStore, type EditorUIState } from "@/src/store/editorStore";
 import SectionRow from "@/src/components/editor/left/SectionRow";
 import type { SectionBase } from "@/src/types/project";
+import SectionTree from "@/src/components/editor/left/SectionTree";
 
 const SectionTypeLabels: Record<string, string> = {
   brandBar: "ブランドバー",
@@ -46,7 +41,15 @@ const SECTION_CHOICES = Object.entries(SectionTypeLabels).map(
 const normalizeName = (name: string) =>
   name.trim().length > 0 ? name.trim() : "無題";
 
-export default function SectionPanel() {
+type SectionPanelProps = {
+  isAddMenuOpen: boolean;
+  onAddMenuOpenChange: (isOpen: boolean) => void;
+};
+
+export default function SectionPanel({
+  isAddMenuOpen,
+  onAddMenuOpenChange,
+}: SectionPanelProps) {
   const sections = useEditorStore(
     (state: EditorUIState) => state.project.sections
   ) as SectionBase[];
@@ -60,7 +63,6 @@ export default function SectionPanel() {
   const renameSection = useEditorStore(
     (state: EditorUIState) => state.renameSection
   );
-  const uiMode = useEditorStore((state: EditorUIState) => state.uiMode);
   const toggleSectionVisible = useEditorStore(
     (state: EditorUIState) => state.toggleSectionVisible
   );
@@ -87,7 +89,6 @@ export default function SectionPanel() {
   const [draftName, setDraftName] = useState("");
   const originalNameRef = useRef("");
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [addMenuPage, setAddMenuPage] = useState(0);
 
@@ -103,7 +104,6 @@ export default function SectionPanel() {
   const selectedSectionId =
     selected.kind === "section" ? selected.id : undefined;
   const isPageSelected = selected.kind === "page";
-  const isSimpleMode = uiMode === "simple";
 
   const handleStartRename = useCallback(
     (sectionId: string, name: string) => {
@@ -177,28 +177,6 @@ export default function SectionPanel() {
         }
         return;
       }
-      if (event.key === "Enter" && selectedSectionId) {
-        const target = sections.find(
-          (section: SectionBase) => section.id === selectedSectionId
-        );
-        if (target && !target.locked) {
-          event.preventDefault();
-          handleStartRename(
-            selectedSectionId,
-            target.name ?? SectionTypeLabels[target.type] ?? ""
-          );
-        }
-        return;
-      }
-      if ((event.key === "Delete" || event.key === "Backspace") && selectedSectionId) {
-        const target = sections.find(
-          (section: SectionBase) => section.id === selectedSectionId
-        );
-        if (target && !target.locked) {
-          event.preventDefault();
-          setDeleteTargetId(target.id);
-        }
-      }
     };
 
     const node = listRef.current;
@@ -212,30 +190,8 @@ export default function SectionPanel() {
     selectedSectionId,
   ]);
 
-  const header = (
-    <div className="flex items-center justify-between text-xs text-[var(--ui-muted)]">
-      <span>
-        {isSimpleMode
-          ? "並び替えと表示の切替"
-          : "ドラッグして並び替え"}
-      </span>
-      {!isSimpleMode ? (
-        <button
-          type="button"
-          className="ui-button h-7 px-2 text-[10px]"
-          onClick={() => setIsAddMenuOpen((current) => !current)}
-        >
-          <span className="flex items-center gap-1">
-            <Plus size={14} />
-            セクション追加
-          </span>
-        </button>
-      ) : null}
-    </div>
-  );
-
   const emptyState = (
-    <div className="rounded-md border border-dashed border-[var(--ui-border)]/70 bg-[var(--ui-panel)]/60 px-3 py-4 text-center text-xs text-[var(--ui-muted)]">
+    <div className="mx-3 rounded-md border border-dashed border-[var(--ui-border)]/70 bg-[var(--ui-panel)]/60 px-3 py-4 text-center text-xs text-[var(--ui-muted)]">
       セクションがありません。
     </div>
   );
@@ -258,11 +214,13 @@ export default function SectionPanel() {
             isSelected={selectedSectionId === section.id}
             isEditing={isEditing}
             draftName={isEditing ? draftName : label}
+            depth={0}
+            hasChildren={false}
             canMoveUp={canMoveUp}
             canMoveDown={canMoveDown}
             disableDrag={section.locked || isEditing}
             onSelect={() => selectSection(section.id)}
-            onStartRename={() =>
+            onRename={() =>
               handleStartRename(
                 section.id,
                 section.name ?? SectionTypeLabels[section.type] ?? ""
@@ -319,9 +277,9 @@ export default function SectionPanel() {
   const handleAddSection = useCallback(
     (type: string) => {
       insertSectionAfter(undefined, type);
-      setIsAddMenuOpen(false);
+      onAddMenuOpenChange(false);
     },
-    [insertSectionAfter]
+    [insertSectionAfter, onAddMenuOpenChange]
   );
 
   const addMenuTotalPages = Math.max(
@@ -335,28 +293,32 @@ export default function SectionPanel() {
   );
 
   return (
-    <div className="flex flex-col gap-2" ref={listRef} tabIndex={0}>
-      <button
-        type="button"
-        className={
-          "relative flex flex-col gap-1 rounded-md border border-[var(--ui-border)] bg-[var(--surface)] px-3 py-2 text-left transition-colors duration-150 ease-out " +
-          (isPageSelected
-            ? " border-transparent bg-[var(--ui-primary-soft)]"
-            : " hover:bg-[var(--surface-2)]")
-        }
-        onClick={() => setSelectedSection(undefined)}
-      >
-        {isPageSelected ? (
-          <span className="absolute left-0 top-1 bottom-1 w-1 rounded-full bg-[var(--ui-primary-base)]" />
-        ) : null}
-        <div className="text-[12px] font-semibold text-[var(--ui-text)]">
-          LP全体（ページ設定）
-        </div>
-        <div className="text-xs text-[var(--ui-muted)]">
-          背景 / タイポ / カラー
-        </div>
-      </button>
-      {header}
+    <div className="flex flex-col py-2" ref={listRef} tabIndex={0}>
+      <div className="px-3">
+        <button
+          type="button"
+          className={
+            "group relative flex h-8 w-full items-center gap-2 border-b border-[var(--ui-border)]/40 text-left text-[12px] transition-colors duration-150 ease-out " +
+            (isPageSelected
+              ? " bg-[color-mix(in_srgb,var(--ui-accent)_6%,transparent)]"
+              : " hover:bg-[var(--surface-2)]/70")
+          }
+          onClick={() => setSelectedSection(undefined)}
+        >
+          {isPageSelected ? (
+            <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[var(--ui-accent)]" />
+          ) : null}
+          <span className="flex h-5 w-5 items-center justify-center text-[var(--ui-muted)] opacity-30">
+            <ChevronRight size={14} />
+          </span>
+          <span className="flex h-4 w-4 items-center justify-center text-[var(--ui-muted)]">
+            <Layers size={14} />
+          </span>
+          <span className="truncate text-[12px] text-[var(--ui-text)]">
+            LP全体（ページ設定）
+          </span>
+        </button>
+      </div>
       {isAddMenuOpen && isMounted
         ? createPortal(
             <div className="fixed inset-0 z-[1000] ui-modal-overlay flex items-center justify-center p-4">
@@ -376,7 +338,7 @@ export default function SectionPanel() {
                   <button
                     type="button"
                     className="ui-button h-7 px-2.5 text-[10px]"
-                    onClick={() => setIsAddMenuOpen(false)}
+                    onClick={() => onAddMenuOpenChange(false)}
                   >
                     閉じる
                   </button>
@@ -459,23 +421,17 @@ export default function SectionPanel() {
             document.body
           )
         : null}
-      {sections.length === 0 ? emptyState : (
-        <DndContext
+      {sections.length === 0 ? (
+        emptyState
+      ) : (
+        <SectionTree
+          items={sections.map((section) => section.id)}
           sensors={sensors}
-          collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext
-            items={sections.map((section) => section.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="flex flex-col gap-2">{listItems}</div>
-          </SortableContext>
-        </DndContext>
+          <div className="flex flex-col px-3">{listItems}</div>
+        </SectionTree>
       )}
-      <div className="rounded-md border border-dashed border-[var(--ui-border)]/70 bg-[var(--ui-panel)]/50 px-3 py-2 text-xs text-[var(--ui-muted)]">
-        挿入ラインのUIは準備中です。
-      </div>
       {deleteTargetId ? (
         <div className="fixed inset-0 z-[1000] ui-modal-overlay flex items-center justify-center px-4">
           <div className="ui-modal w-full max-w-sm p-4">

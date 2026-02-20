@@ -9,14 +9,15 @@ type FieldRowProps = {
 };
 
 export default function FieldRow({ label, children, helper }: FieldRowProps) {
+  const rowClass = helper
+    ? "grid min-h-8 grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-x-3 text-[11px]"
+    : "grid min-h-8 grid-cols-[96px_minmax(0,1fr)] items-center gap-x-3 text-[11px]";
   return (
-    <div className="flex h-8 items-center gap-2 px-2 text-[12px]">
-      <div className="w-[110px] shrink-0 truncate text-[12px] text-[var(--ui-muted)]">
-        {label}
-      </div>
+    <div className={rowClass}>
+      <div className="truncate text-[11px] text-[var(--ui-muted)]">{label}</div>
       <div className="flex flex-1 items-center gap-2">{children}</div>
       {helper ? (
-        <div className="text-xs text-[var(--ui-muted)]">{helper}</div>
+        <div className="text-[11px] text-[var(--ui-muted)]">{helper}</div>
       ) : null}
     </div>
   );

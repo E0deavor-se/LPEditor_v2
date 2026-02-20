@@ -3,19 +3,34 @@
 import { forwardRef, memo, useEffect, useRef, type ButtonHTMLAttributes } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Eye, EyeOff, GripVertical, Lock, Trash2, Unlock } from "lucide-react";
+import {
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Image,
+  LayoutGrid,
+  Lock,
+  Store,
+  Type,
+  Unlock,
+} from "lucide-react";
 import type { SectionBase } from "@/src/types/project";
+import SectionRowMenu from "@/src/components/editor/left/SectionRowMenu";
 
 const IconButton = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement>
->(({ className, ...props }, ref) => (
+>(({ className, onPointerDown, ...props }, ref) => (
   <button
     ref={ref}
     type="button"
-    className={`ui-button h-8 w-8 px-2 py-1 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
+    className={`ui-button ui-button-ghost h-7 w-7 px-0 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
       className ?? ""
     }`}
+    onPointerDown={(event) => {
+      event.stopPropagation();
+      onPointerDown?.(event);
+    }}
     {...props}
   />
 ));
@@ -28,11 +43,15 @@ export type SectionRowProps = {
   isSelected: boolean;
   isEditing: boolean;
   draftName: string;
+  depth?: number;
+  hasChildren?: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
   disableDrag: boolean;
   onSelect: () => void;
-  onStartRename: () => void;
+  onRename: () => void;
   onChangeName: (value: string) => void;
   onCommitName: () => void;
   onCancelName: () => void;
@@ -50,11 +69,15 @@ function SectionRow({
   isSelected,
   isEditing,
   draftName,
+  depth = 0,
+  hasChildren = false,
+  isExpanded = false,
+  onToggleExpand,
   canMoveUp,
   canMoveDown,
   disableDrag,
   onSelect,
-  onStartRename,
+  onRename,
   onChangeName,
   onCommitName,
   onCancelName,
@@ -70,10 +93,10 @@ function SectionRow({
     attributes,
     listeners,
     setNodeRef,
-    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
+    isOver,
   } = useSortable({ id: section.id, disabled: disableDrag });
 
   const dragStyle = {
@@ -89,50 +112,84 @@ function SectionRow({
   }, [isEditing]);
 
   const controlsClass =
-    "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)]/85 px-1 py-0.5 opacity-0 pointer-events-none transition-opacity duration-150 ease-out group-hover:opacity-100 group-hover:pointer-events-auto" +
-    (isSelected ? " opacity-60 pointer-events-auto" : "");
+    "absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 pointer-events-none transition-opacity duration-150 ease-out group-hover:opacity-100 group-hover:pointer-events-auto";
+
+  const indentStyle = { marginLeft: depth * 16 };
+  const showDropIndicator = isOver && !isDragging;
+  const activeStyle = isSelected
+    ? {
+        backgroundColor:
+          "color-mix(in srgb, var(--ui-accent) 6%, transparent)",
+      }
+    : undefined;
+
+  const iconClass = "text-[var(--ui-muted)]";
+  const renderTypeIcon = () => {
+    switch (section.type) {
+      case "heroImage":
+      case "imageOnly":
+        return <Image size={14} className={iconClass} />;
+      case "targetStores":
+        return <Store size={14} className={iconClass} />;
+      case "legalNotes":
+      case "tabbedNotes":
+        return <Type size={14} className={iconClass} />;
+      default:
+        return <LayoutGrid size={14} className={iconClass} />;
+    }
+  };
 
   return (
     <div
       ref={setNodeRef}
-      style={dragStyle}
+      style={{ ...dragStyle, ...activeStyle }}
       className={
-        "group relative flex h-9 items-center gap-2 rounded-md border border-[var(--ui-border)] bg-[var(--surface)] px-2.5 transition-colors duration-150 ease-out " +
-        (isSelected
-          ? " border-transparent bg-[var(--ui-primary-soft)] text-[var(--ui-text)] shadow-sm"
-          : " hover:bg-[var(--surface-2)]") +
+        "group relative flex h-8 items-center gap-2 border-b border-[var(--ui-border)]/40 px-0 text-[12px] transition-colors duration-150 ease-out hover:bg-[var(--surface-2)]/70 last:border-b-0 cursor-pointer " +
         (!section.visible ? " opacity-60" : "") +
-        (isDragging ? " ring-1 ring-[var(--ui-primary-base)]/50" : "")
+        (isDragging ? " opacity-50" : "")
       }
       role="button"
       tabIndex={0}
       onClick={onSelect}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        if (!section.locked) {
-          onStartRename();
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" && !isEditing && !section.locked) {
-          event.preventDefault();
-          onStartRename();
-        }
-      }}
+      {...attributes}
+      {...listeners}
     >
       {isSelected ? (
-        <span className="absolute left-0 top-1 bottom-1 w-1 rounded-full bg-[var(--ui-primary-base)]" />
+        <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[var(--ui-accent)]" />
       ) : null}
-      <div
-        className={
-          "flex min-w-0 flex-1 items-center gap-2 pr-24"
-        }
-      >
-        <span className="h-2.5 w-2.5 rounded-sm bg-[var(--ui-border)]/80" />
+      {showDropIndicator ? (
+        <span className="absolute left-0 right-0 bottom-0 h-px bg-[var(--ui-accent)]/70" />
+      ) : null}
+      <div className="flex min-w-0 flex-1 items-center gap-2 pr-20" style={indentStyle}>
+        <button
+          type="button"
+          className={
+            "flex h-5 w-5 items-center justify-center text-[var(--ui-muted)] " +
+            (hasChildren
+              ? "hover:text-[var(--ui-text)]"
+              : "cursor-default opacity-30")
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            if (hasChildren) {
+              onToggleExpand?.();
+            }
+          }}
+          aria-label="展開"
+          disabled={!hasChildren}
+        >
+          <ChevronRight
+            size={14}
+            className={isExpanded ? "rotate-90 transition" : "transition"}
+          />
+        </button>
+        <span className="flex h-4 w-4 items-center justify-center">
+          {renderTypeIcon()}
+        </span>
         {isEditing ? (
           <input
             ref={inputRef}
-            className="ui-input h-7 w-full min-w-0 text-[13px]"
+            className="ui-input h-7 w-full min-w-0 text-[12px]"
             value={draftName}
             onChange={(event) => onChangeName(event.target.value)}
             onKeyDown={(event) => {
@@ -148,10 +205,7 @@ function SectionRow({
             onBlur={onCommitName}
           />
         ) : (
-          <span
-            className="truncate text-[13px] font-medium text-[var(--ui-text)]"
-            title={label}
-          >
+          <span className="truncate text-[12px] text-[var(--ui-text)]" title={label}>
             {label}
           </span>
         )}
@@ -177,29 +231,18 @@ function SectionRow({
         >
           {section.locked ? <Lock size={14} /> : <Unlock size={14} />}
         </IconButton>
-        <IconButton
-          aria-label="セクションを削除"
-          title="セクションを削除"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-          disabled={section.locked}
-        >
-          <Trash2 size={14} />
-        </IconButton>
-        {!section.locked ? (
-          <IconButton
-            aria-label="ドラッグして並び替え"
-            title="ドラッグして並び替え"
-            className="cursor-grab"
-            ref={setActivatorNodeRef}
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical size={14} />
-          </IconButton>
-        ) : null}
+        <SectionRowMenu
+          onRename={onRename}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
+          disableRename={section.locked}
+          disableDuplicate={section.locked}
+          disableDelete={section.locked}
+          disableMoveUp={!canMoveUp}
+          disableMoveDown={!canMoveDown}
+        />
       </div>
     </div>
   );

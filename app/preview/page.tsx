@@ -12,6 +12,8 @@ const EDITOR_SELECT_SECTION = "CLP_EDITOR_SELECT_SECTION";
 const PREVIEW_UPDATE_TARGET_STORES_FILTERS = "CLP_PREVIEW_UPDATE_TARGET_STORES_FILTERS";
 const SCREENSHOT_REQUEST = "CLP_SCREENSHOT_REQUEST";
 const SCREENSHOT_RESULT = "CLP_SCREENSHOT_RESULT";
+const TRANSPARENT_PIXEL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIW2NgYGD4DwABBAEAH5Y8FQAAAABJRU5ErkJggg==";
 
 type PreviewPayload = {
   ui?: {
@@ -35,11 +37,55 @@ export default function PreviewPage() {
   const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [flashIds, setFlashIds] = useState<string[]>([]);
+  const [pulseIds, setPulseIds] = useState<string[]>([]);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const flashTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {}
   );
+  const pulseTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {}
+  );
   const sectionSignatureRef = useRef<Record<string, string>>({});
+
+  const waitForFonts = async (doc: Document) => {
+    const fontFaceSet = (doc as Document & { fonts?: FontFaceSet }).fonts;
+    if (!fontFaceSet?.ready) {
+      return;
+    }
+    await fontFaceSet.ready;
+  };
+
+  const waitForImages = async (root: HTMLElement) => {
+    const images = Array.from(root.querySelectorAll("img"));
+    if (images.length === 0) {
+      return;
+    }
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete && img.naturalWidth > 0) {
+              resolve();
+              return;
+            }
+            const handleLoad = () => {
+              cleanup();
+              resolve();
+            };
+            const handleError = () => {
+              cleanup();
+              resolve();
+            };
+            const cleanup = () => {
+              img.removeEventListener("load", handleLoad);
+              img.removeEventListener("error", handleError);
+            };
+            img.addEventListener("load", handleLoad);
+            img.addEventListener("error", handleError);
+          })
+      )
+    );
+  };
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -56,48 +102,76 @@ export default function PreviewPage() {
         setSelectedSectionId(data.id ?? null);
       }
       if (data?.type === SCREENSHOT_REQUEST) {
-        // html2canvas を動的インポートしてキャプチャ
-        const requestId = (data as { type: string; requestId?: string }).requestId ?? "";
-        import("html2canvas").then(({ default: html2canvas }) => {
-          const target = rootRef.current;
-          if (!target) {
-            window.parent.postMessage(
-              { type: SCREENSHOT_RESULT, requestId, error: "No preview element" },
-              window.location.origin
+        const requestId =
+          (data as { type: string; requestId?: string }).requestId ?? "";
+        const backgroundColor =
+          (data as { backgroundColor?: string }).backgroundColor ?? "#ffffff";
+        const pixelRatio = (data as { pixelRatio?: number }).pixelRatio ?? 2;
+        import("html-to-image")
+          .then(async ({ toPng }) => {
+            const target =
+              document.getElementById("__lp_root__") ?? rootRef.current;
+            if (!target) {
+              window.parent.postMessage(
+                { type: SCREENSHOT_RESULT, requestId, error: "No preview element" },
+                window.location.origin
+              );
+              return;
+            }
+            await waitForFonts(document);
+            await waitForImages(target);
+            const scrollHeight = Math.max(
+              document.body.scrollHeight,
+              document.documentElement.scrollHeight,
+              target.scrollHeight
             );
-            return;
-          }
-          // スクロール全体をキャプチャするためにbodyの高さを使う
-          const scrollHeight = Math.max(
-            document.body.scrollHeight,
-            document.documentElement.scrollHeight,
-            target.scrollHeight
-          );
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          html2canvas(target, {
-            useCORS: true,
-            allowTaint: true,
-            background: "#ffffff",
-            height: scrollHeight,
-            logging: false,
-          } as Record<string, unknown>).then((canvas: HTMLCanvasElement) => {
-            const dataUrl = canvas.toDataURL("image/png");
-            window.parent.postMessage(
-              { type: SCREENSHOT_RESULT, requestId, dataUrl },
-              window.location.origin
+            const scrollWidth = Math.max(
+              document.body.scrollWidth,
+              document.documentElement.scrollWidth,
+              target.scrollWidth
             );
-          }).catch((err) => {
+            const pngPromise = toPng(target, {
+              backgroundColor,
+              pixelRatio,
+              cacheBust: true,
+              width: scrollWidth,
+              height: scrollHeight,
+              imagePlaceholder: TRANSPARENT_PIXEL,
+              filter: (node) => {
+                if (!(node instanceof HTMLElement)) {
+                  return true;
+                }
+                const tag = node.tagName.toLowerCase();
+                return tag !== "video" && tag !== "iframe";
+              },
+            });
+            const timeoutPromise = new Promise<string>((_, reject) => {
+              window.setTimeout(
+                () => reject(new Error("iframe内の画像生成がタイムアウトしました。")),
+                12000
+              );
+            });
+
+            Promise.race([pngPromise, timeoutPromise])
+              .then((dataUrl: string) => {
+                window.parent.postMessage(
+                  { type: SCREENSHOT_RESULT, requestId, dataUrl },
+                  window.location.origin
+                );
+              })
+              .catch((err) => {
+                window.parent.postMessage(
+                  { type: SCREENSHOT_RESULT, requestId, error: String(err) },
+                  window.location.origin
+                );
+              });
+          })
+          .catch((err) => {
             window.parent.postMessage(
               { type: SCREENSHOT_RESULT, requestId, error: String(err) },
               window.location.origin
             );
           });
-        }).catch((err) => {
-          window.parent.postMessage(
-            { type: SCREENSHOT_RESULT, requestId, error: String(err) },
-            window.location.origin
-          );
-        });
       }
     };
 
@@ -169,8 +243,15 @@ export default function PreviewPage() {
       node.dataset.previewHovered = id && id === hoveredSectionId ? "true" : "false";
       node.dataset.previewSelected = id && id === selectedSectionId ? "true" : "false";
       node.dataset.previewFlash = id && flashIds.includes(id) ? "true" : "false";
+      node.dataset.previewPulse = id && pulseIds.includes(id) ? "true" : "false";
     });
-  }, [hoveredSectionId, selectedSectionId, flashIds, project?.sections?.length]);
+  }, [
+    hoveredSectionId,
+    selectedSectionId,
+    flashIds,
+    pulseIds,
+    project?.sections?.length,
+  ]);
 
   useEffect(() => {
     const enabled = Boolean(uiState?.showScrollSnap);
@@ -206,6 +287,16 @@ export default function PreviewPage() {
     if (!nextId) {
       return;
     }
+    if (pulseTimeoutsRef.current[nextId]) {
+      clearTimeout(pulseTimeoutsRef.current[nextId]);
+    }
+    setPulseIds((current) =>
+      current.includes(nextId) ? current : [...current, nextId]
+    );
+    pulseTimeoutsRef.current[nextId] = setTimeout(() => {
+      setPulseIds((current) => current.filter((id) => id !== nextId));
+      delete pulseTimeoutsRef.current[nextId];
+    }, 180);
     setSelectedSectionId(nextId);
     window.parent.postMessage(
       { type: SECTION_SELECT, id: nextId },
@@ -238,6 +329,9 @@ export default function PreviewPage() {
             [data-preview-selected="true"] {
               outline: 2px solid var(--lp-accent, #2563eb);
               background-color: color-mix(in oklab, var(--lp-surface) 80%, transparent);
+            }
+            [data-preview-pulse="true"] {
+              animation: lpPreviewPulse 180ms ease-out;
             }
             [data-preview-flash="true"] {
               animation: lpPreviewFlash 150ms ease-out;
@@ -289,6 +383,16 @@ export default function PreviewPage() {
             @keyframes lpPreviewFlash {
               from { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5); }
               to { box-shadow: 0 0 0 12px rgba(37, 99, 235, 0); }
+            }
+            @keyframes lpPreviewPulse {
+              0% {
+                outline-color: color-mix(in oklab, var(--primary) 60%, transparent);
+                background-color: color-mix(in oklab, var(--primary) 24%, transparent);
+              }
+              100% {
+                outline-color: color-mix(in oklab, var(--primary) 40%, transparent);
+                background-color: var(--primary-soft);
+              }
             }
           `,
         }}

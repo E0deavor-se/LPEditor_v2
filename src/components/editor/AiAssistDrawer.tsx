@@ -5,7 +5,6 @@ import { diffWords, type DiffToken } from "@/src/lib/ai/diff";
 import { validateProposal } from "@/src/lib/ai/guardrails";
 import { getAiProvider } from "@/src/lib/ai/providerFactory";
 import { useEditorStore } from "@/src/store/editorStore";
-import { useThemeStore } from "@/src/store/themeStore";
 
 const PRESET_CHIPS = ["短く", "わかりやすく", "より丁寧に", "訴求力を上げる"];
 
@@ -55,7 +54,6 @@ export default function AiAssistDrawer({
   onApply,
   onClose,
 }: AiAssistDrawerProps) {
-  const surfaceStyle = useThemeStore((state) => state.surfaceStyle);
   const setPreviewBusy = useEditorStore((state) => state.setPreviewBusy);
   const aiDefaultInstruction = useEditorStore(
     (state) => state.aiDefaultInstruction
@@ -67,7 +65,7 @@ export default function AiAssistDrawer({
   const [isLoading, setIsLoading] = useState(false);
   const [showLongLoading, setShowLongLoading] = useState(false);
   const provider = useMemo(() => getAiProvider(), []);
-  const glassClass = surfaceStyle === "glass" ? "backdrop-blur-xl" : "";
+  const glassClass = "backdrop-blur-xl";
 
   useEffect(() => {
     if (open) {

@@ -7,6 +7,7 @@ type AccordionProps = {
   title: string;
   icon?: ReactNode;
   defaultOpen?: boolean;
+  summary?: ReactNode;
   children: ReactNode;
 };
 
@@ -14,26 +15,35 @@ export default function Accordion({
   title,
   icon,
   defaultOpen = false,
+  summary,
   children,
 }: AccordionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)]/60">
+    <div className="lp-inspector-accordion w-full border-b border-[var(--ui-border)]/50">
       <button
         type="button"
-        className="flex h-8 w-full items-center justify-between border-b border-[var(--ui-border)]/60 px-2 text-[11px] font-semibold tracking-wider text-[var(--ui-muted)] transition-colors duration-150 ease-out hover:bg-[var(--surface-2)]"
+        className={
+          "flex h-8 w-full items-center justify-between border-l-2 pl-3 pr-4 text-[11px] font-semibold tracking-wide transition-colors duration-150 ease-out " +
+          (open
+            ? "border-[var(--ui-accent)] text-[var(--ui-text)]"
+            : "border-transparent text-[var(--ui-muted)]")
+        }
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="flex items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
           {icon ? <span className="text-[var(--ui-muted)]">{icon}</span> : null}
-          {title}
+          <span className="truncate">{title}</span>
         </span>
-        <ChevronDown
-          size={14}
-          className={open ? "rotate-180 transition" : "transition"}
-        />
+        <span className="flex items-center gap-2 text-[10px] text-[var(--ui-muted)]">
+          {!open && summary ? <span className="truncate">{summary}</span> : null}
+          <ChevronDown
+            size={14}
+            className={open ? "rotate-180 transition" : "transition"}
+          />
+        </span>
       </button>
       <div
         className={
@@ -42,7 +52,14 @@ export default function Accordion({
         }
       >
         <div className="overflow-hidden">
-          <div className="py-4">{children}</div>
+          <div
+            className={
+              "pb-3 pl-3 pr-4 pt-2.5 space-y-2.5 transition-transform duration-150 ease-out " +
+              (open ? "translate-y-0" : "translate-y-1")
+            }
+          >
+            {children}
+          </div>
         </div>
       </div>
     </div>

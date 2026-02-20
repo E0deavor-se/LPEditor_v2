@@ -218,6 +218,8 @@ const SIMPLE_GUIDE_STEPS = [
 export default function InspectorPanel() {
   const t = useI18n();
   const [activeTab, setActiveTab] = useState<TabKey>("style");
+  const [isContentCardOpen, setIsContentCardOpen] = useState(false);
+  const [isQuickStyleOpen, setIsQuickStyleOpen] = useState(false);
   const [isAnimationsOpen, setIsAnimationsOpen] = useState(false);
   const [isStoreDesignOpen, setIsStoreDesignOpen] = useState(false);
   const [isSimpleGuideOpen, setIsSimpleGuideOpen] = useState(true);
@@ -259,8 +261,6 @@ export default function InspectorPanel() {
     updateTitleItemMarks,
     updateTextLineAnimation,
     addImageToItem,
-    removeImageFromItem,
-    updateImageInItem,
     setImageItemLayout,
     updateImageAnimation,
     updateButtonItem,
@@ -316,8 +316,6 @@ export default function InspectorPanel() {
       updateTitleItemMarks: state.updateTitleItemMarks,
       updateTextLineAnimation: state.updateTextLineAnimation,
       addImageToItem: state.addImageToItem,
-      removeImageFromItem: state.removeImageFromItem,
-      updateImageInItem: state.updateImageInItem,
       setImageItemLayout: state.setImageItemLayout,
       updateImageAnimation: state.updateImageAnimation,
       updateButtonItem: state.updateButtonItem,
@@ -391,7 +389,6 @@ export default function InspectorPanel() {
   const isRankingTable = sectionType === "rankingTable";
   const isPaymentHistoryGuide = sectionType === "paymentHistoryGuide";
   const isTabbedNotes = sectionType === "tabbedNotes";
-  const isImageOnly = sectionType === "imageOnly";
   const isStoreCsvSection =
     isTargetStores || isExcludedStoresList || isExcludedBrandsList;
   const isItemlessSection =
@@ -441,6 +438,14 @@ export default function InspectorPanel() {
       setActiveTab("content");
     }
   }, [activeTab, isPageSelection, isSimpleMode]);
+
+  useEffect(() => {
+    if (!isSimpleMode) {
+      return;
+    }
+    setIsContentCardOpen(true);
+    setIsQuickStyleOpen(true);
+  }, [isSimpleMode]);
 
   useEffect(() => {
     if (selected.kind === "page") {
@@ -501,7 +506,6 @@ export default function InspectorPanel() {
   const paymentGuideImageInputRef = useRef<HTMLInputElement | null>(null);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const imageImportInputRef = useRef<HTMLInputElement | null>(null);
-  const imageOnlyInputRef = useRef<HTMLInputElement | null>(null);
   const footerAssetInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
@@ -1387,9 +1391,6 @@ export default function InspectorPanel() {
   const isLockedDisplay = isLocked && !isTargetStores;
   const bodyClass = isSection && isLockedDisplay ? "pointer-events-none opacity-60" : "";
   const isContentReady = selected.kind === "section" && selectedSection;
-  const showFooterApplyToAll =
-    activeTab === "style" && selected.kind === "section" && Boolean(selectedSection);
-  const targetName = breadcrumb[breadcrumb.length - 1] ?? t.inspector.breadcrumb.page;
   const escapeSelector = (value: string) => {
     const cssApi =
       typeof globalThis !== "undefined"
@@ -1403,11 +1404,10 @@ export default function InspectorPanel() {
     return value.replace(/["\\]/g, "\\$&");
   };
   const cardClass =
-    "group w-full border-b border-[var(--ui-border)]/50 py-3";
+    "min-w-0 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/70 backdrop-blur";
   const cardHeaderClass =
-    "flex h-8 items-center justify-between border-l-2 border-transparent pl-3 pr-4 text-[11px] font-semibold tracking-wide text-[var(--ui-text)] mb-2.5 group-data-[active=true]:border-[var(--ui-accent)]";
-  const cardBodyClass = "min-w-0 pl-3 pr-4";
-  const cardBodyInnerClass = "min-w-0";
+    "flex h-8 items-center justify-between border-b border-[var(--ui-border)]/50 px-3 text-[11px] font-semibold tracking-wider lowercase text-[var(--ui-muted)]";
+  const cardBodyClass = "min-w-0 px-3 py-2";
   const isLineScopeEnabled = Boolean(selectedLineId);
   const isItemScopeEnabled = Boolean(selectedItemId);
   const calloutScope = calloutScopeChoice;
@@ -1450,6 +1450,8 @@ export default function InspectorPanel() {
   const sensors = useSensors(useSensor(PointerSensor));
   const selectedSectionId = selectedSection?.id;
   useEffect(() => {
+    setIsContentCardOpen(false);
+    setIsQuickStyleOpen(false);
     setIsAnimationsOpen(false);
     setIsStoreDesignOpen(false);
   }, [selectedSectionId]);
@@ -1475,15 +1477,14 @@ export default function InspectorPanel() {
     selectedSection,
     updateSectionData,
   ]);
-  const quickRowClass =
-    "grid min-h-8 grid-cols-[96px_minmax(0,1fr)] items-center gap-x-3";
-  const quickLabelClass = "text-[11px] text-[var(--ui-muted)]";
+  const quickRowClass = "grid grid-cols-[96px_1fr] items-center gap-x-3";
+  const quickLabelClass = "text-[12px] text-[var(--ui-muted)]";
   const quickControlClass = "min-w-0 flex items-center gap-2 justify-end";
   const quickSegmentWrapClass =
-    "inline-flex rounded-md border border-[var(--ui-border)]/50 bg-transparent p-1";
-  const quickSegmentButtonClass = "h-6 px-2 text-[11px] rounded-sm";
+    "inline-flex rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 p-1";
+  const quickSegmentButtonClass = "h-7 px-3 text-[12px] rounded-sm";
   const quickSegmentActiveClass =
-    "bg-[var(--ui-panel)]/60 border border-[var(--ui-border)]/60 text-[var(--ui-text)]";
+    "bg-[var(--ui-panel)] border border-[var(--ui-border)]/70 shadow-sm text-[var(--ui-text)]";
   const quickSegmentInactiveClass = "text-[var(--ui-muted)]";
   const toSafeHexColor = (value: string) =>
     value && value.startsWith("#") ? value : "#000000";
@@ -1524,18 +1525,6 @@ export default function InspectorPanel() {
     `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const createTabItemId = () =>
     `tab_item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  const ensureTextItemLineIds = (itemId: string, nextLines: PrimaryLine[]) => {
-    if (!selectedSection) {
-      return;
-    }
-    const nextItems = contentItems.map((item) => {
-      if (item.id !== itemId || item.type !== "text") {
-        return item;
-      }
-      return { ...item, lines: nextLines };
-    });
-    updateSectionContent(selectedSection.id, { items: nextItems });
-  };
   const createRankingRowId = () =>
     `rank_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const createImageIdLocal = () =>
@@ -2385,67 +2374,66 @@ export default function InspectorPanel() {
   return (
     <>
       <aside className="ui-panel lp-inspector flex h-full min-h-0 flex-col rounded-none border-y-0 border-r-0">
-        <div className="shrink-0 border-b border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/95 backdrop-blur">
-          <InspectorHeader
-            targetName={targetName}
-            breadcrumb={breadcrumb}
-            scope={inspectorScope}
-            canSelectSection={canSelectSection}
-            canSelectElement={canSelectElement}
-            targetLabel="編集対象"
-            targetOptions={headerTargetOptions}
-            targetValue={headerTargetValue}
-            targetDisabled={isHeaderTargetDisabled}
-            onScopeChange={handleScopeChange}
-            onTargetChange={(value) => {
-              if (inspectorScope === "section") {
-                setSelectedSection(value || undefined);
-                setSelectedItemId(undefined);
-                setSelectedLineId(undefined);
-                setSelectedImageIds([]);
-                setInspectorScope("section");
-                return;
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="sticky top-0 z-30 bg-[var(--ui-panel)]/95 backdrop-blur">
+            <InspectorHeader
+              breadcrumb={breadcrumb}
+              scope={inspectorScope}
+              canSelectSection={canSelectSection}
+              canSelectElement={canSelectElement}
+              targetLabel="編集対象"
+              targetOptions={headerTargetOptions}
+              targetValue={headerTargetValue}
+              targetDisabled={isHeaderTargetDisabled}
+              onScopeChange={handleScopeChange}
+              onTargetChange={(value) => {
+                if (inspectorScope === "section") {
+                  setSelectedSection(value || undefined);
+                  setSelectedItemId(undefined);
+                  setSelectedLineId(undefined);
+                  setSelectedImageIds([]);
+                  setInspectorScope("section");
+                  return;
+                }
+                if (inspectorScope === "element") {
+                  selectItemById(value);
+                  setInspectorScope("element");
+                }
+              }}
+              isSection={Boolean(isSection)}
+              isLocked={isLockedDisplay}
+              isVisible={isVisible}
+              disableLock={false}
+              onToggleLock={() =>
+                selectedSection && toggleSectionLocked(selectedSection.id)
               }
-              if (inspectorScope === "element") {
-                selectItemById(value);
-                setInspectorScope("element");
+              onToggleVisible={() =>
+                selectedSection && toggleSectionVisible(selectedSection.id)
               }
-            }}
-            isSection={Boolean(isSection)}
-            isLocked={isLockedDisplay}
-            isVisible={isVisible}
-            disableLock={false}
-            onToggleLock={() =>
-              selectedSection && toggleSectionLocked(selectedSection.id)
-            }
-            onToggleVisible={() =>
-              selectedSection && toggleSectionVisible(selectedSection.id)
-            }
-            onDuplicateSection={() =>
-              selectedSection && duplicateSection(selectedSection.id)
-            }
-            onDeleteSection={() =>
-              selectedSection && deleteSection(selectedSection.id)
-            }
-            onResetPage={() => {
-              setPageTypography(DEFAULT_PAGE_STYLE.typography);
-              setPageColors(DEFAULT_PAGE_STYLE.colors);
-              setPageSpacing(DEFAULT_PAGE_STYLE.spacing);
-              setPageLayout(DEFAULT_PAGE_STYLE.layout);
-            }}
-          />
-          <div className="px-4 py-2">
-            <InspectorTabs
-              value={activeTab}
-              onChange={setActiveTab}
-              hideStyle={hideStyleTab}
-              hideAdvanced={isPageSelection || isSimpleMode}
+              onDuplicateSection={() =>
+                selectedSection && duplicateSection(selectedSection.id)
+              }
+              onDeleteSection={() =>
+                selectedSection && deleteSection(selectedSection.id)
+              }
+              onResetPage={() => {
+                setPageTypography(DEFAULT_PAGE_STYLE.typography);
+                setPageColors(DEFAULT_PAGE_STYLE.colors);
+                setPageSpacing(DEFAULT_PAGE_STYLE.spacing);
+                setPageLayout(DEFAULT_PAGE_STYLE.layout);
+              }}
             />
+            <div className="border-b border-[var(--ui-border)]/60 px-3 py-2">
+              <InspectorTabs
+                value={activeTab}
+                onChange={setActiveTab}
+                hideStyle={hideStyleTab}
+                hideAdvanced={isPageSelection || isSimpleMode}
+              />
+            </div>
           </div>
-        </div>
-        <div className="lp-inspector-scroll flex-1 min-h-0 overflow-y-auto">
-          <div className="px-4 py-4">
-            <div className="flex flex-col gap-2">
+          <div className="px-3 py-3">
+            <div className="flex flex-col gap-3">
               {isSimpleMode ? (
                 <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)]/70 p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -2501,55 +2489,51 @@ export default function InspectorPanel() {
               ) : null}
               <div className={bodyClass}>
                 {activeTab === "style" ? (
-                  <div className="flex flex-col gap-3">
-                    <div className={cardClass} data-active={isElementScope}>
-                      <div className={cardHeaderClass}>クイックスタイル</div>
-                      <div className={cardBodyClass}>
-                        <div className="flex flex-col gap-4">
-                          {isElementScope && selectedSection ? (
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between text-[12px] font-semibold text-[var(--ui-text)]">
-                                <span>クイック装飾</span>
-                                {selectedTextItem && selectedLine && !isLegalNotes ? (
-                                  <button
-                                    type="button"
-                                    className="ui-button h-7 px-2 text-[11px]"
-                                    onClick={() => {
-                                      const nextItems = contentItems.map((item) => {
-                                        if (
-                                          item.id !== selectedTextItem.id ||
-                                          item.type !== "text"
-                                        ) {
-                                          return item;
-                                        }
-                                        return {
-                                          ...item,
-                                          lines: item.lines.map((line) =>
-                                            line.id === selectedLine.id
-                                              ? { ...line, marks: undefined }
-                                              : line
-                                          ),
-                                        };
-                                      });
-                                      updateSectionContent(selectedSection.id, {
-                                        items: nextItems,
-                                      });
-                                    }}
-                                    aria-label={t.inspector.header.reset}
-                                    title={t.inspector.header.reset}
-                                  >
-                                    <RotateCcw size={14} />
-                                  </button>
-                                ) : null}
-                              </div>
-                              <div
-                                className={
-                                  cardBodyInnerClass +
-                                  (isContentReady
-                                    ? ""
-                                    : " pointer-events-none opacity-60")
-                                }
-                              >
+              <div className="flex flex-col gap-3">
+                    <Accordion title="基本" defaultOpen>
+                      <div className="flex flex-col gap-3">
+                    {isElementScope && selectedSection ? (
+                      <div className={cardClass}>
+                        <div className={cardHeaderClass}>
+                          <span>クイック装飾</span>
+                          {selectedTextItem && selectedLine && !isLegalNotes ? (
+                            <button
+                              type="button"
+                              className="ui-button h-7 px-2 text-[11px]"
+                              onClick={() => {
+                                const nextItems = contentItems.map((item) => {
+                                  if (
+                                    item.id !== selectedTextItem.id ||
+                                    item.type !== "text"
+                                  ) {
+                                    return item;
+                                  }
+                                  return {
+                                    ...item,
+                                    lines: item.lines.map((line) =>
+                                      line.id === selectedLine.id
+                                        ? { ...line, marks: undefined }
+                                        : line
+                                    ),
+                                  };
+                                });
+                                updateSectionContent(selectedSection.id, {
+                                  items: nextItems,
+                                });
+                              }}
+                              aria-label={t.inspector.header.reset}
+                              title={t.inspector.header.reset}
+                            >
+                              <RotateCcw size={14} />
+                            </button>
+                          ) : null}
+                        </div>
+                        <div
+                          className={
+                            cardBodyClass +
+                            (isContentReady ? "" : " pointer-events-none opacity-60")
+                          }
+                        >
                           {!isContentReady ? (
                             <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.placeholders.selectContent}
@@ -2769,18 +2753,32 @@ export default function InspectorPanel() {
                     !isHeroImage &&
                     !isImageOnly &&
                     !isInquiry ? (
-                      <div className="space-y-3">
-                        <div className="text-[12px] font-semibold text-[var(--ui-text)]">
-                          {t.inspector.section.cards.quickStyle}
-                        </div>
-                        <div
-                          className={
-                            cardBodyInnerClass +
-                            (isContentReady
-                              ? ""
-                              : " pointer-events-none opacity-60")
-                          }
+                      <div className={cardClass}>
+                        <button
+                          type="button"
+                          className={cardHeaderClass + " w-full"}
+                          aria-expanded={isQuickStyleOpen}
+                          onClick={() => setIsQuickStyleOpen((current) => !current)}
                         >
+                          <span>{t.inspector.section.cards.quickStyle}</span>
+                          <ChevronDown
+                            size={14}
+                            className={
+                              isQuickStyleOpen
+                                ? "rotate-180 transition"
+                                : "transition"
+                            }
+                          />
+                        </button>
+                        {isQuickStyleOpen ? (
+                          <div
+                            className={
+                              cardBodyClass +
+                              (isContentReady
+                                ? ""
+                                : " pointer-events-none opacity-60")
+                            }
+                          >
                             {!isContentReady ? (
                               <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 {t.inspector.section.placeholders.selectContent}
@@ -3163,14 +3161,9 @@ export default function InspectorPanel() {
                               </>
                             )}
                           </div>
-                        </div>
                         ) : null}
                       </div>
-                    </div>
-                    </div>
-                    <div className={cardClass} data-active={!isElementScope}>
-                      <div className={cardHeaderClass}>スタイル設定</div>
-                      <div className={cardBodyClass}>
+                    ) : null}
                 {selected.kind === "page" ? (
                   <>
                     {!isSimpleMode ? (
@@ -3443,6 +3436,7 @@ export default function InspectorPanel() {
                       onCardStyleChange={(patch) =>
                         updateSectionCardStyle(selectedSection.id, patch)
                       }
+                      onApplyStyleToAll={applyStyleToAllSections}
                       onApplySectionDesignPreset={(presetId) =>
                         applySectionDesignPreset(presetId)
                       }
@@ -3457,27 +3451,414 @@ export default function InspectorPanel() {
                   </div>
                 )}
                       </div>
-                    </div>
-                  </div>
+                    </Accordion>
+                    <Accordion title="詳細" defaultOpen={false}>
+                      {selected.kind === "page" ? (
+                        <>
+                          <PageStyleTypography
+                            value={pageStyle.typography}
+                            onChange={setPageTypography}
+                            defaultOpen
+                          />
+                          {!isSimpleMode && designTargetSection ? (
+                            <Accordion title="サーフェス" icon={<LayoutGrid size={14} />}>
+                              <FieldRow label={t.inspector.section.fields.gradient}>
+                                <ToggleField
+                                  value={
+                                    designTargetSection.style.background.type ===
+                                    "gradient"
+                                  }
+                                  ariaLabel={t.inspector.section.fields.gradient}
+                                  onChange={(next) =>
+                                    applySectionAppearanceToAll(
+                                      mergeSectionStyle(designTargetSection.style, {
+                                        background: {
+                                          type: next ? "gradient" : "solid",
+                                        },
+                                      }),
+                                      designTargetCardStyle,
+                                      {
+                                        excludeTypes: [
+                                          "brandBar",
+                                          "heroImage",
+                                          "imageOnly",
+                                          "footerHtml",
+                                        ],
+                                      }
+                                    )
+                                  }
+                                />
+                              </FieldRow>
+                              {designTargetSection.style.background.type ===
+                              "gradient" ? (
+                                <>
+                                  <FieldRow label={t.inspector.section.fields.color1}>
+                                    <ColorField
+                                      value={designTargetSection.style.background.color1}
+                                      ariaLabel={t.inspector.section.fields.color1}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            background: { color1: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "imageOnly",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                  <FieldRow label={t.inspector.section.fields.color2}>
+                                    <ColorField
+                                      value={designTargetSection.style.background.color2}
+                                      ariaLabel={t.inspector.section.fields.color2}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            background: { color2: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "imageOnly",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : (
+                                <FieldRow label={t.inspector.section.fields.background}>
+                                  <ColorField
+                                    value={designTargetSection.style.background.color1}
+                                    ariaLabel={t.inspector.section.fields.background}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        mergeSectionStyle(designTargetSection.style, {
+                                          background: { color1: next },
+                                        }),
+                                        designTargetCardStyle,
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "imageOnly",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                              )}
+                              <FieldRow label={t.inspector.section.fields.border}>
+                                <ToggleField
+                                  value={designTargetSection.style.border.enabled}
+                                  ariaLabel={t.inspector.section.fields.border}
+                                  onChange={(next) =>
+                                    applySectionAppearanceToAll(
+                                      mergeSectionStyle(designTargetSection.style, {
+                                        border: { enabled: next },
+                                      }),
+                                      designTargetCardStyle,
+                                      {
+                                        excludeTypes: [
+                                          "brandBar",
+                                          "heroImage",
+                                          "imageOnly",
+                                          "footerHtml",
+                                        ],
+                                      }
+                                    )
+                                  }
+                                />
+                              </FieldRow>
+                              {designTargetSection.style.border.enabled ? (
+                                <>
+                                  <FieldRow
+                                    label={t.inspector.section.fields.borderWidth}
+                                  >
+                                    <NumberField
+                                      value={designTargetSection.style.border.width}
+                                      min={0}
+                                      max={12}
+                                      step={1}
+                                      ariaLabel={t.inspector.section.fields.borderWidth}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            border: { width: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "imageOnly",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                  <FieldRow
+                                    label={t.inspector.section.fields.borderColor}
+                                  >
+                                    <ColorField
+                                      value={designTargetSection.style.border.color}
+                                      ariaLabel={t.inspector.section.fields.borderColor}
+                                      onChange={(next) =>
+                                        applySectionAppearanceToAll(
+                                          mergeSectionStyle(designTargetSection.style, {
+                                            border: { color: next },
+                                          }),
+                                          designTargetCardStyle,
+                                          {
+                                            excludeTypes: [
+                                              "brandBar",
+                                              "heroImage",
+                                              "imageOnly",
+                                              "footerHtml",
+                                            ],
+                                          }
+                                        )
+                                      }
+                                    />
+                                  </FieldRow>
+                                </>
+                              ) : null}
+                              <FieldRow label={t.inspector.section.fields.shadow}>
+                                <SelectField
+                                  value={designTargetSection.style.shadow}
+                                  ariaLabel={t.inspector.section.fields.shadow}
+                                  onChange={(next) =>
+                                    applySectionAppearanceToAll(
+                                      mergeSectionStyle(designTargetSection.style, {
+                                        shadow: next as SectionBase["style"]["shadow"],
+                                      }),
+                                      designTargetCardStyle,
+                                      {
+                                        excludeTypes: [
+                                          "brandBar",
+                                          "heroImage",
+                                          "imageOnly",
+                                          "footerHtml",
+                                        ],
+                                      }
+                                    )
+                                  }
+                                >
+                                  <option value="none">
+                                    {t.inspector.section.shadowOptions.none}
+                                  </option>
+                                  <option value="sm">
+                                    {t.inspector.section.shadowOptions.sm}
+                                  </option>
+                                  <option value="md">
+                                    {t.inspector.section.shadowOptions.md}
+                                  </option>
+                                </SelectField>
+                              </FieldRow>
+                              <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
+                                <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
+                                  タイトル帯
+                                </div>
+                                <FieldRow label="帯背景色">
+                                  <ColorField
+                                    value={designTargetCardStyle.headerBgColor || "#5fc2f5"}
+                                    ariaLabel="帯背景色"
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          headerBgColor: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "imageOnly",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="帯文字色">
+                                  <ColorField
+                                    value={designTargetCardStyle.headerTextColor || "#ffffff"}
+                                    ariaLabel="帯文字色"
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          headerTextColor: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "imageOnly",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="帯高さ">
+                                  <SegmentedField
+                                    value={designTargetBandSize}
+                                    ariaLabel="帯高さ"
+                                    options={[
+                                      { value: "sm", label: "S" },
+                                      { value: "md", label: "M" },
+                                      { value: "lg", label: "L" },
+                                    ]}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          labelChipBg: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "imageOnly",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="帯位置">
+                                  <SegmentedField
+                                    value={
+                                      designTargetCardStyle.labelChipEnabled
+                                        ? "inset"
+                                        : "top"
+                                    }
+                                    ariaLabel="帯位置"
+                                    options={[
+                                      { value: "top", label: "上" },
+                                      { value: "inset", label: "内側" },
+                                    ]}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          labelChipEnabled: next === "inset",
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "imageOnly",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                                <FieldRow label="テキスト位置">
+                                  <SegmentedField
+                                    value={designTargetBandAlign}
+                                    ariaLabel="テキスト位置"
+                                    options={[
+                                      { value: "left", label: "左" },
+                                      { value: "center", label: "中央" },
+                                      { value: "right", label: "右" },
+                                    ]}
+                                    onChange={(next) =>
+                                      applySectionAppearanceToAll(
+                                        designTargetSection.style,
+                                        mergeCardStyle(designTargetSection.sectionCardStyle, {
+                                          labelChipTextColor: next,
+                                        }),
+                                        {
+                                          excludeTypes: [
+                                            "brandBar",
+                                            "heroImage",
+                                            "footerHtml",
+                                          ],
+                                        }
+                                      )
+                                    }
+                                  />
+                                </FieldRow>
+                              </div>
+                            </Accordion>
+                          ) : null}
+                          <PageStyleSpacing
+                            value={pageStyle.spacing}
+                            onChange={setPageSpacing}
+                          />
+                          {!isSimpleMode ? (
+                            <>
+                              <PageStyleLayout
+                                value={pageStyle.layout}
+                                onChange={setPageLayout}
+                              />
+                              <PageStyleSectionAnimation
+                                value={pageStyle.sectionAnimation}
+                                onChange={setPageSectionAnimation}
+                              />
+                            </>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="px-1 py-2 text-xs text-[var(--ui-muted)]">
+                          {t.inspector.placeholders.advancedComingSoon}
+                        </div>
+                      )}
+                    </Accordion>
+              </div>
             ) : activeTab === "content" ? (
               <div className="flex flex-col gap-3">
+                <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                  基本
+                </div>
                 {selected.kind === "page" ? (
-                  <div className={cardClass} data-active={true}>
-                    <div className={cardHeaderClass}>コンテンツ</div>
-                    <div className={cardBodyClass}>
-                      <PageMetaPanel
-                        value={pageMeta}
-                        onChange={setPageMeta}
-                        assets={assets}
-                        onAddAsset={addAsset}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className={cardClass} data-active={true}>
-                    <div className={cardHeaderClass}>
-                      {t.inspector.section.cards.content}
-                    </div>
+                  <PageMetaPanel
+                    value={pageMeta}
+                    onChange={setPageMeta}
+                    assets={assets}
+                    onAddAsset={addAsset}
+                  />
+                ) : null}
+                {selected.kind !== "page" ? (
+                  <>
+                <div className={cardClass}>
+                  <button
+                    type="button"
+                    className={cardHeaderClass + " w-full"}
+                    aria-expanded={isContentCardOpen}
+                    onClick={() => setIsContentCardOpen((current) => !current)}
+                  >
+                    <span>{t.inspector.section.cards.content}</span>
+                    <ChevronDown
+                      size={14}
+                      className={
+                        isContentCardOpen ? "rotate-180 transition" : "transition"
+                      }
+                    />
+                  </button>
+                  {isContentCardOpen ? (
                     <div
                       className={
                         cardBodyClass +
@@ -4180,12 +4561,6 @@ export default function InspectorPanel() {
                               <TextLineList
                                 lines={targetStoresNoticeItem.lines}
                                 selectedLineId={selectedLine?.id}
-                                onEnsureLineIds={(nextLines) =>
-                                  ensureTextItemLineIds(
-                                    targetStoresNoticeItem.id,
-                                    nextLines
-                                  )
-                                }
                                 onSelect={(lineId) => {
                                   if (selectedItemId !== targetStoresNoticeItem.id) {
                                     setSelectedItemId(targetStoresNoticeItem.id);
@@ -4344,161 +4719,6 @@ export default function InspectorPanel() {
                             )}
                           </div>
                         ) : null}
-                        {isImageOnly ? (
-                          <div className="flex flex-col gap-3">
-                            <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
-                              画像セクション
-                            </div>
-                            <FieldRow label="レイアウト">
-                              <SegmentedField
-                                value={String(selectedSection.data.layout ?? "single")}
-                                ariaLabel="レイアウト"
-                                options={[
-                                  { value: "single", label: "1枚" },
-                                  { value: "columns2", label: "2列" },
-                                  { value: "columns3", label: "3列" },
-                                  { value: "grid", label: "グリッド" },
-                                ]}
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    layout: next,
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            {(() => {
-                              // 全 image アイテムから { parentItemId, img } を集約
-                              const imageItems = (selectedSection.content?.items ?? []).filter(
-                                (item) => item.type === "image"
-                              ) as ImageContentItem[];
-                              const flatImages: { parentItemId: string; img: ImageItem; idx: number }[] = [];
-                              let globalIdx = 0;
-                              imageItems.forEach((imgItem) => {
-                                (imgItem.images ?? []).forEach((img) => {
-                                  flatImages.push({ parentItemId: imgItem.id, img, idx: globalIdx });
-                                  globalIdx++;
-                                });
-                              });
-                              return (
-                                <div className="flex flex-col gap-2">
-                                  {flatImages.map(({ parentItemId, img, idx }) => {
-                                    const assetUrl = img.assetId
-                                      ? assets[img.assetId]?.data
-                                      : undefined;
-                                    const src = assetUrl || img.src || "";
-                                    return (
-                                      <div
-                                        key={img.id}
-                                        className="flex items-center gap-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-1.5"
-                                      >
-                                        {src ? (
-                                          <img
-                                            src={src}
-                                            alt={img.alt ?? ""}
-                                            className="h-10 w-14 flex-shrink-0 rounded object-cover"
-                                          />
-                                        ) : (
-                                          <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded bg-[var(--ui-border)]/30 text-[10px] text-[var(--ui-muted)]">
-                                            なし
-                                          </div>
-                                        )}
-                                        <div className="min-w-0 flex-1">
-                                          <div className="truncate text-[11px] text-[var(--ui-text)]">
-                                            {img.alt || `画像 ${idx + 1}`}
-                                          </div>
-                                          <input
-                                            type="text"
-                                            className="ui-input mt-0.5 h-6 w-full text-[10px]"
-                                            placeholder="alt テキスト"
-                                            value={img.alt ?? ""}
-                                            onChange={(e) => {
-                                              updateImageInItem(
-                                                selectedSection.id,
-                                                parentItemId,
-                                                img.id,
-                                                { alt: e.target.value }
-                                              );
-                                            }}
-                                          />
-                                        </div>
-                                        <button
-                                          type="button"
-                                          className="flex-shrink-0 rounded p-1 text-[var(--ui-muted)] hover:bg-red-100 hover:text-red-500"
-                                          aria-label="削除"
-                                          onClick={() => {
-                                            removeImageFromItem(
-                                              selectedSection.id,
-                                              parentItemId,
-                                              img.id
-                                            );
-                                          }}
-                                        >
-                                          ✕
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                  <label
-                                    className="ui-button flex h-8 w-full cursor-pointer items-center justify-center text-[11px]"
-                                  >
-                                    + 画像を追加
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      multiple
-                                      className="hidden"
-                                      onChange={(event) => {
-                                        const files = Array.from(event.target.files ?? []);
-                                        event.target.value = "";
-                                        if (files.length === 0) return;
-                                        // セクションIDを先にキャプチャしておく
-                                        const sectionId = selectedSection.id;
-                                        handleImagesImportWithMeta(
-                                          files,
-                                          (entries) => {
-                                            // 非同期完了後は最新のstoreから取得する
-                                            let latestSection = useEditorStore
-                                              .getState()
-                                              .project.sections.find(
-                                                (s) => s.id === sectionId
-                                              );
-                                            let imageItem2 = latestSection?.content?.items?.find(
-                                              (item) => item.type === "image"
-                                            ) as ImageContentItem | undefined;
-                                            // image アイテムが存在しない場合は自動作成してから再取得
-                                            if (!imageItem2) {
-                                              addContentItem(sectionId, "image");
-                                              latestSection = useEditorStore
-                                                .getState()
-                                                .project.sections.find(
-                                                  (s) => s.id === sectionId
-                                                );
-                                              imageItem2 = latestSection?.content?.items?.find(
-                                                (item) => item.type === "image"
-                                              ) as ImageContentItem | undefined;
-                                            }
-                                            if (!imageItem2) return;
-                                            entries.forEach((entry) => {
-                                              addImageToItem(
-                                                sectionId,
-                                                imageItem2!.id,
-                                                {
-                                                  src: entry.dataUrl,
-                                                  assetId: entry.assetId,
-                                                  alt: entry.file.name.replace(/\.[^.]+$/, ""),
-                                                }
-                                              );
-                                            });
-                                          }
-                                        );
-                                      }}
-                                    />
-                                  </label>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        ) : null}
                         {isLegalNotes ? (
                           <div className="flex flex-col gap-2">
                             <FieldRow label="タイトル">
@@ -4555,12 +4775,6 @@ export default function InspectorPanel() {
                                 selectedLineId={selectedLine?.id}
                                 showBulletToggle={true}
                                 defaultBullet={legalNotesBullet}
-                                onEnsureLineIds={(nextLines) =>
-                                  ensureTextItemLineIds(
-                                    legalNotesTextItem.id,
-                                    nextLines
-                                  )
-                                }
                                 onSelect={(lineId) => {
                                   setSelectedItemId(legalNotesTextItem.id);
                                   setSelectedLineId(lineId);
@@ -4589,14 +4803,6 @@ export default function InspectorPanel() {
                                     selectedSection.id,
                                     legalNotesTextItem.id,
                                     lineId
-                                  )
-                                }
-                                onReorderLine={(fromIndex, toIndex) =>
-                                  reorderTextLines(
-                                    selectedSection.id,
-                                    legalNotesTextItem.id,
-                                    fromIndex,
-                                    toIndex
                                   )
                                 }
                                 onRemoveLast={() => {
@@ -6179,8 +6385,7 @@ export default function InspectorPanel() {
                         !isCouponFlow &&
                         !isRankingTable &&
                         !isPaymentHistoryGuide &&
-                        !isTabbedNotes &&
-                        !isImageOnly ? (
+                        !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
                             <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.itemList}
@@ -6782,11 +6987,11 @@ export default function InspectorPanel() {
                             )}
                           </div>
                         ) : null}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
-                )}
                 {!isSimpleMode ? (
                   <>
                     {!isBrandBar && !isInquiry ? (
@@ -7161,8 +7366,8 @@ export default function InspectorPanel() {
                                 </>
                               ) : null}
                             </div>
-                          )}
-                        </div>
+                            )}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
@@ -7291,6 +7496,8 @@ export default function InspectorPanel() {
                     ) : null}
                   </>
                 ) : null}
+                </>
+                ) : null}
               </div>
             ) : selected.kind === "page" ? (
               <div className="flex flex-col gap-3">
@@ -7359,29 +7566,9 @@ export default function InspectorPanel() {
               </div>
             )}
           </div>
-            </div>
-          </div>
         </div>
-        <div className="shrink-0 border-t border-[var(--ui-border)]/60 bg-[var(--surface)]/90">
-          {showFooterApplyToAll ? (
-            <div className="flex items-center justify-between gap-3 px-4 py-2">
-              <div className="text-[11px] text-[var(--ui-muted)]">
-                このスタイルを全セクションに適用
-              </div>
-              <button
-                type="button"
-                className="ui-button h-8 px-3 text-[11px]"
-                onClick={applyStyleToAllSections}
-              >
-                全セクションに一括適用
-              </button>
-            </div>
-          ) : (
-            <div className="px-4 py-2 text-[11px] text-[var(--ui-muted)]">
-              セクションを選択すると全体操作が表示されます。
-            </div>
-          )}
-        </div>
+      </div>
+      </div>
       </aside>
       {isCsvImportModalOpen && csvImportDraft ? (
         <CsvImportPreviewModal

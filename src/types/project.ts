@@ -499,8 +499,7 @@ export type StoreListSpec = {
 
 export type ThemeSpec = {
   mode: "light" | "dark" | "system";
-  surfaceStyle: "flat" | "glass";
-  presetId: "classic" | "premium" | "midnight" | "ivory" | "mint";
+  accent: "aupay-orange" | "kddi-blue";
 };
 
 export type GlobalSettings = {

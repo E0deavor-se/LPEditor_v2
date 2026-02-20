@@ -240,7 +240,7 @@ export default function EditorLayout() {
 				) : null}
 				<PreviewPane iframeRef={previewIframeRef} />
 				<aside
-					className="ui-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] xl:flex"
+					className="ui-panel lp-right-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] xl:flex"
 					style={{ width: RIGHT_PANEL_WIDTH }}
 				>
 					<InspectorPanel />

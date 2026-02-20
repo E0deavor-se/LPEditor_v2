@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   THEME_STORAGE_KEY,
-  type EditorSurfaceStyle,
+  type ThemeAccent,
   type ThemeMode,
-  type ThemePresetId,
   useThemeStore,
 } from "@/src/store/themeStore";
 
@@ -24,11 +23,9 @@ export default function ThemeProvider({
   children: ReactNode;
 }) {
   const mode = useThemeStore((state) => state.mode);
-  const surfaceStyle = useThemeStore((state) => state.surfaceStyle);
-  const presetId = useThemeStore((state) => state.presetId);
+  const accent = useThemeStore((state) => state.accent);
   const setMode = useThemeStore((state) => state.setMode);
-  const setSurfaceStyle = useThemeStore((state) => state.setSurfaceStyle);
-  const setPresetId = useThemeStore((state) => state.setPresetId);
+  const setAccent = useThemeStore((state) => state.setAccent);
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(
     resolveSystemTheme()
   );
@@ -43,24 +40,20 @@ export default function ThemeProvider({
       try {
         const parsed = JSON.parse(saved) as {
           mode?: ThemeMode;
-          surfaceStyle?: EditorSurfaceStyle;
-          presetId?: ThemePresetId;
+          accent?: ThemeAccent;
         };
         if (parsed.mode) {
           setMode(parsed.mode);
         }
-        if (parsed.surfaceStyle) {
-          setSurfaceStyle(parsed.surfaceStyle);
-        }
-        if (parsed.presetId) {
-          setPresetId(parsed.presetId);
+        if (parsed.accent) {
+          setAccent(parsed.accent);
         }
       } catch {
         // Ignore invalid storage payload.
       }
     }
     hydratedRef.current = true;
-  }, [setMode, setPresetId, setSurfaceStyle]);
+  }, [setAccent, setMode]);
 
   useEffect(() => {
     if (!hydratedRef.current) {
@@ -69,9 +62,9 @@ export default function ThemeProvider({
     if (typeof window === "undefined") {
       return;
     }
-    const payload = JSON.stringify({ mode, surfaceStyle, presetId });
+    const payload = JSON.stringify({ mode, accent });
     window.localStorage.setItem(THEME_STORAGE_KEY, payload);
-  }, [mode, presetId, surfaceStyle]);
+  }, [accent, mode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -97,9 +90,9 @@ export default function ThemeProvider({
     }
     const root = document.documentElement;
     root.dataset.theme = resolvedTheme;
-    root.dataset.surface = surfaceStyle;
-    root.dataset.preset = presetId;
-  }, [resolvedTheme, surfaceStyle, presetId]);
+    root.dataset.accent = accent;
+    root.dataset.surface = "glass";
+  }, [accent, resolvedTheme]);
 
   return <>{children}</>;
 }
