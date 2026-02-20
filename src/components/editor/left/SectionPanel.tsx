@@ -8,7 +8,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type Sensors,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { ChevronRight, Layers } from "lucide-react";
@@ -426,7 +425,7 @@ export default function SectionPanel({
       ) : (
         <SectionTree
           items={sections.map((section) => section.id)}
-          sensors={sensors as Sensors}
+          sensors={sensors}
           onDragEnd={handleDragEnd}
         >
           <div className="flex flex-col px-3">{listItems}</div>
