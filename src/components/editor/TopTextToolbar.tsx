@@ -193,12 +193,12 @@ export default function TopTextToolbar() {
   const disabled = !canApply;
 
   return (
-    <div className="border-b border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2">
+    <div className="border-b border-[var(--ui-border)] bg-[var(--surface)] px-3 py-2">
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyInlineTag("b")}
             disabled={disabled}
@@ -208,7 +208,7 @@ export default function TopTextToolbar() {
           </button>
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyInlineTag("i")}
             disabled={disabled}
@@ -218,7 +218,7 @@ export default function TopTextToolbar() {
           </button>
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyInlineTag("u")}
             disabled={disabled}
@@ -228,7 +228,7 @@ export default function TopTextToolbar() {
           </button>
           <button
             type="button"
-            className="ui-button h-7 px-2 text-[11px]"
+            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
             onMouseDown={(event) => event.preventDefault()}
             onClick={applyRedBold}
             disabled={disabled}
@@ -239,7 +239,7 @@ export default function TopTextToolbar() {
         <div className="flex items-center gap-2">
           <input
             type="color"
-            className="h-7 w-7 cursor-pointer rounded border border-[var(--ui-border)] bg-transparent"
+            className="h-8 w-8 cursor-pointer rounded border border-[var(--ui-border)] bg-transparent"
             value={toolbarColor}
             onChange={(event) => {
               const next = event.target.value;
@@ -251,7 +251,7 @@ export default function TopTextToolbar() {
           />
           <input
             type="number"
-            className="ui-input h-7 w-16 text-[11px]"
+            className="ui-input h-8 w-16 text-[11px]"
             value={toolbarSize}
             min={8}
             max={72}
@@ -261,7 +261,7 @@ export default function TopTextToolbar() {
           />
           <button
             type="button"
-            className="ui-button h-7 px-2 text-[11px]"
+            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyInlineTag("size", String(toolbarSize))}
             disabled={disabled}
@@ -272,7 +272,7 @@ export default function TopTextToolbar() {
         <div className="flex items-center gap-2">
           <input
             type="number"
-            className="ui-input h-7 w-16 text-[11px]"
+            className="ui-input h-8 w-16 text-[11px]"
             value={toolbarLineHeight}
             min={0.8}
             max={3}
@@ -283,7 +283,7 @@ export default function TopTextToolbar() {
           />
           <button
             type="button"
-            className="ui-button h-7 px-2 text-[11px]"
+            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyInlineTag("lh", String(toolbarLineHeight))}
             disabled={disabled}
@@ -292,7 +292,7 @@ export default function TopTextToolbar() {
           </button>
           <input
             type="number"
-            className="ui-input h-7 w-16 text-[11px]"
+            className="ui-input h-8 w-16 text-[11px]"
             value={toolbarLetterSpacing}
             min={-2}
             max={10}
@@ -303,7 +303,7 @@ export default function TopTextToolbar() {
           />
           <button
             type="button"
-            className="ui-button h-7 px-2 text-[11px]"
+            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyInlineTag("ls", String(toolbarLetterSpacing))}
             disabled={disabled}
@@ -314,7 +314,7 @@ export default function TopTextToolbar() {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyAlign("left")}
             disabled={disabled}
@@ -324,7 +324,7 @@ export default function TopTextToolbar() {
           </button>
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyAlign("center")}
             disabled={disabled}
@@ -334,7 +334,7 @@ export default function TopTextToolbar() {
           </button>
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => applyAlign("right")}
             disabled={disabled}

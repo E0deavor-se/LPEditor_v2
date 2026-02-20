@@ -397,6 +397,8 @@ const DEFAULT_SECTION_STYLE: SectionStyle = {
     type: "solid",
     color1: "#f1f1f1",
     color2: "#ffffff",
+    opacity: 1,
+    transparent: false,
   },
   border: {
     enabled: false,
@@ -488,6 +490,12 @@ const normalizeSectionStyle = (
       type: backgroundType,
       color1: background.color1 ?? DEFAULT_SECTION_STYLE.background.color1,
       color2: background.color2 ?? DEFAULT_SECTION_STYLE.background.color2,
+      opacity: clampNumber(
+        coerceNumber(background.opacity, DEFAULT_SECTION_STYLE.background.opacity ?? 1),
+        0,
+        1
+      ),
+      transparent: Boolean(background.transparent),
     },
     border: {
       enabled:
@@ -2057,21 +2065,28 @@ const createSection = (type: string): SectionBase => {
         visible: true,
         locked: false,
         data: {
-          layout: "single", // "single" | "columns2" | "columns3" | "grid"
-          imageAlt: "",
+          imageOnlyUrl: "",
+          imageOnlyAssetId: "",
+          imageOnlyAlt: "",
+          imageOnlySizeMode: "fit",
+          imageOnlyWidth: 640,
+          imageOnlyMaxWidth: DEFAULT_SECTION_STYLE.layout.maxWidth,
+          imageOnlyAlign: "center",
+          imageOnlyFit: "contain",
         },
-        content: normalizeSectionContent({
-          items: [
-            {
-              id: createItemId(),
-              type: "image",
-              images: [],
-              layout: "auto",
-            },
-          ],
-        }),
+        content: normalizeSectionContent(),
         style: normalizeSectionStyle({
-          background: { type: "solid", color1: "#ffffff", color2: "#ffffff" },
+          background: {
+            type: "solid",
+            color1: "transparent",
+            color2: "transparent",
+          },
+          border: { enabled: false, width: 0, color: "transparent" },
+          shadow: "none",
+          layout: {
+            ...DEFAULT_SECTION_STYLE.layout,
+            padding: { t: 0, r: 0, b: 0, l: 0 },
+          },
         }),
       };
       break;

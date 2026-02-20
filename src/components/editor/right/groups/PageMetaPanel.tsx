@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef } from "react";
 import { FileText, Sparkles } from "lucide-react";
@@ -66,16 +66,16 @@ export default function PageMetaPanel({
     : "";
 
   return (
-    <Accordion title="ページ情報" icon={<FileText size={14} />} defaultOpen={defaultOpen}>
+    <Accordion title="ページ設定" icon={<FileText size={14} />} defaultOpen={defaultOpen}>
       <div className="flex flex-col gap-2">
         <div className="px-2 text-[11px] font-semibold text-[var(--ui-text)]">
-          基本情報
+          基本設定
         </div>
         <FieldRow label="ページタイトル">
           <input
             className="ui-input h-7 w-full text-[12px]"
             value={current.title}
-            placeholder="未設定の場合はプロジェクト名を使用"
+            placeholder="検索結果やブラウザのタイトルに使用"
             onChange={(event) => onChange({ title: event.target.value })}
           />
         </FieldRow>
@@ -85,7 +85,7 @@ export default function PageMetaPanel({
             <textarea
               className="ui-textarea min-h-[70px] text-[12px]"
               value={current.description}
-              placeholder="検索向けの説明文"
+              placeholder="検索結果の説明文"
               onChange={(event) => onChange({ description: event.target.value })}
             />
           </label>
@@ -97,7 +97,7 @@ export default function PageMetaPanel({
           <input
             className="ui-input h-7 w-full text-[12px]"
             value={current.faviconUrl ?? ""}
-            placeholder="https://... または空欄"
+            placeholder="https://... または画像"
             onChange={(event) =>
               onChange({ faviconUrl: event.target.value, faviconAssetId: "" })
             }
@@ -138,7 +138,7 @@ export default function PageMetaPanel({
           ) : null}
         </div>
         {faviconName ? (
-          <div className="px-2 text-[11px] text-[var(--ui-muted)]">
+          <div className="px-2 text-xs text-[var(--ui-muted)]">
             File: {faviconName}
           </div>
         ) : null}
@@ -149,7 +149,7 @@ export default function PageMetaPanel({
           <input
             className="ui-input h-7 w-full text-[12px]"
             value={current.ogpTitle ?? ""}
-            placeholder="未設定の場合はページタイトルを使用"
+            placeholder="検索結果やSNSのタイトルに使用"
             onChange={(event) => onChange({ ogpTitle: event.target.value })}
           />
         </FieldRow>
@@ -159,7 +159,7 @@ export default function PageMetaPanel({
             <textarea
               className="ui-textarea min-h-[70px] text-[12px]"
               value={current.ogpDescription ?? ""}
-              placeholder="未設定の場合はmeta descriptionを使用"
+              placeholder="検索結果やSNSのmeta descriptionに使用"
               onChange={(event) => onChange({ ogpDescription: event.target.value })}
             />
           </label>
@@ -168,7 +168,7 @@ export default function PageMetaPanel({
           <input
             className="ui-input h-7 w-full text-[12px]"
             value={current.ogpImageUrl ?? ""}
-            placeholder="https://... または空欄"
+            placeholder="https://... または画像"
             onChange={(event) =>
               onChange({ ogpImageUrl: event.target.value, ogpImageAssetId: "" })
             }
@@ -209,15 +209,15 @@ export default function PageMetaPanel({
           ) : null}
         </div>
         {ogpName ? (
-          <div className="px-2 text-[11px] text-[var(--ui-muted)]">
+          <div className="px-2 text-xs text-[var(--ui-muted)]">
             File: {ogpName}
           </div>
         ) : null}
         <div className="mt-1 px-2 text-[11px] font-semibold text-[var(--ui-text)]">
-          KDDI専用プリセット
+          KDDIプリセット
         </div>
         <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">
-          <FieldRow label="タイトル末尾追加">
+          <FieldRow label="タイトル末尾設定">
             <ToggleField
               value={Boolean(current.presets?.appendAuPayTitle)}
               ariaLabel="タイトル末尾にau PAYキャンペーンを追加"
@@ -226,28 +226,29 @@ export default function PageMetaPanel({
               }
             />
           </FieldRow>
-          <FieldRow label="OGP画像自動">
+          <FieldRow label="OGP画像をMVから取得">
             <ToggleField
               value={Boolean(current.presets?.ogpFromMv)}
-              ariaLabel="OGP画像をMV画像から生成"
+              ariaLabel="OGP画像をMV画像から取得"
               onChange={(next) => onChange({ presets: { ogpFromMv: next } })}
             />
           </FieldRow>
-          <FieldRow label="期間を説明に挿入">
+          <FieldRow label="期間を説明に追加">
             <ToggleField
               value={Boolean(current.presets?.injectCampaignPeriod)}
-              ariaLabel="キャンペーン期間をdescriptionに挿入"
+              ariaLabel="キャンペーン期間をdescriptionに追加"
               onChange={(next) =>
                 onChange({ presets: { injectCampaignPeriod: next } })
               }
             />
           </FieldRow>
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--ui-muted)]">
+          <div className="mt-1 flex items-center gap-2 text-xs text-[var(--ui-muted)]">
             <Sparkles size={12} />
-            ONの項目だけ自動適用します。
+            ONの場合のみ適用されます。
           </div>
         </div>
       </div>
     </Accordion>
   );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { RotateCcw } from "lucide-react";
 import ColorField from "@/src/components/editor/right/primitives/ColorField";
@@ -34,11 +34,11 @@ export default function QuickLineStylePanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between text-[11px] text-[var(--ui-muted)]">
+      <div className="flex items-center justify-between text-xs text-[var(--ui-muted)]">
         <span>{t.inspector.section.quickStyle.title}</span>
         <button
           type="button"
-          className="ui-button h-7 px-2 text-[11px]"
+          className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
           onClick={onResetMarks}
           disabled={isDisabled}
           aria-label={t.inspector.header.reset}
@@ -48,7 +48,7 @@ export default function QuickLineStylePanel({
         </button>
       </div>
       {isDisabled ? (
-        <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+        <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--surface)] px-3 py-2 text-xs text-[var(--ui-muted)]">
           {disabledMessage ?? t.inspector.section.quickStyle.hint}
         </div>
       ) : (
@@ -80,7 +80,7 @@ export default function QuickLineStylePanel({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="ui-button h-7 px-2 text-[11px]"
+              className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
               onClick={onApplyToAll}
               disabled={!onApplyToAll}
             >
@@ -88,7 +88,7 @@ export default function QuickLineStylePanel({
             </button>
             <button
               type="button"
-              className="ui-button h-7 px-2 text-[11px]"
+              className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
               onClick={onPromoteToSection}
               disabled={!onPromoteToSection}
             >
@@ -100,3 +100,4 @@ export default function QuickLineStylePanel({
     </div>
   );
 }
+

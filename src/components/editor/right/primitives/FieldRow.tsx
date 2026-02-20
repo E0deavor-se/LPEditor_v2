@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 
@@ -16,8 +16,9 @@ export default function FieldRow({ label, children, helper }: FieldRowProps) {
       </div>
       <div className="flex flex-1 items-center gap-2">{children}</div>
       {helper ? (
-        <div className="text-[11px] text-[var(--ui-muted)]">{helper}</div>
+        <div className="text-xs text-[var(--ui-muted)]">{helper}</div>
       ) : null}
     </div>
   );
 }
+

@@ -18,13 +18,31 @@ const buildPreviewStyle = (
   sectionStyle: SectionStyle,
   cardStyle: SectionCardStyle
 ) => {
+  const isTransparent = Boolean(sectionStyle.background.transparent);
+  const surfaceOpacity =
+    typeof sectionStyle.background.opacity === "number"
+      ? Math.max(0, Math.min(1, sectionStyle.background.opacity))
+      : 1;
+  const opacityPct = Math.round(surfaceOpacity * 100);
+  const applyOpacity = (color: string) =>
+    isTransparent
+      ? "transparent"
+      : surfaceOpacity >= 1
+      ? color
+      : `color-mix(in oklab, ${color} ${opacityPct}%, transparent)`;
   const padding = cardStyle.padding;
   const shadowOpacity = clampCardShadowOpacity(cardStyle.shadowOpacity);
   const backgroundColor =
-    cardStyle.innerBgColor || sectionStyle.background.color1 || "#ffffff";
+    applyOpacity(
+      cardStyle.innerBgColor || sectionStyle.background.color1 || "#ffffff"
+    );
   const backgroundImage =
-    !cardStyle.innerBgColor && sectionStyle.background.type === "gradient"
-      ? `linear-gradient(135deg, ${sectionStyle.background.color1}, ${sectionStyle.background.color2})`
+    !isTransparent &&
+    !cardStyle.innerBgColor &&
+    sectionStyle.background.type === "gradient"
+      ? `linear-gradient(135deg, ${applyOpacity(
+          sectionStyle.background.color1
+        )}, ${applyOpacity(sectionStyle.background.color2)})`
       : "none";
   return {
     borderColor: cardStyle.borderColor || sectionStyle.border.color,

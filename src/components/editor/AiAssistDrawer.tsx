@@ -219,7 +219,7 @@ export default function AiAssistDrawer({
           </div>
           <div className="mt-3">
             <div className="text-sm font-semibold text-[var(--ui-text)]">差分</div>
-            <div className="mt-2 rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3 text-xs text-[var(--ui-text)]">
+            <div className="mt-2 rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] p-3 text-xs text-[var(--ui-text)]">
               {proposal ? renderDiff(diffTokens) : "-"}
             </div>
           </div>
@@ -239,7 +239,7 @@ export default function AiAssistDrawer({
             再提案
           </button>
           {showLongLoading ? (
-            <span className="text-[11px] text-[var(--ui-muted)]">AI生成中...</span>
+            <span className="text-xs text-[var(--ui-muted)]">AI生成中...</span>
           ) : null}
           <div className="flex items-center gap-2">
             <button

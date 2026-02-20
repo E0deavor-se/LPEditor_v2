@@ -24,6 +24,7 @@ import type { SectionBase } from "@/src/types/project";
 const SectionTypeLabels: Record<string, string> = {
   brandBar: "ブランドバー",
   heroImage: "メインビジュアル",
+  imageOnly: "画像のみ",
   campaignPeriodBar: "キャンペーン期間",
   campaignOverview: "キャンペーン概要",
   couponFlow: "クーポン利用方法",
@@ -88,6 +89,9 @@ export default function SectionPanel() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [addMenuPage, setAddMenuPage] = useState(0);
+
+  const addMenuPageSize = 6;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -130,6 +134,12 @@ export default function SectionPanel() {
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isAddMenuOpen) {
+      setAddMenuPage(0);
+    }
+  }, [isAddMenuOpen]);
 
   useEffect(() => {
     if (!listRef.current) {
@@ -203,7 +213,7 @@ export default function SectionPanel() {
   ]);
 
   const header = (
-    <div className="flex items-center justify-between text-[11px] text-[var(--ui-muted)]">
+    <div className="flex items-center justify-between text-xs text-[var(--ui-muted)]">
       <span>
         {isSimpleMode
           ? "並び替えと表示の切替"
@@ -314,36 +324,46 @@ export default function SectionPanel() {
     [insertSectionAfter]
   );
 
+  const addMenuTotalPages = Math.max(
+    1,
+    Math.ceil(SECTION_CHOICES.length / addMenuPageSize)
+  );
+  const addMenuPageStart = addMenuPage * addMenuPageSize;
+  const addMenuPageItems = SECTION_CHOICES.slice(
+    addMenuPageStart,
+    addMenuPageStart + addMenuPageSize
+  );
+
   return (
     <div className="flex flex-col gap-2" ref={listRef} tabIndex={0}>
       <button
         type="button"
         className={
-          "relative flex flex-col gap-1 rounded-md border border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/70 px-3 py-2 text-left transition " +
+          "relative flex flex-col gap-1 rounded-md border border-[var(--ui-border)] bg-[var(--surface)] px-3 py-2 text-left transition-colors duration-150 ease-out " +
           (isPageSelected
-            ? " bg-[color-mix(in_oklab,var(--ui-primary)_10%,var(--ui-panel))]"
-            : " hover:bg-[var(--ui-panel)]/85")
+            ? " border-transparent bg-[var(--ui-primary-soft)]"
+            : " hover:bg-[var(--surface-2)]")
         }
         onClick={() => setSelectedSection(undefined)}
       >
         {isPageSelected ? (
-          <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--ui-primary)]" />
+          <span className="absolute left-0 top-1 bottom-1 w-1 rounded-full bg-[var(--ui-primary-base)]" />
         ) : null}
         <div className="text-[12px] font-semibold text-[var(--ui-text)]">
           LP全体（ページ設定）
         </div>
-        <div className="text-[11px] text-[var(--ui-muted)]">
+        <div className="text-xs text-[var(--ui-muted)]">
           背景 / タイポ / カラー
         </div>
       </button>
       {header}
       {isAddMenuOpen && isMounted
         ? createPortal(
-            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4">
-              <div className="w-full max-w-xl rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
+            <div className="fixed inset-0 z-[1000] ui-modal-overlay flex items-center justify-center p-4">
+              <div className="ui-modal w-full max-w-xl p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1.5">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--ui-muted)]">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--surface-2)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--ui-muted)]">
                       セクション追加
                     </div>
                     <div className="text-lg font-semibold text-[var(--ui-text)]">
@@ -361,8 +381,37 @@ export default function SectionPanel() {
                     閉じる
                   </button>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {SECTION_CHOICES.map((option) => (
+                <div className="mt-4 flex items-center justify-between gap-2 text-xs text-[var(--ui-muted)]">
+                  <span>
+                    {addMenuPage + 1} / {addMenuTotalPages}ページ
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="ui-button h-7 px-2 text-[10px]"
+                      onClick={() =>
+                        setAddMenuPage((current) => Math.max(0, current - 1))
+                      }
+                      disabled={addMenuPage === 0}
+                    >
+                      前へ
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-button h-7 px-2 text-[10px]"
+                      onClick={() =>
+                        setAddMenuPage((current) =>
+                          Math.min(addMenuTotalPages - 1, current + 1)
+                        )
+                      }
+                      disabled={addMenuPage >= addMenuTotalPages - 1}
+                    >
+                      次へ
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {addMenuPageItems.map((option) => (
                     (() => {
                       const count = sectionTypeCounts[option.type] ?? 0;
                       const isAdded = count > 0;
@@ -372,10 +421,10 @@ export default function SectionPanel() {
                       type="button"
                       onClick={() => handleAddSection(option.type)}
                       className={
-                        "group relative flex h-full flex-col gap-2 rounded-lg border p-4 text-left transition " +
+                        "group relative flex h-full flex-col gap-2 rounded-lg border p-4 text-left transition-colors duration-150 ease-out " +
                         (isAdded
-                          ? "border-[var(--ui-primary)]/40 bg-[var(--ui-panel)]"
-                          : "border-[var(--ui-border)] bg-[var(--ui-panel-muted)] hover:border-[var(--ui-text)] hover:bg-[var(--ui-panel)]")
+                          ? "border-[var(--ui-primary-base)]/40 bg-[var(--surface)]"
+                          : "border-[var(--ui-border)] bg-[var(--surface)] hover:border-[var(--ui-text)] hover:bg-[var(--surface-2)]")
                       }
                     >
                       <div className="flex items-center justify-between">
@@ -383,7 +432,7 @@ export default function SectionPanel() {
                           {option.label}
                         </div>
                         {isAdded ? (
-                          <span className="rounded-full border border-[var(--ui-primary)]/40 px-2 py-0.5 text-[9px] font-semibold text-[var(--ui-primary)]">
+                          <span className="rounded-full border border-[var(--ui-primary-base)]/40 px-2 py-0.5 text-[9px] font-semibold text-[var(--ui-primary-base)]">
                             追加済み
                           </span>
                         ) : (
@@ -424,12 +473,12 @@ export default function SectionPanel() {
           </SortableContext>
         </DndContext>
       )}
-      <div className="rounded-md border border-dashed border-[var(--ui-border)]/70 bg-[var(--ui-panel)]/50 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+      <div className="rounded-md border border-dashed border-[var(--ui-border)]/70 bg-[var(--ui-panel)]/50 px-3 py-2 text-xs text-[var(--ui-muted)]">
         挿入ラインのUIは準備中です。
       </div>
       {deleteTargetId ? (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 px-4">
-          <div className="ui-panel w-full max-w-sm p-4">
+        <div className="fixed inset-0 z-[1000] ui-modal-overlay flex items-center justify-center px-4">
+          <div className="ui-modal w-full max-w-sm p-4">
             <div className="text-sm font-semibold text-[var(--ui-text)]">
               セクションを削除しますか？
             </div>

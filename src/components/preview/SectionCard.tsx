@@ -72,11 +72,26 @@ export default function SectionCard({
     sectionCardStyle.textColor || sectionStyle.typography.textColor;
   const headerTextColor =
     sectionCardStyle.headerTextColor || sectionStyle.typography.textColor;
-  const background = sectionStyle.backgroundTransparent
-    ? "transparent"
-    : sectionStyle.background.type === "gradient"
-      ? `linear-gradient(135deg, ${sectionStyle.background.color1}, ${sectionStyle.background.color2})`
-      : sectionStyle.background.color1 || "#ffffff";
+  const isTransparent = Boolean(sectionStyle.background.transparent);
+  const surfaceOpacity =
+    typeof sectionStyle.background.opacity === "number"
+      ? Math.max(0, Math.min(1, sectionStyle.background.opacity))
+      : 1;
+  const opacityPct = Math.round(surfaceOpacity * 100);
+  const applyOpacity = (color: string) =>
+    isTransparent
+      ? "transparent"
+      : surfaceOpacity >= 1
+      ? color
+      : `color-mix(in oklab, ${color} ${opacityPct}%, transparent)`;
+  const background =
+    isTransparent
+      ? "transparent"
+      : sectionStyle.background.type === "gradient"
+      ? `linear-gradient(135deg, ${applyOpacity(
+          sectionStyle.background.color1
+        )}, ${applyOpacity(sectionStyle.background.color2)})`
+      : applyOpacity(sectionStyle.background.color1 || "#ffffff");
   const borderWidth = sectionStyle.border.enabled ? sectionStyle.border.width : 0;
   const shadowStyle =
     sectionStyle.shadow === "sm"

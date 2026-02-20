@@ -199,7 +199,7 @@ export default function AiAssistPanel({
           <div className="space-y-3">
             <div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">差分</div>
-              <div className="mt-2 rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3 text-xs text-[var(--ui-text)]">
+              <div className="mt-2 rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] p-3 text-xs text-[var(--ui-text)]">
                 {proposal ? renderDiff(diffTokens, "before") : "-"}
               </div>
               <div className="mt-3 rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] p-3 text-xs text-[var(--ui-text)]">

@@ -381,6 +381,7 @@ export default function InspectorPanel() {
   const sectionType = selectedSection?.type ?? "";
   const isBrandBar = sectionType === "brandBar";
   const isHeroImage = sectionType === "heroImage";
+  const isImageOnly = sectionType === "imageOnly";
   const isTargetStores = sectionType === "targetStores";
   const isExcludedStoresList = sectionType === "excludedStoresList";
   const isExcludedBrandsList = sectionType === "excludedBrandsList";
@@ -396,8 +397,9 @@ export default function InspectorPanel() {
   const isStoreCsvSection =
     isTargetStores || isExcludedStoresList || isExcludedBrandsList;
   const isItemlessSection =
-    isBrandBar || isHeroImage || isCampaignPeriodBar;
-  const hideStyleTab = isBrandBar || isHeroImage || (isSimpleMode && isSection);
+    isBrandBar || isHeroImage || isCampaignPeriodBar || isImageOnly;
+  const hideStyleTab =
+    isBrandBar || isHeroImage || isImageOnly || (isSimpleMode && isSection);
   const guideStepIndex = Math.min(
     Math.max(simpleGuideStep, 0),
     SIMPLE_GUIDE_STEPS.length - 1
@@ -505,6 +507,7 @@ export default function InspectorPanel() {
   const brandBarInputRef = useRef<HTMLInputElement | null>(null);
   const heroPcInputRef = useRef<HTMLInputElement | null>(null);
   const heroSpInputRef = useRef<HTMLInputElement | null>(null);
+  const imageOnlyInputRef = useRef<HTMLInputElement | null>(null);
   const paymentGuideImageInputRef = useRef<HTMLInputElement | null>(null);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const imageImportInputRef = useRef<HTMLInputElement | null>(null);
@@ -593,6 +596,29 @@ export default function InspectorPanel() {
   const brandImageMeta = selectedSection?.data?.brandImageMeta as
     | { filename?: string; relativePath?: string; w?: number; h?: number; size?: number }
     | undefined;
+  const imageOnlyMeta = selectedSection?.data?.imageOnlyMeta as
+    | { filename?: string; relativePath?: string; w?: number; h?: number; size?: number }
+    | undefined;
+  const imageOnlySizeMode =
+    selectedSection?.data?.imageOnlySizeMode === "auto" ||
+    selectedSection?.data?.imageOnlySizeMode === "custom"
+      ? selectedSection.data.imageOnlySizeMode
+      : "fit";
+  const imageOnlyAlign =
+    selectedSection?.data?.imageOnlyAlign === "left" ||
+    selectedSection?.data?.imageOnlyAlign === "right"
+      ? selectedSection.data.imageOnlyAlign
+      : "center";
+  const imageOnlyFit =
+    selectedSection?.data?.imageOnlyFit === "cover" ? "cover" : "contain";
+  const imageOnlyWidth =
+    typeof selectedSection?.data?.imageOnlyWidth === "number"
+      ? selectedSection.data.imageOnlyWidth
+      : 640;
+  const imageOnlyMaxWidth =
+    typeof selectedSection?.data?.imageOnlyMaxWidth === "number"
+      ? selectedSection.data.imageOnlyMaxWidth
+      : 1200;
   const sectionCardStyle =
     selectedSection?.sectionCardStyle ?? DEFAULT_SECTION_CARD_STYLE;
   const storeCsv = selectedSection?.content?.storeCsv;
@@ -1000,7 +1026,12 @@ export default function InspectorPanel() {
     };
   }, [selectedSection?.data]);
   const designTargetSection = useMemo(() => {
-    const excludeTypes = new Set(["brandBar", "heroImage", "footerHtml"]);
+    const excludeTypes = new Set([
+      "brandBar",
+      "heroImage",
+      "imageOnly",
+      "footerHtml",
+    ]);
     return project.sections.find((section) => !excludeTypes.has(section.type));
   }, [project.sections]);
   const designTargetCardStyle =
@@ -1261,7 +1292,7 @@ export default function InspectorPanel() {
     }
 
     applySectionAppearanceToAll(nextStyle, mergedCardStyle, {
-      excludeTypes: ["brandBar", "heroImage", "footerHtml"],
+      excludeTypes: ["brandBar", "heroImage", "imageOnly", "footerHtml"],
     });
   };
 
@@ -1272,7 +1303,7 @@ export default function InspectorPanel() {
     applySectionAppearanceToAll(
       selectedSection.style,
       selectedSection.sectionCardStyle ?? DEFAULT_SECTION_CARD_STYLE,
-      { excludeTypes: ["brandBar", "heroImage", "footerHtml"] }
+      { excludeTypes: ["brandBar", "heroImage", "imageOnly", "footerHtml"] }
     );
   };
   const breadcrumb = useMemo(() => {
@@ -1363,13 +1394,25 @@ export default function InspectorPanel() {
     }
     setInspectorScope("element");
   };
-  const isLockedDisplay = isLocked;
+  const isLockedDisplay = isLocked && !isTargetStores;
   const bodyClass = isSection && isLockedDisplay ? "pointer-events-none opacity-60" : "";
   const isContentReady = selected.kind === "section" && selectedSection;
+  const escapeSelector = (value: string) => {
+    const cssApi =
+      typeof globalThis !== "undefined"
+        ? (globalThis as typeof globalThis & {
+            CSS?: { escape?: (input: string) => string };
+          }).CSS
+        : undefined;
+    if (cssApi?.escape) {
+      return cssApi.escape(value);
+    }
+    return value.replace(/["\\]/g, "\\$&");
+  };
   const cardClass =
     "min-w-0 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/70 backdrop-blur";
   const cardHeaderClass =
-    "flex h-8 items-center justify-between border-b border-[var(--ui-border)]/50 px-3 text-[12px] font-semibold";
+    "flex h-8 items-center justify-between border-b border-[var(--ui-border)]/50 px-3 text-[11px] font-semibold tracking-wider lowercase text-[var(--ui-muted)]";
   const cardBodyClass = "min-w-0 px-3 py-2";
   const isLineScopeEnabled = Boolean(selectedLineId);
   const isItemScopeEnabled = Boolean(selectedItemId);
@@ -1802,7 +1845,10 @@ export default function InspectorPanel() {
       )
     : [];
   const targetStoresNoticeItem = isTargetStores
-    ? contentItems.find(isTargetStoresNoticeItem)
+    ? contentItems.find(isTargetStoresNoticeItem) ??
+      (contentItems.find(
+        (item): item is TextContentItem => item.type === "text"
+      ) as TextContentItem | undefined)
     : undefined;
   const handleItemDragEnd = (event: DragEndEvent) => {
     if (!selectedSectionId || isLocked) {
@@ -1864,7 +1910,7 @@ export default function InspectorPanel() {
         {!isDragDisabled ? (
           <button
             type="button"
-            className="ui-button h-7 w-7 shrink-0 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 shrink-0 px-0"
             {...attributes}
             {...listeners}
             aria-label="並び替え"
@@ -1890,7 +1936,7 @@ export default function InspectorPanel() {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className="ui-button h-7 w-7 px-0"
+            className="ui-button ui-button-ghost h-8 w-8 px-0"
             aria-label="要素を表示"
             title="要素を表示"
             onClick={() => {
@@ -1903,7 +1949,7 @@ export default function InspectorPanel() {
           <div className="relative">
             <button
               type="button"
-              className="ui-button h-7 w-7 px-0"
+              className="ui-button ui-button-ghost h-8 w-8 px-0"
               aria-label="メニュー"
               title="メニュー"
               onClick={() =>
@@ -1915,10 +1961,10 @@ export default function InspectorPanel() {
               <MoreHorizontal size={14} />
             </button>
             {isMenuOpen ? (
-              <div className="absolute right-0 top-8 z-20 w-36 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/95 p-1 text-[11px] shadow-lg">
+              <div className="absolute right-0 top-8 z-20 w-36 rounded-md border border-[var(--ui-border)]/60 bg-[var(--surface)]/95 p-1 text-[11px] shadow-lg">
                 <button
                   type="button"
-                  className="ui-button h-7 w-full justify-start px-2 text-[11px]"
+                  className="ui-button ui-button-ghost h-8 w-full justify-start px-2 text-[11px]"
                   onClick={() => {
                     if (!activeSectionId) {
                       return;
@@ -1936,7 +1982,7 @@ export default function InspectorPanel() {
                 </button>
                 <button
                   type="button"
-                  className="ui-button h-7 w-full justify-start px-2 text-[11px]"
+                  className="ui-button ui-button-ghost h-8 w-full justify-start px-2 text-[11px]"
                   onClick={() => {
                     if (!activeSectionId) {
                       return;
@@ -1954,7 +2000,7 @@ export default function InspectorPanel() {
                 </button>
                 <button
                   type="button"
-                  className="ui-button h-7 w-full justify-start px-2 text-[11px] text-rose-500"
+                  className="ui-button ui-button-ghost h-8 w-full justify-start px-2 text-[11px] text-rose-500"
                   onClick={() => {
                     if (!activeSectionId) {
                       return;
@@ -2333,7 +2379,7 @@ export default function InspectorPanel() {
 
   return (
     <>
-      <aside className="ui-panel flex h-full min-h-0 flex-col rounded-none border-y-0 border-r-0">
+      <aside className="ui-panel lp-inspector flex h-full min-h-0 flex-col rounded-none border-y-0 border-r-0">
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="sticky top-0 z-30 bg-[var(--ui-panel)]/95 backdrop-blur">
             <InspectorHeader
@@ -2413,7 +2459,7 @@ export default function InspectorPanel() {
                       <div className="text-[12px] text-[var(--ui-text)]">
                         {guideStep.title}
                       </div>
-                      <div className="text-[11px] text-[var(--ui-muted)]">
+                      <div className="text-xs text-[var(--ui-muted)]">
                         {guideStep.body}
                       </div>
                       <div className="mt-2 flex items-center gap-2">
@@ -2495,7 +2541,7 @@ export default function InspectorPanel() {
                           }
                         >
                           {!isContentReady ? (
-                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.placeholders.selectContent}
                             </div>
                           ) : selectedTextItem && selectedLine ? (
@@ -2628,7 +2674,7 @@ export default function InspectorPanel() {
                                 </div>
                               </div>
                             ) : (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 装飾は本文から編集できます。
                               </div>
                             )
@@ -2701,7 +2747,7 @@ export default function InspectorPanel() {
                               </div>
                             </div>
                           ) : (
-                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                            <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.placeholders.selectContent}
                             </div>
                           )}
@@ -2711,6 +2757,7 @@ export default function InspectorPanel() {
                     {selected.kind !== "page" &&
                     !isBrandBar &&
                     !isHeroImage &&
+                    !isImageOnly &&
                     !isInquiry ? (
                       <div className={cardClass}>
                         <button
@@ -2739,7 +2786,7 @@ export default function InspectorPanel() {
                             }
                           >
                             {!isContentReady ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 {t.inspector.section.placeholders.selectContent}
                               </div>
                             ) : (
@@ -3109,11 +3156,11 @@ export default function InspectorPanel() {
                                     </Accordion>
                                   </div>
                                 ) : selectedImageItem ? (
-                                  <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                     {t.inspector.section.placeholders.imageQuickStyle}
                                   </div>
                                 ) : (
-                                  <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                     {t.inspector.section.placeholders.selectContent}
                                   </div>
                                 )}
@@ -3181,7 +3228,7 @@ export default function InspectorPanel() {
                             <div className="mb-2 text-[11px] font-semibold text-[var(--ui-text)]">
                               付箋タブ帯
                             </div>
-                            <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
+                            <div className="mb-2 text-xs text-[var(--ui-muted)]">
                               デザイン
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -3212,7 +3259,7 @@ export default function InspectorPanel() {
                                 );
                               })}
                             </div>
-                            <div className="mb-2 text-[11px] text-[var(--ui-muted)]">
+                            <div className="mb-2 text-xs text-[var(--ui-muted)]">
                               プリセット
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -3440,6 +3487,7 @@ export default function InspectorPanel() {
                                         excludeTypes: [
                                           "brandBar",
                                           "heroImage",
+                                          "imageOnly",
                                           "footerHtml",
                                         ],
                                       }
@@ -3464,6 +3512,7 @@ export default function InspectorPanel() {
                                             excludeTypes: [
                                               "brandBar",
                                               "heroImage",
+                                              "imageOnly",
                                               "footerHtml",
                                             ],
                                           }
@@ -3485,6 +3534,7 @@ export default function InspectorPanel() {
                                             excludeTypes: [
                                               "brandBar",
                                               "heroImage",
+                                              "imageOnly",
                                               "footerHtml",
                                             ],
                                           }
@@ -3508,6 +3558,7 @@ export default function InspectorPanel() {
                                           excludeTypes: [
                                             "brandBar",
                                             "heroImage",
+                                            "imageOnly",
                                             "footerHtml",
                                           ],
                                         }
@@ -3530,6 +3581,7 @@ export default function InspectorPanel() {
                                         excludeTypes: [
                                           "brandBar",
                                           "heroImage",
+                                          "imageOnly",
                                           "footerHtml",
                                         ],
                                       }
@@ -3558,6 +3610,7 @@ export default function InspectorPanel() {
                                             excludeTypes: [
                                               "brandBar",
                                               "heroImage",
+                                              "imageOnly",
                                               "footerHtml",
                                             ],
                                           }
@@ -3581,6 +3634,7 @@ export default function InspectorPanel() {
                                             excludeTypes: [
                                               "brandBar",
                                               "heroImage",
+                                              "imageOnly",
                                               "footerHtml",
                                             ],
                                           }
@@ -3604,6 +3658,7 @@ export default function InspectorPanel() {
                                         excludeTypes: [
                                           "brandBar",
                                           "heroImage",
+                                          "imageOnly",
                                           "footerHtml",
                                         ],
                                       }
@@ -3639,6 +3694,7 @@ export default function InspectorPanel() {
                                           excludeTypes: [
                                             "brandBar",
                                             "heroImage",
+                                            "imageOnly",
                                             "footerHtml",
                                           ],
                                         }
@@ -3660,6 +3716,7 @@ export default function InspectorPanel() {
                                           excludeTypes: [
                                             "brandBar",
                                             "heroImage",
+                                            "imageOnly",
                                             "footerHtml",
                                           ],
                                         }
@@ -3686,6 +3743,7 @@ export default function InspectorPanel() {
                                           excludeTypes: [
                                             "brandBar",
                                             "heroImage",
+                                            "imageOnly",
                                             "footerHtml",
                                           ],
                                         }
@@ -3715,6 +3773,7 @@ export default function InspectorPanel() {
                                           excludeTypes: [
                                             "brandBar",
                                             "heroImage",
+                                            "imageOnly",
                                             "footerHtml",
                                           ],
                                         }
@@ -3769,7 +3828,7 @@ export default function InspectorPanel() {
                           ) : null}
                         </>
                       ) : (
-                        <div className="px-1 py-2 text-[11px] text-[var(--ui-muted)]">
+                        <div className="px-1 py-2 text-xs text-[var(--ui-muted)]">
                           {t.inspector.placeholders.advancedComingSoon}
                         </div>
                       )}
@@ -3813,12 +3872,12 @@ export default function InspectorPanel() {
                       }
                     >
                       {!isContentReady ? (
-                        <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                        <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                           {t.inspector.section.placeholders.selectContent}
                         </div>
                       ) : isInquiry ? (
                         <div className="flex flex-col gap-3">
-                          <div className="text-[11px] text-[var(--ui-muted)]">
+                          <div className="text-xs text-[var(--ui-muted)]">
                             利用条件 / お問い合わせ / 下部バナー / フッターの画像を差し替えます。
                           </div>
                           <div className="flex flex-col gap-2">
@@ -3885,7 +3944,7 @@ export default function InspectorPanel() {
                                       </button>
                                     ) : null}
                                   </div>
-                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="mt-2 text-xs text-[var(--ui-muted)]">
                                     {assetName}
                                   </div>
                                 </div>
@@ -3895,7 +3954,7 @@ export default function InspectorPanel() {
                         </div>
                       ) : (
                         <div className="flex flex-col gap-3">
-                        {selectedTitleItem ? (
+                        {selectedTitleItem && !isItemlessSection ? (
                           <div className="flex flex-col gap-2">
                             <FieldRow label={t.inspector.section.fields.title}>
                               <RichTextInput
@@ -3907,14 +3966,14 @@ export default function InspectorPanel() {
                                     nextValue
                                   )
                                 }
-                                disabled={isLocked}
+                                disabled={isLocked && !isTargetStores}
                               />
                             </FieldRow>
                           </div>
                         ) : null}
                         {isBrandBar ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               ブランドバー画像
                             </div>
                             <div className="flex items-center justify-between rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2">
@@ -3985,7 +4044,7 @@ export default function InspectorPanel() {
                               ) : null}
                             </div>
                             {selectedSection.data.brandImageAssetId ? (
-                              <div className="text-[11px] text-[var(--ui-muted)]">
+                              <div className="text-xs text-[var(--ui-muted)]">
                                 <div>
                                   File: {brandImageMeta?.filename ?? "未選択"}
                                 </div>
@@ -4006,7 +4065,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isHeroImage ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               ヒーロー画像
                             </div>
                             <div className="flex items-center justify-between rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2">
@@ -4096,7 +4155,7 @@ export default function InspectorPanel() {
                                 PC画像を選択
                               </button>
                               {selectedSection.data.imageAssetIdPc ? (
-                                <div className="text-[11px] text-[var(--ui-muted)]">
+                                <div className="text-xs text-[var(--ui-muted)]">
                                   <div>
                                     File: {heroPcMeta?.filename ?? "未選択"}
                                   </div>
@@ -4139,7 +4198,7 @@ export default function InspectorPanel() {
                                 SP画像を選択
                               </button>
                               {selectedSection.data.imageAssetIdSp ? (
-                                <div className="text-[11px] text-[var(--ui-muted)]">
+                                <div className="text-xs text-[var(--ui-muted)]">
                                   <div>
                                     File: {heroSpMeta?.filename ?? "未選択"}
                                   </div>
@@ -4175,9 +4234,174 @@ export default function InspectorPanel() {
                             </div>
                           </div>
                         ) : null}
+                        {isImageOnly ? (
+                          <div className="flex flex-col gap-2">
+                            <div className="text-xs text-[var(--ui-muted)]">
+                              画像のみ
+                            </div>
+                            <input
+                              ref={imageOnlyInputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (!file) {
+                                  return;
+                                }
+                                handleImageImportWithMeta(
+                                  file,
+                                  (assetId, dataUrl, width, height) => {
+                                    updateSectionData(selectedSection.id, {
+                                      imageOnlyAssetId: assetId,
+                                      imageOnlyUrl: dataUrl,
+                                      imageOnlyMeta: {
+                                        filename: file.name,
+                                        relativePath: file.webkitRelativePath || "",
+                                        w: width,
+                                        h: height,
+                                        size: file.size,
+                                      },
+                                    });
+                                  }
+                                );
+                                event.target.value = "";
+                              }}
+                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                className="ui-button h-7 px-2 text-[11px]"
+                                onClick={() => imageOnlyInputRef.current?.click()}
+                              >
+                                画像を選択
+                              </button>
+                              {selectedSection.data.imageOnlyAssetId ? (
+                                <button
+                                  type="button"
+                                  className="ui-button h-7 px-2 text-[11px]"
+                                  onClick={() =>
+                                    updateSectionData(selectedSection.id, {
+                                      imageOnlyAssetId: "",
+                                      imageOnlyUrl: "",
+                                      imageOnlyMeta: undefined,
+                                    })
+                                  }
+                                >
+                                  画像を削除
+                                </button>
+                              ) : null}
+                            </div>
+                            {selectedSection.data.imageOnlyAssetId ? (
+                              <div className="text-xs text-[var(--ui-muted)]">
+                                <div>
+                                  File: {imageOnlyMeta?.filename ?? "未選択"}
+                                </div>
+                                <div>
+                                  Location: {imageOnlyMeta?.relativePath || "local file"}
+                                </div>
+                                {imageOnlyMeta?.w && imageOnlyMeta?.h ? (
+                                  <div>
+                                    Size: {imageOnlyMeta.w} x {imageOnlyMeta.h}
+                                  </div>
+                                ) : null}
+                                {imageOnlyMeta?.size ? (
+                                  <div>File size: {formatBytes(imageOnlyMeta.size)}</div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            <FieldRow label="代替テキスト">
+                              <input
+                                type="text"
+                                className="ui-input h-7 w-full text-[12px]"
+                                value={String(selectedSection.data.imageOnlyAlt ?? "")}
+                                onChange={(event) =>
+                                  updateSectionData(selectedSection.id, {
+                                    imageOnlyAlt: event.target.value,
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="サイズ">
+                              <SelectField
+                                value={imageOnlySizeMode}
+                                ariaLabel="サイズ"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    imageOnlySizeMode: next,
+                                  })
+                                }
+                              >
+                                <option value="fit">フィット</option>
+                                <option value="auto">自動</option>
+                                <option value="custom">指定</option>
+                              </SelectField>
+                            </FieldRow>
+                            {imageOnlySizeMode === "custom" ? (
+                              <FieldRow label="幅(px)">
+                                <NumberField
+                                  value={imageOnlyWidth}
+                                  min={1}
+                                  max={2400}
+                                  step={1}
+                                  ariaLabel="幅"
+                                  onChange={(next) =>
+                                    updateSectionData(selectedSection.id, {
+                                      imageOnlyWidth: next,
+                                    })
+                                  }
+                                />
+                              </FieldRow>
+                            ) : null}
+                            <FieldRow label="最大幅(px)">
+                              <NumberField
+                                value={imageOnlyMaxWidth}
+                                min={0}
+                                max={2400}
+                                step={1}
+                                ariaLabel="最大幅"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    imageOnlyMaxWidth: next,
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="配置">
+                              <SegmentedField
+                                value={imageOnlyAlign}
+                                ariaLabel="配置"
+                                options={[
+                                  { value: "left", label: "左" },
+                                  { value: "center", label: "中央" },
+                                  { value: "right", label: "右" },
+                                ]}
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    imageOnlyAlign: next,
+                                  })
+                                }
+                              />
+                            </FieldRow>
+                            <FieldRow label="表示方法">
+                              <SelectField
+                                value={imageOnlyFit}
+                                ariaLabel="表示方法"
+                                onChange={(next) =>
+                                  updateSectionData(selectedSection.id, {
+                                    imageOnlyFit: next,
+                                  })
+                                }
+                              >
+                                <option value="contain">全体表示</option>
+                                <option value="cover">トリミング</option>
+                              </SelectField>
+                            </FieldRow>
+                          </div>
+                        ) : null}
                         {isTargetStores ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.imageItems}
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -4192,7 +4416,7 @@ export default function InspectorPanel() {
                               </button>
                             </div>
                             {targetStoresImageItems.length === 0 ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 {t.inspector.section.placeholders.noImages}
                               </div>
                             ) : (
@@ -4218,7 +4442,7 @@ export default function InspectorPanel() {
                                       </button>
                                       <button
                                         type="button"
-                                        className="ui-button h-7 w-7 px-0"
+                                        className="ui-button ui-button-ghost h-8 w-8 px-0"
                                         onClick={() =>
                                           removeContentItem(selectedSection.id, item.id)
                                         }
@@ -4246,7 +4470,7 @@ export default function InspectorPanel() {
                                     title: event.target.value,
                                   })
                                 }
-                                disabled={isLocked}
+                                disabled={isLocked && !isTargetStores}
                               />
                             </FieldRow>
                             <FieldRow label="強調ラベル">
@@ -4261,7 +4485,7 @@ export default function InspectorPanel() {
                                     highlightLabel: event.target.value,
                                   })
                                 }
-                                disabled={isLocked}
+                                disabled={isLocked && !isTargetStores}
                               />
                             </FieldRow>
                             <FieldRow label="戻るボタンURL">
@@ -4275,7 +4499,7 @@ export default function InspectorPanel() {
                                   })
                                 }
                                 placeholder="https://example.com"
-                                disabled={isLocked}
+                                disabled={isLocked && !isTargetStores}
                               />
                             </FieldRow>
                             <FieldRow label="戻るボタン文言">
@@ -4289,17 +4513,17 @@ export default function InspectorPanel() {
                                   })
                                 }
                                 placeholder="キャンペーンページに戻る"
-                                disabled={isLocked}
+                                disabled={false}
                               />
                             </FieldRow>
                           </div>
                         ) : null}
                         {isStoreCsvSection ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               店舗リスト(CSV)
                             </div>
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               必須列: 店舗ID / 店舗名 / 郵便番号 / 住所 / 都道府県
                             </div>
                             <input
@@ -4336,7 +4560,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isTargetStores ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               注意文言
                             </div>
                             {targetStoresNoticeItem ? (
@@ -4344,8 +4568,38 @@ export default function InspectorPanel() {
                                 lines={targetStoresNoticeItem.lines}
                                 selectedLineId={selectedLine?.id}
                                 onSelect={(lineId) => {
-                                  setSelectedItemId(targetStoresNoticeItem.id);
-                                  setSelectedLineId(lineId);
+                                  if (selectedItemId !== targetStoresNoticeItem.id) {
+                                    setSelectedItemId(targetStoresNoticeItem.id);
+                                  }
+                                  if (selectedLineId !== lineId) {
+                                    setSelectedLineId(lineId);
+                                  }
+                                  if (typeof window !== "undefined") {
+                                    const sectionId = selectedSection.id;
+                                    const itemId = targetStoresNoticeItem.id;
+                                    const safeSectionId = escapeSelector(sectionId);
+                                    const safeItemId = escapeSelector(itemId);
+                                    const safeLineId = escapeSelector(lineId);
+                                    requestAnimationFrame(() => {
+                                      requestAnimationFrame(() => {
+                                        const selector =
+                                          `input[data-section-id="${safeSectionId}"]` +
+                                          `[` +
+                                          `data-item-id="${safeItemId}"]` +
+                                          `[` +
+                                          `data-line-id="${safeLineId}"]`;
+                                        const el =
+                                          document.querySelector<HTMLInputElement>(
+                                            selector
+                                          );
+                                        if (el) {
+                                          el.focus();
+                                          const length = el.value.length;
+                                          el.setSelectionRange(length, length);
+                                        }
+                                      });
+                                    });
+                                  }
                                 }}
                                 onChangeText={(lineId, value) =>
                                   updateTextLineText(
@@ -4385,7 +4639,7 @@ export default function InspectorPanel() {
                                 }
                                 sectionId={selectedSection.id}
                                 itemId={targetStoresNoticeItem.id}
-                                disabled={isLocked}
+                                disabled={false}
                                 onRemoveLast={() => {
                                   const lastLine =
                                     targetStoresNoticeItem.lines[
@@ -4413,7 +4667,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isTargetStores ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.button}
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -4428,7 +4682,7 @@ export default function InspectorPanel() {
                               </button>
                             </div>
                             {targetStoresButtonItems.length === 0 ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 ボタンがありません
                               </div>
                             ) : (
@@ -4673,7 +4927,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isLegalNotes ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               注意文言
                             </div>
                             {legalNotesTextItem ? (
@@ -4874,7 +5128,7 @@ export default function InspectorPanel() {
                                 disabled={isLocked}
                               />
                             </label>
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               画像
                             </div>
                             <input
@@ -4956,7 +5210,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isTabbedNotes ? (
                           <div className="flex flex-col gap-3">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               タブ
                             </div>
                             <div className="flex flex-col gap-3">
@@ -5042,7 +5296,7 @@ export default function InspectorPanel() {
                                       disabled={isLocked}
                                     />
                                   </label>
-                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="mt-2 text-xs text-[var(--ui-muted)]">
                                     注意文言
                                   </div>
                                   <div className="mt-2 flex flex-col gap-2">
@@ -5285,7 +5539,7 @@ export default function InspectorPanel() {
                                       disabled={isLocked}
                                     />
                                   </FieldRow>
-                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="mt-2 text-xs text-[var(--ui-muted)]">
                                     CTA
                                   </div>
                                   <FieldRow label="CTA文">
@@ -5403,7 +5657,7 @@ export default function InspectorPanel() {
                                       />
                                     </FieldRow>
                                   )}
-                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="mt-2 text-xs text-[var(--ui-muted)]">
                                     CTA画像
                                   </div>
                                   <input
@@ -5473,7 +5727,7 @@ export default function InspectorPanel() {
                                       disabled={isLocked}
                                     />
                                   </FieldRow>
-                                  <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                  <div className="mt-2 text-xs text-[var(--ui-muted)]">
                                     ボタン
                                   </div>
                                   <FieldRow label="ボタン文言">
@@ -5691,7 +5945,7 @@ export default function InspectorPanel() {
                                 disabled={isLocked}
                               />
                             </label>
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               テーブル
                             </div>
                             <FieldRow label="順位ラベル">
@@ -5707,18 +5961,18 @@ export default function InspectorPanel() {
                                 disabled={isLocked}
                               />
                             </FieldRow>
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               列
                             </div>
                             {rankingColumns.length === 0 ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 列がありません。
                               </div>
                             ) : (
                               <div className="flex flex-col gap-2">
                                 {rankingColumns.map((column, columnIndex) => (
                                   <div key={column.key} className="flex items-center gap-2">
-                                    <span className="w-5 text-right text-[11px] text-[var(--ui-muted)]">
+                                    <span className="w-5 text-right text-xs text-[var(--ui-muted)]">
                                       {columnIndex + 1}
                                     </span>
                                     <input
@@ -5794,18 +6048,18 @@ export default function InspectorPanel() {
                             >
                               列を追加
                             </button>
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               ランキング行
                             </div>
                             {rankingRows.length === 0 ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 行がありません。
                               </div>
                             ) : (
                               <div className="flex flex-col gap-2">
                                 {rankingRows.map((row, index) => (
                                   <div key={row.id} className="flex items-center gap-2">
-                                    <span className="w-5 text-right text-[11px] text-[var(--ui-muted)]">
+                                    <span className="w-5 text-right text-xs text-[var(--ui-muted)]">
                                       {index + 1}
                                     </span>
                                     <div className="flex flex-1 flex-wrap gap-2">
@@ -5925,7 +6179,7 @@ export default function InspectorPanel() {
                             >
                               行を追加
                             </button>
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               色
                             </div>
                             <FieldRow label="ヘッダー背景">
@@ -6174,7 +6428,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isCouponFlow ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               スライド画像
                             </div>
                             {couponFlowImageItems.length === 0 ? (
@@ -6228,7 +6482,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {isCouponFlow ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.button}
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -6243,7 +6497,7 @@ export default function InspectorPanel() {
                               </button>
                             </div>
                             {couponFlowButtonItems.length === 0 ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 ボタンがありません
                               </div>
                             ) : (
@@ -6295,7 +6549,7 @@ export default function InspectorPanel() {
                         !isTabbedNotes &&
                         !isImageOnly ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.itemList}
                             </div>
                             <DndContext
@@ -6363,11 +6617,12 @@ export default function InspectorPanel() {
                         !isLegalNotes &&
                         !isBrandBar &&
                         !isHeroImage &&
+                        !isImageOnly &&
                         !isRankingTable &&
                         !isPaymentHistoryGuide &&
                         !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.textLines}
                             </div>
                             <TextLineList
@@ -6429,9 +6684,10 @@ export default function InspectorPanel() {
                         !isLegalNotes &&
                         !isRankingTable &&
                         !isPaymentHistoryGuide &&
-                        !isTabbedNotes ? (
+                        !isTabbedNotes &&
+                        !isImageOnly ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.imageItems}
                             </div>
                             <div className="flex flex-col gap-2">
@@ -6512,7 +6768,7 @@ export default function InspectorPanel() {
                             </div>
                             <div className="flex flex-col gap-1">
                               {selectedImageItem.images.length === 0 ? (
-                                <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                   {t.inspector.section.placeholders.noImages}
                                 </div>
                               ) : (
@@ -6589,7 +6845,7 @@ export default function InspectorPanel() {
                         ) : null}
                         {selectedButtonItem && !isLegalNotes && !isRankingTable && !isTabbedNotes ? (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] text-[var(--ui-muted)]">
+                            <div className="text-xs text-[var(--ui-muted)]">
                               {t.inspector.section.labels.button}
                             </div>
                             <FieldRow label={t.inspector.section.fields.buttonPreset}>
@@ -6926,7 +7182,7 @@ export default function InspectorPanel() {
                             }
                           >
                             {!isContentReady ? (
-                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                              <div className="rounded-md border border-dashed border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                                 {t.inspector.section.placeholders.selectContent}
                               </div>
                             ) : isHeroImage ? (
@@ -7004,7 +7260,7 @@ export default function InspectorPanel() {
                                 </>
                               ) : null}
                               <Accordion title="詳細" defaultOpen={false}>
-                                <div className="px-1 py-2 text-[11px] text-[var(--ui-muted)]">
+                                <div className="px-1 py-2 text-xs text-[var(--ui-muted)]">
                                   {t.inspector.placeholders.advancedComingSoon}
                                 </div>
                               </Accordion>
@@ -7299,11 +7555,11 @@ export default function InspectorPanel() {
                           <div className={cardBodyClass}>
                             <div className="flex flex-col gap-3">
                               {!hasStoresData ? (
-                                <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-xs text-[var(--ui-muted)]">
                                   CSV取り込み後にラベル設定が表示されます。
                                 </div>
                               ) : targetStoresExtraColumns.length === 0 ? (
-                                <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                                <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-2 text-xs text-[var(--ui-muted)]">
                                   自由列がありません。
                                 </div>
                               ) : (
@@ -7327,20 +7583,20 @@ export default function InspectorPanel() {
                                         }
                                       />
                                     </div>
-                                    <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                                    <div className="mt-2 text-xs text-[var(--ui-muted)]">
                                       {storeFilterOperator === "AND"
                                         ? "選択したラベルを“すべて”満たす店舗のみ表示"
                                         : "選択したラベルの“どれか1つ”でも満たす店舗を表示"}
                                     </div>
                                     {selectedFilterLabels.length >= 2 ? (
-                                      <div className="mt-1 text-[11px] text-[var(--ui-muted)]">
+                                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
                                         例: {selectedFilterLabels.slice(0, 2).join(
                                           storeFilterOperator === "AND" ? " ∧ " : " ∨ "
                                         )}
                                       </div>
                                     ) : null}
                                   </div>
-                                  <div className="text-[11px] text-[var(--ui-muted)]">
+                                  <div className="text-xs text-[var(--ui-muted)]">
                                     ラベル設定
                                   </div>
                                   {targetStoresExtraColumns.map((column) => {
@@ -7458,7 +7714,7 @@ export default function InspectorPanel() {
                       ) : null}
                       {activeBackgroundSpec?.type !== "image" &&
                       activeBackgroundSpec?.type !== "video" ? (
-                        <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-[11px] text-[var(--ui-muted)]">
+                        <div className="rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-3 py-2 text-xs text-[var(--ui-muted)]">
                           背景タイプが画像/動画のときにURLを設定できます。
                         </div>
                       ) : null}
@@ -7489,3 +7745,4 @@ export default function InspectorPanel() {
     </>
   );
 }
+

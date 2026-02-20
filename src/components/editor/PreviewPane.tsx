@@ -400,7 +400,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
     process.env.NODE_ENV === "development" ||
     process.env.NEXT_PUBLIC_APP_ENV === "development";
   const frameClassName =
-    "relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white" +
+    "relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-[var(--ui-border)] bg-[var(--surface)]" +
     (isDev ? " outline outline-1 outline-dashed outline-blue-300" : "");
   const scrollClassName =
     "h-full w-full overflow-y-auto overflow-x-hidden" +
@@ -412,25 +412,25 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
   };
 
   return (
-    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--ui-panel-muted)]">
+    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--surface-3)]">
       {showBusy ? (
-        <div className="absolute left-0 right-0 top-0 z-10 h-0.5 bg-[var(--ui-primary)]/70 animate-pulse" />
+        <div className="absolute left-0 right-0 top-0 z-10 h-0.5 bg-[var(--ui-primary-base)]/70 animate-pulse" />
       ) : null}
-      <div className="flex min-h-0 flex-1 items-center justify-center p-2 sm:p-3">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-6">
         {previewMode === "mobile" ? (
           <div className="flex min-h-0 h-full w-full items-center justify-center">
             <div
-              className="flex min-h-0 h-full max-h-[calc(100vh-56px-16px)] max-w-full flex-col rounded-[32px] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] shadow-[var(--ui-shadow-sm)]"
+              className="flex min-h-0 h-full max-h-[calc(100vh-56px-16px)] max-w-full flex-col rounded-[32px] border border-[var(--ui-border)] bg-[var(--surface-2)] shadow-[var(--ui-shadow-md)]"
               style={{ width: previewMobileWidth, maxWidth: "100%" }}
             >
               <div className="flex items-center justify-center px-6 py-3">
-                <div className="h-1.5 w-16 rounded-full bg-slate-300" />
+                <div className="h-1.5 w-16 rounded-full bg-[var(--ui-border)]" />
               </div>
               <div className="flex min-h-0 flex-1 items-center justify-center px-3 pb-4">
                 <div
                   ref={frameContainerRef}
                   className={
-                    "relative flex h-full w-full items-center justify-center rounded-[24px] bg-white overflow-hidden" +
+                    "relative flex h-full w-full items-center justify-center rounded-[24px] bg-[var(--ui-panel)] overflow-hidden" +
                     (isDev ? " outline outline-1 outline-dashed outline-purple-300" : "")
                   }
                 >
@@ -446,9 +446,9 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
                       />
                     </div>
                     {showBusy ? (
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-white/70">
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-[var(--ui-panel)]/70">
                         <div className="flex flex-col items-center gap-3 text-[var(--ui-text)]">
-                          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--ui-border)] border-t-[var(--ui-primary)]" />
+                          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--ui-border)] border-t-[var(--ui-primary-base)]" />
                           <div className="text-sm">{busyText}</div>
                         </div>
                       </div>
@@ -460,8 +460,8 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
           </div>
         ) : (
           <div className="flex min-h-0 h-full w-full items-center justify-center">
-            <div className="flex min-h-0 h-full w-full max-w-[1400px] max-h-[calc(100vh-56px-16px)] flex-col overflow-hidden rounded-lg border border-[var(--ui-border)] bg-white">
-              <div className="flex items-center gap-2 border-b border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-3 py-2">
+            <div className="flex min-h-0 h-full w-full max-w-[1400px] max-h-[calc(100vh-56px-16px)] flex-col overflow-hidden rounded-lg border border-[var(--ui-border)] bg-[var(--surface)] shadow-[var(--ui-shadow-md)]">
+              <div className="flex items-center gap-2 border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-3 py-2">
                 <span
                   className="h-2.5 w-2.5 rounded-full bg-[var(--ui-border)]"
                   aria-hidden="true"
@@ -478,7 +478,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
               <div
                 ref={frameContainerRef}
                 className={
-                  "relative flex min-h-0 flex-1 items-center justify-center bg-white p-2" +
+                  "relative flex min-h-0 flex-1 items-center justify-center bg-[var(--surface)] p-2" +
                   (isDev ? " outline outline-1 outline-dashed outline-purple-300" : "")
                 }
               >
@@ -494,9 +494,9 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
                     />
                   </div>
                   {showBusy ? (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-white/70">
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-[var(--ui-panel)]/70">
                       <div className="flex flex-col items-center gap-3 text-[var(--ui-text)]">
-                        <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--ui-border)] border-t-[var(--ui-primary)]" />
+                        <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--ui-border)] border-t-[var(--ui-primary-base)]" />
                         <div className="text-sm">{busyText}</div>
                       </div>
                     </div>

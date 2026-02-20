@@ -13,7 +13,7 @@ const IconButton = forwardRef<
   <button
     ref={ref}
     type="button"
-    className={`ui-button h-7 w-7 px-0 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
+    className={`ui-button h-8 w-8 px-2 py-1 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
       className ?? ""
     }`}
     {...props}
@@ -89,20 +89,20 @@ function SectionRow({
   }, [isEditing]);
 
   const controlsClass =
-    "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-md border border-[var(--ui-border)]/40 bg-[var(--ui-panel)]/85 px-1 py-0.5 opacity-0 pointer-events-none transition-opacity duration-100 group-hover:opacity-100 group-hover:pointer-events-auto" +
-    (isSelected ? " opacity-100 pointer-events-auto" : "");
+    "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-md border border-[var(--ui-border)] bg-[var(--ui-panel)]/85 px-1 py-0.5 opacity-0 pointer-events-none transition-opacity duration-150 ease-out group-hover:opacity-100 group-hover:pointer-events-auto" +
+    (isSelected ? " opacity-60 pointer-events-auto" : "");
 
   return (
     <div
       ref={setNodeRef}
       style={dragStyle}
       className={
-        "group relative flex h-9 items-center gap-2 rounded-md border border-[var(--ui-border)]/50 bg-[var(--ui-panel-muted)]/70 px-2.5 transition " +
+        "group relative flex h-9 items-center gap-2 rounded-md border border-[var(--ui-border)] bg-[var(--surface)] px-2.5 transition-colors duration-150 ease-out " +
         (isSelected
-          ? " border-[var(--ui-primary)]/50 bg-[color-mix(in_oklab,var(--ui-primary)_12%,var(--ui-panel))] shadow-sm"
-          : " hover:bg-[var(--ui-panel)]/85") +
+          ? " border-transparent bg-[var(--ui-primary-soft)] text-[var(--ui-text)] shadow-sm"
+          : " hover:bg-[var(--surface-2)]") +
         (!section.visible ? " opacity-60" : "") +
-        (isDragging ? " ring-1 ring-[var(--ui-primary)]/50" : "")
+        (isDragging ? " ring-1 ring-[var(--ui-primary-base)]/50" : "")
       }
       role="button"
       tabIndex={0}
@@ -121,7 +121,7 @@ function SectionRow({
       }}
     >
       {isSelected ? (
-        <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--ui-primary)]" />
+        <span className="absolute left-0 top-1 bottom-1 w-1 rounded-full bg-[var(--ui-primary-base)]" />
       ) : null}
       <div
         className={

@@ -10,7 +10,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { DragEndEvent } from "@dnd-kit/core";
+import type { DragEndEvent, PointerSensorOptions } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
@@ -38,6 +38,33 @@ type TextLineListProps = {
   defaultBullet?: "disc" | "none";
 };
 
+class LinePointerSensor extends PointerSensor {
+  static activators: {
+    eventName: "onPointerDown";
+    handler: (
+      { nativeEvent }: { nativeEvent: PointerEvent },
+      _options: PointerSensorOptions
+    ) => boolean;
+  }[] = [
+    {
+      eventName: "onPointerDown",
+      handler: (
+        { nativeEvent }: { nativeEvent: PointerEvent },
+        _options: PointerSensorOptions
+      ) => {
+        const target = nativeEvent.target as HTMLElement | null;
+        if (!target) {
+          return false;
+        }
+        if (target.closest("input, textarea, select, option, button")) {
+          return false;
+        }
+        return true;
+      },
+    },
+  ];
+}
+
 
 export default function TextLineList({
   lines,
@@ -57,7 +84,7 @@ export default function TextLineList({
 }: TextLineListProps) {
   const t = useI18n();
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    useSensor(LinePointerSensor, { activationConstraint: { distance: 6 } })
   );
   const isDndEnabled = Boolean(onReorderLine) && !disabled;
   const resolvedDefaultBullet = defaultBullet === "none" ? "none" : "disc";
@@ -90,9 +117,17 @@ export default function TextLineList({
     const isSelected = line.id === selectedLineId;
     const [localText, setLocalText] = useState(line.text ?? "");
     const inputRef = useRef<HTMLInputElement | null>(null);
-    const focusInput = () => {
+    const focusInput = (placeCaretAtEnd = false) => {
       requestAnimationFrame(() => {
-        inputRef.current?.focus();
+        const el = inputRef.current;
+        if (!el) {
+          return;
+        }
+        el.focus();
+        if (placeCaretAtEnd) {
+          const length = el.value.length;
+          el.setSelectionRange(length, length);
+        }
       });
     };
     const {
@@ -107,6 +142,11 @@ export default function TextLineList({
     useEffect(() => {
       setLocalText(line.text ?? "");
     }, [line.text]);
+    useEffect(() => {
+      if (selectedLineId === line.id) {
+        focusInput(true);
+      }
+    }, [selectedLineId, line.id]);
     const style: CSSProperties = {
       transform: CSS.Transform.toString(transform),
       transition,
@@ -118,11 +158,11 @@ export default function TextLineList({
         ref={setNodeRef}
         style={style}
         className={
-          "group flex items-center gap-2 min-w-0 rounded-md border px-2 text-left text-[12px] transition " +
+          "group flex items-center gap-2 min-w-0 rounded-md border px-2 text-left text-[12px] transition-colors duration-150 ease-out " +
           (showBulletToggle ? "h-auto py-1 flex-wrap" : "h-8") + " " +
           (isSelected
-            ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
-            : "border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/60 hover:bg-[var(--ui-panel)]/80")
+            ? "border-[var(--ui-ring)] bg-[var(--surface)]"
+            : "border-[var(--ui-border)]/50 bg-[var(--surface)] hover:bg-[var(--surface-2)]")
         }
         onPointerDown={(event) => {
           const target = event.target as HTMLElement | null;
@@ -137,7 +177,7 @@ export default function TextLineList({
       >
         <button
           type="button"
-          className="ui-button h-7 w-7 shrink-0 px-0"
+          className="ui-button ui-button-ghost h-8 w-8 shrink-0 px-0"
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
@@ -148,33 +188,28 @@ export default function TextLineList({
           <GripVertical size={14} />
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-          <span className="text-[11px] text-[var(--ui-muted)]">
+          <span className="text-xs text-[var(--ui-muted)]">
             {index + 1}
           </span>
           <input
             type="text"
-            className="ui-input h-7 flex-1 min-w-0 w-full px-2 text-[12px]"
+            className="ui-input h-8 flex-1 min-w-0 w-full px-2 text-[12px]"
             value={localText}
+            key={isSelected ? `${line.id}-active` : `${line.id}-idle`}
+            autoFocus={isSelected}
             ref={inputRef}
             onPointerDownCapture={(event) => {
               event.stopPropagation();
-              focusInput();
             }}
             onMouseDownCapture={(event) => {
               event.stopPropagation();
-              focusInput();
             }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              focusInput();
-            }}
+            onPointerDown={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              focusInput();
-            }}
             onFocus={() => {
-              onSelect(line.id);
+              if (selectedLineId !== line.id) {
+                onSelect(line.id);
+              }
             }}
             onChange={(event) => {
               const nextValue = event.target.value;
@@ -208,7 +243,7 @@ export default function TextLineList({
         ) : null}
         <button
           type="button"
-          className="ui-button h-7 w-7 shrink-0 px-0"
+          className="ui-button ui-button-ghost h-8 w-8 shrink-0 px-0"
           onClick={() => onRemoveLine(line.id)}
           aria-label={t.inspector.section.buttons.deleteLine}
           title={t.inspector.section.buttons.deleteLine}
@@ -229,19 +264,41 @@ export default function TextLineList({
   }) => {
     const isSelected = line.id === selectedLineId;
     const [localText, setLocalText] = useState(line.text ?? "");
+    const inputRef = useRef<HTMLInputElement | null>(null);
+    const focusInput = (placeCaretAtEnd = false) => {
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (!el) {
+          return;
+        }
+        el.focus();
+        if (placeCaretAtEnd) {
+          const length = el.value.length;
+          el.setSelectionRange(length, length);
+        }
+      });
+    };
     useEffect(() => {
       setLocalText(line.text ?? "");
     }, [line.text]);
+    useEffect(() => {
+      if (selectedLineId === line.id) {
+        focusInput(true);
+      }
+    }, [selectedLineId, line.id]);
 
     return (
       <div
         className={
-          "group flex items-center gap-2 min-w-0 h-8 rounded-md border px-2 text-left text-[12px] transition " +
+          "group flex items-center gap-2 min-w-0 h-8 rounded-md border px-2 text-left text-[12px] transition-colors duration-150 ease-out " +
           (isSelected
-            ? "border-[var(--ui-ring)] bg-[var(--ui-panel)]/80"
-            : "border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/60 hover:bg-[var(--ui-panel)]/80")
+            ? "border-[var(--ui-ring)] bg-[var(--surface)]"
+            : "border-[var(--ui-border)]/50 bg-[var(--surface)] hover:bg-[var(--surface-2)]")
         }
-        onClick={() => onSelect(line.id)}
+        onClick={() => {
+          onSelect(line.id);
+          focusInput();
+        }}
       >
         <button
           type="button"
@@ -253,13 +310,26 @@ export default function TextLineList({
           <GripVertical size={14} />
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-          <span className="text-[11px] text-[var(--ui-muted)]">{index + 1}</span>
+          <span className="text-xs text-[var(--ui-muted)]">{index + 1}</span>
           <input
             type="text"
             className="ui-input h-7 flex-1 min-w-0 w-full px-2 text-[12px]"
             value={localText}
+            key={isSelected ? `${line.id}-active` : `${line.id}-idle`}
+            autoFocus={isSelected}
+            ref={inputRef}
+            onPointerDownCapture={(event) => {
+              event.stopPropagation();
+            }}
+            onMouseDownCapture={(event) => {
+              event.stopPropagation();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
             onFocus={() => {
-              onSelect(line.id);
+              if (selectedLineId !== line.id) {
+                onSelect(line.id);
+              }
             }}
             onChange={(event) => {
               const nextValue = event.target.value;
@@ -293,7 +363,7 @@ export default function TextLineList({
         ) : null}
         <button
           type="button"
-          className="ui-button h-7 w-7 shrink-0 px-0"
+          className="ui-button ui-button-ghost h-8 w-8 shrink-0 px-0"
           onClick={() => onRemoveLine(line.id)}
           aria-label={t.inspector.section.buttons.deleteLine}
           title={t.inspector.section.buttons.deleteLine}

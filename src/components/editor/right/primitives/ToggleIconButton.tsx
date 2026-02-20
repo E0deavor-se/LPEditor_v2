@@ -23,7 +23,7 @@ export default function ToggleIconButton({
     <button
       type="button"
       className={
-        "ui-button h-7 w-7 px-0 text-[10px] transition " +
+        "ui-button ui-button-ghost h-8 w-8 px-0 text-[10px] transition-colors duration-150 ease-out " +
         (active ? " text-[var(--ui-text)]" : " text-[var(--ui-muted)]") +
         (disabled ? " cursor-not-allowed opacity-50" : "")
       }

@@ -104,7 +104,7 @@ export default function CsvImportPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 ui-modal-overlay flex items-center justify-center p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
           onCancel();
@@ -115,14 +115,14 @@ export default function CsvImportPreviewModal({
         ref={modalRef}
         role="dialog"
         aria-modal="true"
-        className="flex max-h-[90vh] w-full max-w-[900px] flex-col overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-panel)] shadow-md"
+        className="ui-modal flex max-h-[90vh] w-full max-w-[900px] flex-col overflow-hidden"
       >
         <div className="flex items-center justify-between gap-3 border-b border-[var(--ui-border)]/60 px-5 py-4">
           <div>
             <div className="text-sm font-semibold text-[var(--ui-text)]">
               CSVインポート確認
             </div>
-            <div className="text-[11px] text-[var(--ui-muted)]">{fileName}</div>
+            <div className="text-xs text-[var(--ui-muted)]">{fileName}</div>
           </div>
           <button
             type="button"
@@ -135,7 +135,7 @@ export default function CsvImportPreviewModal({
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {hasRequiredWarnings ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-[12px] text-amber-900">
+            <div className="rounded-xl border border-[color-mix(in_oklab,var(--ui-warning)_45%,var(--ui-border))] bg-[color-mix(in_oklab,var(--ui-warning)_12%,transparent)] px-4 py-3 text-[12px] text-[color-mix(in_oklab,var(--ui-warning)_80%,black)]">
               <div className="font-semibold">必須列の警告</div>
               {!summary.headerOrderValid ? (
                 <div className="mt-1">
@@ -151,32 +151,32 @@ export default function CsvImportPreviewModal({
           ) : null}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-[var(--ui-border)]/60 bg-[var(--ui-panel-muted)]/40 p-3">
-              <div className="text-[11px] text-[var(--ui-muted)]">総行数</div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
+              <div className="text-xs text-[var(--ui-muted)]">総行数</div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 {summary.totalRows}件
               </div>
             </div>
-            <div className="rounded-xl border border-[var(--ui-border)]/60 bg-[var(--ui-panel-muted)]/40 p-3">
-              <div className="text-[11px] text-[var(--ui-muted)]">有効行数</div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
+              <div className="text-xs text-[var(--ui-muted)]">有効行数</div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 {summary.validRows}件
               </div>
             </div>
-            <div className="rounded-xl border border-[var(--ui-border)]/60 bg-[var(--ui-panel-muted)]/40 p-3">
-              <div className="text-[11px] text-[var(--ui-muted)]">無効行数</div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
+              <div className="text-xs text-[var(--ui-muted)]">無効行数</div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 {summary.invalidRows}件
               </div>
             </div>
-            <div className="rounded-xl border border-[var(--ui-border)]/60 bg-[var(--ui-panel-muted)]/40 p-3">
-              <div className="text-[11px] text-[var(--ui-muted)]">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
+              <div className="text-xs text-[var(--ui-muted)]">
                 重複店舗ID
               </div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 {summary.duplicateIdCount}件
               </div>
-              <div className="text-[11px] text-[var(--ui-muted)]">
+              <div className="text-xs text-[var(--ui-muted)]">
                 重複行 {summary.duplicateRowCount}件
               </div>
               {duplicateIds.length > 0 ? (
@@ -193,7 +193,7 @@ export default function CsvImportPreviewModal({
               ラベル別カウント
             </div>
             {preview.labelStats.length === 0 ? (
-              <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+              <div className="mt-2 text-xs text-[var(--ui-muted)]">
                 自由列がありません。
               </div>
             ) : (
@@ -202,12 +202,12 @@ export default function CsvImportPreviewModal({
                   {labelStats.map((stat) => (
                   <details
                     key={stat.column}
-                    className="rounded-xl border border-[var(--ui-border)]/60 bg-[var(--ui-panel-muted)]/30 p-3"
+                    className="rounded-xl border border-[var(--ui-border)] bg-[var(--surface-2)] p-3"
                   >
                     <summary className="cursor-pointer text-[12px] font-medium text-[var(--ui-text)]">
                       {stat.column} / TRUE {stat.truthyCount}件
                     </summary>
-                    <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+                    <div className="mt-2 text-xs text-[var(--ui-muted)]">
                       空/false {stat.falseyCount}件 / 合計 {stat.totalCount}件
                     </div>
                   </details>
@@ -216,7 +216,7 @@ export default function CsvImportPreviewModal({
                 {preview.labelStats.length > 6 ? (
                   <button
                     type="button"
-                    className="mt-2 text-[11px] text-[var(--ui-muted)] underline"
+                    className="mt-2 text-xs text-[var(--ui-muted)] underline"
                     onClick={() => setShowAllLabels((current) => !current)}
                   >
                     {showAllLabels ? "上位のみ表示" : "すべて表示"}
@@ -231,12 +231,12 @@ export default function CsvImportPreviewModal({
               重複店舗ID
             </div>
             {preview.duplicates.length === 0 ? (
-              <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+              <div className="mt-2 text-xs text-[var(--ui-muted)]">
                 重複はありません。
               </div>
             ) : (
               <>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--ui-muted)]">
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--ui-muted)]">
                   <span>重複ID: {duplicateIds.length}件</span>
                   <button
                     type="button"
@@ -255,7 +255,7 @@ export default function CsvImportPreviewModal({
                 </div>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--ui-border)]/60">
                   <table className="min-w-full text-[11px]">
-                    <thead className="bg-[var(--ui-panel-muted)]/60">
+                    <thead className="bg-[var(--surface-2)]/60">
                       <tr>
                         <th className="px-3 py-2 text-left font-medium text-[var(--ui-text)]">
                           店舗ID
@@ -301,7 +301,7 @@ export default function CsvImportPreviewModal({
             </div>
             <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--ui-border)]/60">
               <table className="min-w-full text-[11px]">
-                <thead className="bg-[var(--ui-panel-muted)]/60">
+                <thead className="bg-[var(--surface-2)]/60">
                   <tr>
                     {preview.previewHeaders.map((header, colIndex) => (
                       <th

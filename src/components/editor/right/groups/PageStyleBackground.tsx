@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Image, UploadCloud } from "lucide-react";
 import { useRef } from "react";
@@ -198,8 +198,8 @@ export default function PageStyleBackground({
             onChange={handleTypeChange}
           >
             <option value="solid">単色</option>
-            <option value="gradient">グラデ</option>
-            <option value="pattern">柄</option>
+            <option value="gradient">グラデーション</option>
+            <option value="pattern">パターン</option>
             <option value="image">画像</option>
             <option value="video">動画</option>
             <option value="preset">プリセット</option>
@@ -216,10 +216,10 @@ export default function PageStyleBackground({
         ) : null}
         {backgroundType === "pattern" ? (
           <>
-            <FieldRow label="柄">
+            <FieldRow label="パターン">
               <SelectField
                 value={ensurePattern(spec).patternId}
-                ariaLabel="柄タイプ"
+                ariaLabel="パターン"
                 onChange={(next) => {
                   const pattern = ensurePattern(spec);
                   onChange({
@@ -238,7 +238,7 @@ export default function PageStyleBackground({
             <FieldRow label="前景色">
               <ColorField
                 value={ensurePattern(spec).foreground}
-                ariaLabel="柄前景色"
+                ariaLabel="前景色"
                 onChange={(next) => {
                   const pattern = ensurePattern(spec);
                   onChange({ ...pattern, foreground: next });
@@ -248,7 +248,7 @@ export default function PageStyleBackground({
             <FieldRow label="背景色">
               <ColorField
                 value={ensurePattern(spec).background}
-                ariaLabel="柄背景色"
+                ariaLabel="背景色"
                 onChange={(next) => {
                   const pattern = ensurePattern(spec);
                   onChange({ ...pattern, background: next });
@@ -261,20 +261,20 @@ export default function PageStyleBackground({
                 min={4}
                 max={120}
                 step={1}
-                ariaLabel="柄サイズ"
+                ariaLabel="サイズ"
                 onChange={(next) => {
                   const pattern = ensurePattern(spec);
                   onChange({ ...pattern, size: next });
                 }}
               />
             </FieldRow>
-            <FieldRow label="濃さ">
+            <FieldRow label="不透明度">
               <NumberField
                 value={ensurePattern(spec).opacity}
                 min={0}
                 max={1}
                 step={0.05}
-                ariaLabel="柄濃さ"
+                ariaLabel="不透明度"
                 onChange={(next) => {
                   const pattern = ensurePattern(spec);
                   onChange({ ...pattern, opacity: next });
@@ -288,7 +288,7 @@ export default function PageStyleBackground({
             <FieldRow label="開始色">
               <ColorField
                 value={getGradientStopColor(ensureGradient(spec), 0)}
-                ariaLabel="グラデ開始色"
+                ariaLabel="開始色"
                 onChange={(next) => {
                   const gradient = ensureGradient(spec);
                   const nextStops = [
@@ -305,7 +305,7 @@ export default function PageStyleBackground({
             <FieldRow label="終了色">
               <ColorField
                 value={getGradientStopColor(ensureGradient(spec), 1)}
-                ariaLabel="グラデ終了色"
+                ariaLabel="終了色"
                 onChange={(next) => {
                   const gradient = ensureGradient(spec);
                   const nextStops = [
@@ -325,7 +325,7 @@ export default function PageStyleBackground({
                 min={0}
                 max={360}
                 step={1}
-                ariaLabel="グラデ角度"
+                ariaLabel="角度"
                 onChange={(next) => {
                   const gradient = ensureGradient(spec);
                   onChange({ ...gradient, angle: next });
@@ -347,7 +347,7 @@ export default function PageStyleBackground({
                       disabled={!onAddAsset}
                     >
                       <UploadCloud size={12} />
-                      <span>アップ</span>
+                      <span>アップロード</span>
                     </button>
                     {ensureVideo(spec).assetId ? (
                       <button
@@ -358,7 +358,7 @@ export default function PageStyleBackground({
                           onChange({ ...video, assetId: "" });
                         }}
                       >
-                        解除
+                        削除
                       </button>
                     ) : null}
                     <input
@@ -392,15 +392,15 @@ export default function PageStyleBackground({
                 </FieldRow>
               </div>
             </Accordion>
-            <Accordion title="色調整">
+            <Accordion title="表示調整">
               <div className="flex flex-col gap-2">
-                <FieldRow label="透過">
+                <FieldRow label="不透明度">
                   <NumberField
                     value={ensureVideo(spec).opacity ?? 1}
                     min={0}
                     max={1}
                     step={0.05}
-                    ariaLabel="動画透明度"
+                    ariaLabel="不透明度"
                     onChange={(next) => {
                       const video = ensureVideo(spec);
                       onChange({ ...video, opacity: next });
@@ -413,7 +413,7 @@ export default function PageStyleBackground({
                     min={0}
                     max={40}
                     step={1}
-                    ariaLabel="動画ぼかし"
+                    ariaLabel="ぼかし"
                     onChange={(next) => {
                       const video = ensureVideo(spec);
                       onChange({ ...video, blur: next });
@@ -426,7 +426,7 @@ export default function PageStyleBackground({
                     min={0}
                     max={2}
                     step={0.05}
-                    ariaLabel="動画明るさ"
+                    ariaLabel="明るさ"
                     onChange={(next) => {
                       const video = ensureVideo(spec);
                       onChange({ ...video, brightness: next });
@@ -439,7 +439,7 @@ export default function PageStyleBackground({
                     min={0}
                     max={2}
                     step={0.05}
-                    ariaLabel="動画彩度"
+                    ariaLabel="彩度"
                     onChange={(next) => {
                       const video = ensureVideo(spec);
                       onChange({ ...video, saturation: next });
@@ -453,7 +453,7 @@ export default function PageStyleBackground({
                 <FieldRow label="色">
                   <ColorField
                     value={ensureVideo(spec).overlayColor ?? "#000000"}
-                    ariaLabel="動画オーバーレイ"
+                    ariaLabel="オーバーレイ色"
                     onChange={(next) => {
                       const video = ensureVideo(spec);
                       onChange({ ...video, overlayColor: next });
@@ -464,7 +464,7 @@ export default function PageStyleBackground({
             </Accordion>
             <Accordion title="再生">
               <div className="flex flex-col gap-2">
-                <FieldRow label="自動">
+                <FieldRow label="自動再生">
                   <ToggleField
                     value={ensureVideo(spec).autoPlay ?? true}
                     ariaLabel="自動再生"
@@ -497,7 +497,7 @@ export default function PageStyleBackground({
                 <FieldRow label="インライン">
                   <ToggleField
                     value={ensureVideo(spec).playsInline ?? true}
-                    ariaLabel="インライン"
+                    ariaLabel="インライン再生"
                     onChange={(next) => {
                       const video = ensureVideo(spec);
                       onChange({ ...video, playsInline: next });
@@ -509,16 +509,16 @@ export default function PageStyleBackground({
           </div>
         ) : null}
         {backgroundType === "preset" ? (
-          <FieldRow label="プリセットID">
+          <FieldRow label="プリセット">
             <SelectField
               value={ensurePreset(spec).presetId}
-              ariaLabel="プリセットID"
+              ariaLabel="プリセット"
               onChange={(next) => {
                 const preset = ensurePreset(spec);
                 onChange({ ...preset, presetId: next });
               }}
             >
-              <option value="">未選択</option>
+              <option value="">選択してください</option>
               {BACKGROUND_PRESET_OPTIONS.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.label}
@@ -540,7 +540,7 @@ export default function PageStyleBackground({
                       disabled={!onAddAsset}
                     >
                       <UploadCloud size={12} />
-                      <span>アップ</span>
+                      <span>アップロード</span>
                     </button>
                     {ensureImage(spec).assetId ? (
                       <button
@@ -551,7 +551,7 @@ export default function PageStyleBackground({
                           onChange({ ...image, assetId: "" });
                         }}
                       >
-                        解除
+                        削除
                       </button>
                     ) : null}
                     <input
@@ -592,10 +592,10 @@ export default function PageStyleBackground({
                     value={ensureImage(spec).size}
                     ariaLabel="画像サイズ"
                     options={[
-                      { value: "cover", label: "フル" },
+                      { value: "cover", label: "カバー" },
                       { value: "contain", label: "フィット" },
-                      { value: "100% 100%", label: "伸縮" },
-                      { value: "auto", label: "実寸" },
+                      { value: "100% 100%", label: "引き伸ばし" },
+                      { value: "auto", label: "自動" },
                     ]}
                     onChange={(next) => {
                       const image = ensureImage(spec);
@@ -621,27 +621,27 @@ export default function PageStyleBackground({
                     <option value="center bottom">中央下</option>
                   </SelectField>
                 </FieldRow>
-                <FieldRow label="繰返">
+                <FieldRow label="繰り返し">
                   <SelectField
                     value={ensureImage(spec).repeat}
-                    ariaLabel="画像繰り返し"
+                    ariaLabel="繰り返し"
                     onChange={(next) => {
                       const image = ensureImage(spec);
                       onChange({ ...image, repeat: String(next) });
                     }}
                   >
-                    <option value="no-repeat">なし</option>
-                    <option value="repeat">あり</option>
-                    <option value="repeat-x">横</option>
-                    <option value="repeat-y">縦</option>
+                    <option value="no-repeat">繰り返しなし</option>
+                    <option value="repeat">繰り返し</option>
+                    <option value="repeat-x">横方向</option>
+                    <option value="repeat-y">縦方向</option>
                   </SelectField>
                 </FieldRow>
                 <FieldRow label="固定">
                   <SegmentedField
                     value={ensureImage(spec).attachment}
-                    ariaLabel="画像固定"
+                    ariaLabel="固定"
                     options={[
-                      { value: "scroll", label: "スク" },
+                      { value: "scroll", label: "スクロール" },
                       { value: "fixed", label: "固定" },
                     ]}
                     onChange={(next) => {
@@ -652,15 +652,15 @@ export default function PageStyleBackground({
                 </FieldRow>
               </div>
             </Accordion>
-            <Accordion title="色調整">
+            <Accordion title="表示調整">
               <div className="flex flex-col gap-2">
-                <FieldRow label="透過">
+                <FieldRow label="不透明度">
                   <NumberField
                     value={ensureImage(spec).opacity ?? 1}
                     min={0}
                     max={1}
                     step={0.05}
-                    ariaLabel="透明度"
+                    ariaLabel="不透明度"
                     onChange={(next) => {
                       const image = ensureImage(spec);
                       onChange({ ...image, opacity: next });
@@ -713,20 +713,20 @@ export default function PageStyleBackground({
                 <FieldRow label="色">
                   <ColorField
                     value={ensureImage(spec).overlayColor ?? "#000000"}
-                    ariaLabel="色被せ"
+                    ariaLabel="オーバーレイ色"
                     onChange={(next) => {
                       const image = ensureImage(spec);
                       onChange({ ...image, overlayColor: next });
                     }}
                   />
                 </FieldRow>
-                <FieldRow label="濃さ">
+                <FieldRow label="不透明度">
                   <NumberField
                     value={ensureImage(spec).overlayOpacity ?? 0}
                     min={0}
                     max={1}
                     step={0.05}
-                    ariaLabel="色被せ濃さ"
+                    ariaLabel="オーバーレイ不透明度"
                     onChange={(next) => {
                       const image = ensureImage(spec);
                       onChange({ ...image, overlayOpacity: next });
@@ -736,7 +736,7 @@ export default function PageStyleBackground({
                 <FieldRow label="合成">
                   <SelectField
                     value={ensureImage(spec).overlayBlendMode ?? "normal"}
-                    ariaLabel="色被せ合成"
+                    ariaLabel="合成モード"
                     onChange={(next) => {
                       const image = ensureImage(spec);
                       onChange({
@@ -756,8 +756,8 @@ export default function PageStyleBackground({
           </div>
         ) : null}
         {backgroundType === "video" ? (
-          <div className="text-[11px] text-[var(--ui-muted)]">
-            URL入力もAdvancedで設定できます。
+          <div className="text-xs text-[var(--ui-muted)]">
+            URL指定はAdvancedで設定できます。
           </div>
         ) : null}
         <div className="mt-1 flex justify-end">

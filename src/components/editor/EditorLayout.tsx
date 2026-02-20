@@ -246,16 +246,16 @@ export default function EditorLayout() {
 					<InspectorPanel />
 				</aside>
 			</div>
-			<footer className="flex items-center justify-center border-t border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-4 py-2 text-[11px] text-[var(--ui-muted)]">
+			<footer className="flex items-center justify-center border-t border-[var(--ui-border)] bg-[var(--surface-2)] px-4 py-2 text-xs text-[var(--ui-muted)]">
 				LP Editor.v2 / Created By Jhastine.K
 			</footer>
 			<TooltipLayer />
 			{templateChooserOpen ? (
-				<div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-6">
-					<div className="w-full max-w-2xl rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+				<div className="absolute inset-0 z-50 ui-modal-overlay flex items-center justify-center p-6">
+					<div className="ui-modal w-full max-w-2xl p-6">
 						<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 							<div className="space-y-2">
-								<div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-3 py-1 text-[11px] font-semibold text-[var(--ui-muted)]">
+								<div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--surface-2)] px-3 py-1 text-[11px] font-semibold text-[var(--ui-muted)]">
 									テンプレート選択
 								</div>
 								<div className="text-xl font-semibold text-[var(--ui-text)]">
@@ -273,7 +273,7 @@ export default function EditorLayout() {
 								) : null}
 								<button
 									type="button"
-									className="ui-button h-8 px-3 text-[11px]"
+									className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
 									onClick={() => setTemplateChooserOpen(false)}
 								>
 									LP Editorに戻る
@@ -286,7 +286,7 @@ export default function EditorLayout() {
 									key={option.id}
 									type="button"
 									onClick={() => handleTemplateSelect(option)}
-									className="group relative flex h-full flex-col gap-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-5 text-left transition hover:border-[var(--ui-text)] hover:bg-[var(--ui-panel)]"
+									className="group relative flex h-full flex-col gap-3 rounded-xl border border-[var(--ui-border)] bg-[var(--surface)] p-5 text-left transition-colors duration-150 ease-out hover:border-[var(--ui-text)] hover:bg-[var(--surface-2)]"
 								>
 									<div className="flex items-center justify-between">
 										<div className="text-base font-semibold text-[var(--ui-text)]">
@@ -311,3 +311,4 @@ export default function EditorLayout() {
 		</div>
 	);
 }
+

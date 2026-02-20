@@ -308,7 +308,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
   }, [isOverflowOpen]);
 
   const overflowItemBase =
-    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition hover:bg-[var(--ui-panel-muted)]";
+    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-colors duration-150 ease-out hover:bg-[var(--surface-2)]";
 
   const handleScreenshot = (label: string) => {
     if (isScreenshotting) return;
@@ -378,7 +378,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
       <div className="flex flex-wrap items-center gap-2 md:gap-3">
         {onOpenTemplate ? (
           <button
-            className="ui-button h-8 px-3 text-[11px]"
+            className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
             type="button"
             aria-label="テンプレート選択画面に戻る"
             onClick={onOpenTemplate}
@@ -393,7 +393,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
           </span>
           <div className="flex items-center gap-1">
             <button
-              className="ui-button h-8 px-3 text-[11px]"
+              className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
               type="button"
               aria-label="元に戻す"
               disabled={!canUndo}
@@ -402,7 +402,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
               元に戻す
             </button>
             <button
-              className="ui-button h-8 px-3 text-[11px]"
+              className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
               type="button"
               aria-label="やり直し"
               disabled={!canRedo}
@@ -414,7 +414,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
         </div>
       </div>
       <div className="flex items-center justify-center gap-2">
-        <div className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5">
+        <div className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--surface-2)] p-0.5">
           <button
             className={
               isDesktop
@@ -450,7 +450,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
             比率
           </span>
           <div
-            className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-0.5"
+            className="flex h-8 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--surface-2)] p-0.5"
             role="radiogroup"
             aria-label="プレビューのアスペクト比"
           >
@@ -500,7 +500,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
             aria-haspopup="menu"
             aria-expanded={isOverflowOpen}
             aria-label="その他"
-            className="ui-button h-8 w-8 px-0 text-[11px]"
+            className="ui-button ui-button-ghost h-8 w-8 px-0 text-[11px]"
             onClick={() => setIsOverflowOpen((current) => !current)}
           >
             <MoreHorizontal size={16} />
@@ -508,7 +508,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
           {isOverflowOpen ? (
             <div
               role="menu"
-              className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-[var(--ui-border)]/80 bg-[var(--ui-panel)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
+              className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-[var(--ui-border)] bg-[var(--surface)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
             >
               <button
                 type="button"
@@ -562,7 +562,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
         {previewIframeRef ? (
           <div className="flex items-center gap-1">
             <button
-              className="ui-button h-8 px-3 text-[11px]"
+              className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
               type="button"
               aria-label="スクリーンショット（現在のプレビュー）"
               disabled={isScreenshotting}
@@ -583,17 +583,17 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
             aria-haspopup="dialog"
             aria-expanded={isSettingsOpen}
             aria-label="設定"
-            className="ui-button h-8 px-3 text-[11px]"
+            className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
             onClick={() => setIsSettingsOpen(true)}
           >
             設定
           </button>
         </div>
         {isSettingsOpen ? (
-          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 backdrop-blur-[2px] p-4 pt-6">
+          <div className="fixed inset-0 z-50 ui-modal-overlay flex items-start justify-center p-4 pt-6">
             <div
               className={
-                "ui-panel w-full max-w-xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-xl p-4 shadow-[0_20px_60px_rgba(0,0,0,0.3)] " +
+                "ui-modal w-full max-w-xl max-h-[calc(100vh-3rem)] overflow-y-auto p-4 " +
                 glassClass
               }
               role="dialog"
@@ -601,7 +601,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1.5">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--ui-muted)]">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[var(--ui-border)] bg-[var(--surface-2)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--ui-muted)]">
                     設定
                   </div>
                   <div className="text-lg font-semibold text-[var(--ui-text)]">
@@ -621,7 +621,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
               </div>
 
               <div className="mt-4 grid gap-4">
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     テーマ
                   </div>
@@ -661,7 +661,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     保存
                   </div>
@@ -714,7 +714,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     エクスポート
                   </div>
@@ -738,7 +738,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     履歴
                   </div>
@@ -790,7 +790,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </button>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     プレビュー
                   </div>
@@ -871,7 +871,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     アクセシビリティ
                   </div>
@@ -906,7 +906,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </label>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     AI支援
                   </div>
@@ -971,7 +971,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel-muted)] p-3">
+                <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-3">
                   <div className="text-[11px] font-semibold text-[var(--ui-muted)]">
                     アカウント
                   </div>
@@ -980,7 +980,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   </div>
                   <button
                     type="button"
-                    className="ui-button mt-3 h-7 px-2 text-[10px]"
+                    className="ui-button ui-button-secondary mt-3 h-7 px-2 text-[10px]"
                     onClick={() => setIsLogoutConfirmOpen(true)}
                   >
                     ログアウト
@@ -991,10 +991,10 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
           </div>
         ) : null}
         {isLogoutConfirmOpen ? (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="fixed inset-0 z-[60] ui-modal-overlay flex items-center justify-center p-4">
             <div
               className={
-                "ui-panel w-full max-w-sm rounded-xl p-4 shadow-[0_20px_60px_rgba(0,0,0,0.35)] " +
+                "ui-modal w-full max-w-sm p-4 " +
                 glassClass
               }
               role="dialog"
@@ -1003,13 +1003,13 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 ログアウトしますか？
               </div>
-              <div className="mt-2 text-[11px] text-[var(--ui-muted)]">
+              <div className="mt-2 text-xs text-[var(--ui-muted)]">
                 端末内のログイン状態をリセットします。
               </div>
               <div className="mt-4 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  className="ui-button h-7 px-2 text-[10px]"
+                  className="ui-button ui-button-secondary h-7 px-2 text-[10px]"
                   onClick={() => setIsLogoutConfirmOpen(false)}
                 >
                   キャンセル
@@ -1026,7 +1026,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
           </div>
         ) : null}
         {isMobile ? (
-          <span className="text-[11px] text-[var(--ui-muted)]">
+          <span className="text-xs text-[var(--ui-muted)]">
             Mobileでは端末枠で固定表示です
           </span>
         ) : null}

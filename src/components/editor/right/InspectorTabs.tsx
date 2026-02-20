@@ -33,16 +33,16 @@ export default function InspectorTabs({
   ];
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-[var(--ui-border)]/70 bg-[var(--ui-panel-muted)]/70 p-1 text-[11px]">
+    <div className="flex items-center gap-1 rounded-lg border border-[var(--ui-border)] bg-[var(--surface-2)] p-1 text-[11px]">
       {tabs.map((tab) => (
         <button
           key={tab.key}
           type="button"
           className={
-            "h-7 flex-1 rounded-md px-2 font-semibold tracking-wide transition " +
+            "h-8 flex-1 rounded-md px-2 font-semibold tracking-wide transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklab,var(--ui-primary-base)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] " +
             (value === tab.key
-              ? " bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm"
-              : " text-[var(--ui-muted)] hover:bg-[var(--ui-panel)]/70 hover:text-[var(--ui-text)]")
+              ? " bg-[var(--surface)] text-[var(--ui-text)] shadow-sm"
+              : " text-[var(--ui-muted)] hover:bg-[var(--surface)] hover:text-[var(--ui-text)]")
           }
           aria-pressed={value === tab.key}
           onClick={() => onChange(tab.key)}

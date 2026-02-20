@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Ruler } from "lucide-react";
 import Accordion from "@/src/components/editor/right/primitives/Accordion";
@@ -31,7 +31,7 @@ export default function PageStyleSpacing({
         </div>
         <div className="grid flex-1 grid-cols-2 gap-2">
           <div className="flex items-center gap-2">
-            <span className="w-6 text-[11px] text-[var(--ui-muted)]">
+            <span className="w-6 text-xs text-[var(--ui-muted)]">
               {t.inspector.page.paddingLabels.top}
             </span>
             <NumberField
@@ -48,7 +48,7 @@ export default function PageStyleSpacing({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-6 text-[11px] text-[var(--ui-muted)]">
+            <span className="w-6 text-xs text-[var(--ui-muted)]">
               {t.inspector.page.paddingLabels.right}
             </span>
             <NumberField
@@ -65,7 +65,7 @@ export default function PageStyleSpacing({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-6 text-[11px] text-[var(--ui-muted)]">
+            <span className="w-6 text-xs text-[var(--ui-muted)]">
               {t.inspector.page.paddingLabels.bottom}
             </span>
             <NumberField
@@ -82,7 +82,7 @@ export default function PageStyleSpacing({
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-6 text-[11px] text-[var(--ui-muted)]">
+            <span className="w-6 text-xs text-[var(--ui-muted)]">
               {t.inspector.page.paddingLabels.left}
             </span>
             <NumberField
@@ -113,3 +113,4 @@ export default function PageStyleSpacing({
     </Accordion>
   );
 }
+

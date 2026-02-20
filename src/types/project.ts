@@ -88,6 +88,8 @@ export type SectionBackground = {
   type: "solid" | "gradient";
   color1: string;
   color2: string;
+  opacity?: number;
+  transparent?: boolean;
 };
 
 export type SectionBorder = {

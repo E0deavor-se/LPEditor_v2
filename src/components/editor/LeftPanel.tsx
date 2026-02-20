@@ -32,7 +32,7 @@ export default function LeftPanel({ width, onWidthPreset }: LeftPanelProps) {
       style={{ width, minWidth: 260, maxWidth: 420 }}
       tabIndex={0}
     >
-      <div className="border-b border-[var(--ui-border)] bg-[var(--ui-panel-muted)] px-[var(--ui-space-3)] py-[var(--ui-space-2)]">
+      <div className="border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-[var(--ui-space-3)] py-[var(--ui-space-2)]">
         <div className="flex items-center justify-between gap-2">
           <div>
             <div className="text-[13px] font-semibold text-[var(--ui-text)]">

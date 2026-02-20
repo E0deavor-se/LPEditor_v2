@@ -1649,6 +1649,7 @@ function TargetStoresSection({
 const sectionLabels: Record<string, string> = {
   brandBar: "ブランドバー",
   heroImage: "ヒーロー画像",
+  imageOnly: "画像のみ",
   campaignPeriodBar: "キャンペーン期間",
   campaignOverview: "キャンペーン概要",
   couponFlow: "クーポン利用の流れ",
@@ -2456,6 +2457,82 @@ const renderSection = (
             )}
           </div>
         </div>
+      );
+    }
+    case "imageOnly": {
+      const assets = project?.assets ?? {};
+      const assetId =
+        typeof section.data.imageOnlyAssetId === "string"
+          ? section.data.imageOnlyAssetId
+          : "";
+      const imageUrl =
+        (assetId ? assets[assetId]?.data : "") ||
+        (typeof section.data.imageOnlyUrl === "string"
+          ? section.data.imageOnlyUrl
+          : "") ||
+        "";
+      const imageAlt =
+        typeof section.data.imageOnlyAlt === "string"
+          ? section.data.imageOnlyAlt
+          : "";
+      const sizeMode =
+        section.data.imageOnlySizeMode === "auto" ||
+        section.data.imageOnlySizeMode === "custom"
+          ? section.data.imageOnlySizeMode
+          : "fit";
+      const imageWidth =
+        typeof section.data.imageOnlyWidth === "number"
+          ? section.data.imageOnlyWidth
+          : undefined;
+      const imageMaxWidth =
+        typeof section.data.imageOnlyMaxWidth === "number"
+          ? section.data.imageOnlyMaxWidth
+          : undefined;
+      const imageFit = section.data.imageOnlyFit === "cover" ? "cover" : "contain";
+      const imageAlign =
+        section.data.imageOnlyAlign === "left" ||
+        section.data.imageOnlyAlign === "right"
+          ? section.data.imageOnlyAlign
+          : "center";
+      const justifyContent =
+        imageAlign === "left"
+          ? "flex-start"
+          : imageAlign === "right"
+          ? "flex-end"
+          : "center";
+      const maxWidthStyle =
+        imageMaxWidth && imageMaxWidth > 0 ? `${imageMaxWidth}px` : "100%";
+      const imageStyle: CSSProperties = {
+        objectFit: imageFit,
+        height: "auto",
+        maxWidth: maxWidthStyle,
+      };
+      if (sizeMode === "fit") {
+        imageStyle.width = "100%";
+      } else if (sizeMode === "custom" && imageWidth && imageWidth > 0) {
+        imageStyle.width = `${imageWidth}px`;
+      }
+
+      return (
+        <section className="w-full">
+          <div className="flex w-full" style={{ justifyContent }}>
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={imageAlt}
+                style={imageStyle}
+                data-asset-id={assetId || undefined}
+              />
+            ) : (
+              <div
+                className="flex h-[200px] w-full items-center justify-center rounded-md border border-dashed border-[var(--lp-border)] text-sm text-[var(--lp-muted)]"
+                style={{ maxWidth: maxWidthStyle }}
+              >
+                画像を追加してください
+              </div>
+            )}
+          </div>
+        </section>
       );
     }
     case "campaignPeriodBar": {
@@ -3499,10 +3576,40 @@ export default function PreviewSsr({
     typeof ui?.fontScale === "number" && Number.isFinite(ui.fontScale)
       ? ui.fontScale
       : 1;
-
+  const pageTypography = pageBaseStyle?.typography;
+  const pageColors = pageBaseStyle?.colors;
   const previewRootStyle: CSSProperties & Record<string, string> = {
     "--lp-font-scale": String(fontScale),
   };
+  if (pageColors?.background) {
+    previewRootStyle["--lp-bg"] = pageColors.background;
+  }
+  if (pageColors?.text) {
+    previewRootStyle["--lp-text"] = pageColors.text;
+    previewRootStyle["--lp-muted"] =
+      `color-mix(in oklab, ${pageColors.text} 60%, transparent)`;
+  }
+  if (pageColors?.accent) {
+    previewRootStyle["--lp-accent"] = pageColors.accent;
+  }
+  if (pageColors?.border) {
+    previewRootStyle["--lp-border"] = pageColors.border;
+  }
+  if (pageTypography?.fontFamily) {
+    previewRootStyle.fontFamily = pageTypography.fontFamily;
+  }
+  if (typeof pageTypography?.baseSize === "number") {
+    previewRootStyle.fontSize = `${pageTypography.baseSize}px`;
+  }
+  if (typeof pageTypography?.lineHeight === "number") {
+    previewRootStyle.lineHeight = String(pageTypography.lineHeight);
+  }
+  if (typeof pageTypography?.letterSpacing === "number") {
+    previewRootStyle.letterSpacing = `${pageTypography.letterSpacing}px`;
+  }
+  if (typeof pageTypography?.fontWeight === "number") {
+    previewRootStyle.fontWeight = pageTypography.fontWeight;
+  }
   const pageBackgroundStyle = pageBackground.style as CSSProperties;
   const pageVideo = pageBackground.video;
   const pageVideoUrl = pageVideo?.assetId
@@ -3529,6 +3636,10 @@ export default function PreviewSsr({
   if (pageOpacity !== 1) {
     pageFilters.push(`opacity(${pageOpacity})`);
   }
+  const sectionGap =
+    typeof pageBaseStyle?.spacing?.sectionGap === "number"
+      ? pageBaseStyle.spacing.sectionGap
+      : 0;
 
   return (
     <div
@@ -3558,6 +3669,7 @@ export default function PreviewSsr({
           " " +
           bottomPaddingClass
         }
+        style={{ gap: `${sectionGap}px` }}
       >
         {visibleSections.length === 0 ? (
           <div className="mx-auto w-full max-w-[920px] px-6 text-sm text-[var(--lp-muted)]">
@@ -3578,6 +3690,7 @@ export default function PreviewSsr({
           const isSpecialSection =
             section.type === "brandBar" ||
             section.type === "heroImage" ||
+            section.type === "imageOnly" ||
             section.type === "campaignPeriodBar" ||
             section.type === "footerHtml" ||
             section.type === "tabbedNotes" ||

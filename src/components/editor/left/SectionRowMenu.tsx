@@ -70,7 +70,7 @@ export default function SectionRowMenu({
     <div ref={menuRef} className="relative">
       <button
         type="button"
-        className="ui-button h-7 w-7 px-0 text-[10px]"
+        className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px]"
         aria-label="メニュー"
         title="メニュー"
         onClick={(event) => {
@@ -83,7 +83,7 @@ export default function SectionRowMenu({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-[var(--ui-border)]/80 bg-[var(--ui-panel)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
+          className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border border-[var(--ui-border)] bg-[var(--surface)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
           onClick={(event) => event.stopPropagation()}
         >
           <button
@@ -92,7 +92,7 @@ export default function SectionRowMenu({
             className={`${menuItemBase} ${
               disableDuplicate
                 ? "cursor-not-allowed text-[var(--ui-muted)]"
-                : "hover:bg-[var(--ui-panel-muted)]"
+                : "hover:bg-[var(--surface-2)]"
             }`}
             onClick={() => runAction(onDuplicate, disableDuplicate)}
             aria-disabled={disableDuplicate}
@@ -106,7 +106,7 @@ export default function SectionRowMenu({
             className={`${menuItemBase} ${
               disableMoveUp
                 ? "cursor-not-allowed text-[var(--ui-muted)]"
-                : "hover:bg-[var(--ui-panel-muted)]"
+                : "hover:bg-[var(--surface-2)]"
             }`}
             onClick={() => runAction(onMoveUp, disableMoveUp)}
             aria-disabled={disableMoveUp}
@@ -120,7 +120,7 @@ export default function SectionRowMenu({
             className={`${menuItemBase} ${
               disableMoveDown
                 ? "cursor-not-allowed text-[var(--ui-muted)]"
-                : "hover:bg-[var(--ui-panel-muted)]"
+                : "hover:bg-[var(--surface-2)]"
             }`}
             onClick={() => runAction(onMoveDown, disableMoveDown)}
             aria-disabled={disableMoveDown}
@@ -134,7 +134,7 @@ export default function SectionRowMenu({
             className={`${menuItemBase} ${
               disableDelete
                 ? "cursor-not-allowed text-[var(--ui-muted)]"
-                : "hover:bg-[var(--ui-panel-muted)]"
+                : "hover:bg-[var(--surface-2)]"
             }`}
             onClick={() => runAction(onDelete, disableDelete)}
             aria-disabled={disableDelete}

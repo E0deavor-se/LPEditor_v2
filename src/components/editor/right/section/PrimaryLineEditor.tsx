@@ -48,10 +48,10 @@ export default function PrimaryLineEditor({
             <div
               key={line.id}
               className={
-                "group flex h-8 items-center gap-2 rounded-md border border-[var(--ui-border)]/50 bg-[var(--ui-panel)]/60 px-2 text-[12px] transition " +
+                "group flex h-8 items-center gap-2 rounded-md border border-[var(--ui-border)]/50 bg-[var(--surface)] px-2 text-[12px] transition-colors duration-150 ease-out " +
                 (isSelected
                   ? " ring-1 ring-[var(--ui-ring)]"
-                  : " hover:bg-[var(--ui-panel)]/80")
+                  : " hover:bg-[var(--surface-2)]")
               }
               onClick={() => onSelect(line.id)}
               role="button"
@@ -62,7 +62,7 @@ export default function PrimaryLineEditor({
               </span>
               <input
                 type="text"
-                className="ui-input h-7 flex-1 text-[12px]"
+                className="ui-input h-8 flex-1 text-[12px]"
                 value={line.text}
                 onChange={(event) => onUpdateText(line.id, event.target.value)}
                 onFocus={() => onSelect(line.id)}
@@ -91,7 +91,7 @@ export default function PrimaryLineEditor({
               ) : null}
               <button
                 type="button"
-                className="ui-button h-7 w-7 px-0 text-[10px] opacity-0 transition group-hover:opacity-100"
+                className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px] opacity-0 transition group-hover:opacity-100"
                 aria-label={t.inspector.section.buttons.deleteLine}
                 title={t.inspector.section.buttons.deleteLine}
                 onClick={(event) => {
@@ -109,7 +109,7 @@ export default function PrimaryLineEditor({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="ui-button h-7 px-2 text-[11px]"
+          className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
           onClick={onAddLine}
           disabled={disabled}
         >
@@ -117,7 +117,7 @@ export default function PrimaryLineEditor({
         </button>
         <button
           type="button"
-          className="ui-button h-7 px-2 text-[11px]"
+          className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
           onClick={onRemoveLast}
           disabled={disabled}
         >

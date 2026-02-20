@@ -59,10 +59,10 @@ export default function InspectorHeader({
   ];
   const isRenameAvailable = Boolean(onRenameSection);
   return (
-    <div className="border-b border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/70 px-3 py-2">
+    <div className="border-b border-[var(--ui-border)]/60 bg-[var(--surface)] px-3 py-2">
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/70 p-1 text-[11px]">
+          <div className="inline-flex items-center gap-1 rounded-md border border-[var(--ui-border)]/60 bg-[var(--surface-2)] p-1 text-[11px]">
             {scopeOptions.map((option) => (
               <button
                 key={option.key}
@@ -89,7 +89,7 @@ export default function InspectorHeader({
               <>
                 <button
                   type="button"
-                  className="ui-button h-7 w-7 px-0 text-[10px]"
+                  className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px]"
                   aria-label="複製"
                   title="複製"
                   onClick={onDuplicateSection}
@@ -98,7 +98,7 @@ export default function InspectorHeader({
                 </button>
                 <button
                   type="button"
-                  className="ui-button h-7 w-7 px-0 text-[10px]"
+                  className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px]"
                   aria-label="名前変更"
                   title={isRenameAvailable ? "名前変更" : "名前変更 (準備中)"}
                   onClick={() => onRenameSection?.()}
@@ -108,7 +108,7 @@ export default function InspectorHeader({
                 </button>
                 <button
                   type="button"
-                  className="ui-button h-7 w-7 px-0 text-[10px]"
+                  className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px]"
                   aria-label={
                     isVisible
                       ? t.inspector.header.hideSection
@@ -125,7 +125,7 @@ export default function InspectorHeader({
                 </button>
                 <button
                   type="button"
-                  className="ui-button h-7 w-7 px-0 text-[10px]"
+                  className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px]"
                   aria-label={
                     isLocked ? t.inspector.header.unlock : t.inspector.header.lock
                   }
@@ -143,7 +143,7 @@ export default function InspectorHeader({
                 </button>
                 <button
                   type="button"
-                  className="ui-button h-7 w-7 px-0 text-[10px] text-rose-500 hover:text-rose-400"
+                  className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px] text-rose-500 hover:text-rose-400"
                   aria-label="削除"
                   title="削除"
                   onClick={onDeleteSection}
@@ -154,7 +154,7 @@ export default function InspectorHeader({
             ) : (
               <button
                 type="button"
-                className="ui-button h-7 w-7 px-0 text-[10px]"
+                className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px]"
                 aria-label={t.inspector.header.reset}
                 title={t.inspector.header.reset}
                 onClick={onResetPage}
@@ -164,7 +164,7 @@ export default function InspectorHeader({
             )}
           </div>
         </div>
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel-muted)]/70 px-2 py-1">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--surface-2)] px-2 py-1">
           <div className="text-[10px] font-semibold text-[var(--ui-muted)]">
             {targetLabel}
           </div>
@@ -197,7 +197,7 @@ export default function InspectorHeader({
         </div>
       </div>
       {isSection && isLocked ? (
-        <div className="mt-1 flex items-center gap-1 text-[11px] text-[var(--ui-muted)]">
+        <div className="mt-1 flex items-center gap-1 text-xs text-[var(--ui-muted)]">
           <Lock size={12} />
           {t.inspector.header.locked}
         </div>

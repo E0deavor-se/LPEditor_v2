@@ -59,6 +59,7 @@ export default function SectionStylePanel({
       ? cardStyle.labelChipTextColor
       : "left";
   const bandPosition = cardStyle.labelChipEnabled ? "inset" : "top";
+  const surfaceTransparent = Boolean(style.background.transparent);
 
   return (
     <div className="flex flex-col gap-2">
@@ -184,6 +185,19 @@ export default function SectionStylePanel({
             <option value="sm">{t.inspector.section.shadowOptions.sm}</option>
             <option value="md">{t.inspector.section.shadowOptions.md}</option>
           </SelectField>
+        </FieldRow>
+        <FieldRow label="背景透過">
+          <ToggleField
+            value={surfaceTransparent}
+            ariaLabel="背景透過"
+            onChange={(next) =>
+              onStyleChange({
+                background: {
+                  transparent: next,
+                },
+              })
+            }
+          />
         </FieldRow>
         {hideTitleBand ? null : (
           <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/60 px-2 py-2">

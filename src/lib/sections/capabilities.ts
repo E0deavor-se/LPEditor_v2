@@ -32,6 +32,15 @@ export const SECTION_CAPABILITIES: Record<string, SectionCapabilities> = {
     animation: true,
     allowBackgroundGradient: true,
   },
+  imageOnly: {
+    text: false,
+    typography: false,
+    colors: false,
+    layout: true,
+    decorations: false,
+    animation: true,
+    allowBackgroundGradient: false,
+  },
   campaignPeriodBar: {
     text: false,
     typography: true,

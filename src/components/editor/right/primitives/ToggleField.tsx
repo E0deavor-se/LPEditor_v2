@@ -22,8 +22,8 @@ export default function ToggleField({
       className={
         "relative h-6 w-10 rounded-full border border-[var(--ui-border)]/70 transition " +
         (value
-          ? " bg-[var(--ui-primary)]/70"
-          : " bg-[var(--ui-panel-muted)]") +
+          ? " bg-[var(--ui-primary-base)]/70"
+          : " bg-[var(--surface-2)]") +
         (disabled ? " cursor-not-allowed opacity-50" : "")
       }
       onClick={() => onChange(!value)}
