@@ -244,7 +244,7 @@ export default function InspectorHeader({
                 {targetLabel}
               </span>
               <SelectField
-                value={targetValue}
+                value={targetValue ?? ""}
                 ariaLabel={targetLabel}
                 onChange={(value) => onTargetChange(String(value))}
                 disabled={targetDisabled}
