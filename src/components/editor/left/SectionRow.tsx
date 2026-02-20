@@ -148,7 +148,6 @@ function SectionRow({
         (!section.visible ? " opacity-60" : "") +
         (isDragging ? " opacity-50" : "")
       }
-      tabIndex={0}
       onClick={onSelect}
       {...attributes}
       {...listeners}
