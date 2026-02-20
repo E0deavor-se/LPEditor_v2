@@ -19,7 +19,6 @@ import SectionTree from "@/src/components/editor/left/SectionTree";
 const SectionTypeLabels: Record<string, string> = {
   brandBar: "ブランドバー",
   heroImage: "メインビジュアル",
-  imageOnly: "画像のみ",
   campaignPeriodBar: "キャンペーン期間",
   campaignOverview: "キャンペーン概要",
   couponFlow: "クーポン利用方法",
