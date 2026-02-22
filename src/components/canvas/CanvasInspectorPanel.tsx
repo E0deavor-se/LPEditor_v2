@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useMemo, useCallback, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import type { CanvasLayer, LayerStyle, CanvasLayout } from "@/src/types/canvas";
 import { getLayout } from "@/src/types/canvas";
@@ -69,7 +69,17 @@ const NumField = ({ label, value, onChange, min, max, step = 1, unit, shiftStep 
         min={min}
         max={max}
         step={step}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setDraft(raw);
+          const n = Number(raw);
+          if (!Number.isNaN(n)) {
+            let clamped = n;
+            if (min !== undefined) clamped = Math.max(min, clamped);
+            if (max !== undefined) clamped = Math.min(max, clamped);
+            onChange(clamped);
+          }
+        }}
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={handleKeyDown}
       />
@@ -153,6 +163,37 @@ export default function CanvasInspectorPanel() {
   const updateLayerContent = useCanvasEditorStore((s) => s.updateLayerContent);
   const pushSnapshot = useCanvasEditorStore((s) => s.pushSnapshot);
 
+  const historyOpenRef = useRef<{ layout: boolean; style: boolean; content: boolean }>({
+    layout: false,
+    style: false,
+    content: false,
+  });
+  const historyTimerRef = useRef<{ layout: number | null; style: number | null; content: number | null }>({
+    layout: null,
+    style: null,
+    content: null,
+  });
+
+  const beginHistoryBurst = useCallback((kind: "layout" | "style" | "content") => {
+    if (!historyOpenRef.current[kind]) {
+      pushSnapshot();
+      historyOpenRef.current[kind] = true;
+    }
+    const timer = historyTimerRef.current[kind];
+    if (timer) window.clearTimeout(timer);
+    historyTimerRef.current[kind] = window.setTimeout(() => {
+      historyOpenRef.current[kind] = false;
+      historyTimerRef.current[kind] = null;
+    }, 180);
+  }, [pushSnapshot]);
+
+  useEffect(() => () => {
+    const timers = historyTimerRef.current;
+    if (timers.layout) window.clearTimeout(timers.layout);
+    if (timers.style) window.clearTimeout(timers.style);
+    if (timers.content) window.clearTimeout(timers.content);
+  }, []);
+
   const selectedLayer: CanvasLayer | undefined = useMemo(
     () => doc.layers.find((l) => l.id === selection.primaryId),
     [doc.layers, selection.primaryId]
@@ -165,26 +206,28 @@ export default function CanvasInspectorPanel() {
   const patchLayout = useCallback(
     (patch: Partial<CanvasLayout>) => {
       if (!selectedLayer) return;
-      pushSnapshot();
+      beginHistoryBurst("layout");
       updateLayerLayout(selectedLayer.id, patch);
     },
-    [selectedLayer, updateLayerLayout, pushSnapshot]
+    [selectedLayer, updateLayerLayout, beginHistoryBurst]
   );
 
   const patchStyle = useCallback(
     (patch: Partial<LayerStyle>) => {
       if (!selectedLayer) return;
+      beginHistoryBurst("style");
       updateLayerStyle(selectedLayer.id, patch);
     },
-    [selectedLayer, updateLayerStyle]
+    [selectedLayer, updateLayerStyle, beginHistoryBurst]
   );
 
   const patchContent = useCallback(
     (patch: Record<string, unknown>) => {
       if (!selectedLayer) return;
+      beginHistoryBurst("content");
       updateLayerContent(selectedLayer.id, patch);
     },
-    [selectedLayer, updateLayerContent]
+    [selectedLayer, updateLayerContent, beginHistoryBurst]
   );
 
   if (!selectedLayer || !layout || !style) {
