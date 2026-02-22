@@ -87,6 +87,8 @@ export type CanvasEditorActions = {
   /* Selection */
   select: (ids: string[], primaryId?: string) => void;
   clearSelection: () => void;
+  groupSelectedLayers: () => void;
+  ungroupSelectedLayers: () => void;
 
   /* Layer CRUD */
   addLayer: (layer: CanvasLayer) => void;
@@ -218,8 +220,120 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
 
   /* ===== Selection ===== */
   select: (ids, primaryId) =>
-    set({ selection: { ids, primaryId: primaryId ?? ids[0] } }),
+    set((state) => {
+      const expanded = new Set<string>(ids);
+      for (const id of ids) {
+        const layer = state.document.layers.find((l) => l.id === id);
+        if (layer?.content.kind === "group") {
+          for (const child of state.document.layers) {
+            if (child.groupId === layer.id) {
+              expanded.add(child.id);
+            }
+          }
+        }
+      }
+      const nextIds = Array.from(expanded);
+      return { selection: { ids: nextIds, primaryId: primaryId ?? nextIds[0] } };
+    }),
   clearSelection: () => set({ selection: { ids: [] } }),
+
+  groupSelectedLayers: () => {
+    const state = get();
+    const selected = state.selection.ids
+      .map((id) => state.document.layers.find((l) => l.id === id))
+      .filter(Boolean)
+      .filter((l) => l?.content.kind !== "group") as CanvasLayer[];
+    if (selected.length < 2) return;
+
+    const doc = cloneDoc(state.document);
+    const selectedIds = new Set(selected.map((l) => l.id));
+
+    const selectedLayers = doc.layers.filter((l) => selectedIds.has(l.id));
+    const bbPc = {
+      minX: Math.min(...selectedLayers.map((l) => l.variants.pc.x)),
+      minY: Math.min(...selectedLayers.map((l) => l.variants.pc.y)),
+      maxX: Math.max(...selectedLayers.map((l) => l.variants.pc.x + l.variants.pc.w)),
+      maxY: Math.max(...selectedLayers.map((l) => l.variants.pc.y + l.variants.pc.h)),
+    };
+    const bbSp = {
+      minX: Math.min(...selectedLayers.map((l) => l.variants.sp.x)),
+      minY: Math.min(...selectedLayers.map((l) => l.variants.sp.y)),
+      maxX: Math.max(...selectedLayers.map((l) => l.variants.sp.x + l.variants.sp.w)),
+      maxY: Math.max(...selectedLayers.map((l) => l.variants.sp.y + l.variants.sp.h)),
+    };
+
+    const maxZ = doc.layers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
+    const groupId = generateLayerId();
+    const groupLayer: CanvasLayer = {
+      id: groupId,
+      type: "group",
+      name: "グループ",
+      locked: false,
+      hidden: false,
+      content: { kind: "group" },
+      style: { opacity: 1 },
+      variants: {
+        pc: {
+          x: bbPc.minX,
+          y: bbPc.minY,
+          w: Math.max(1, bbPc.maxX - bbPc.minX),
+          h: Math.max(1, bbPc.maxY - bbPc.minY),
+          r: 0,
+          z: maxZ + 1,
+        },
+        sp: {
+          x: bbSp.minX,
+          y: bbSp.minY,
+          w: Math.max(1, bbSp.maxX - bbSp.minX),
+          h: Math.max(1, bbSp.maxY - bbSp.minY),
+          r: 0,
+          z: maxZ + 1,
+        },
+      },
+    };
+
+    for (const layer of doc.layers) {
+      if (selectedIds.has(layer.id)) {
+        layer.groupId = groupId;
+      }
+    }
+    doc.layers.push(groupLayer);
+
+    set({
+      ...commit(state, doc),
+      selection: { ids: [groupId, ...selectedLayers.map((l) => l.id)], primaryId: groupId },
+    });
+  },
+
+  ungroupSelectedLayers: () => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const targetGroupIds = new Set<string>();
+
+    for (const id of state.selection.ids) {
+      const layer = doc.layers.find((l) => l.id === id);
+      if (!layer) continue;
+      if (layer.content.kind === "group") {
+        targetGroupIds.add(layer.id);
+      } else if (layer.groupId) {
+        targetGroupIds.add(layer.groupId);
+      }
+    }
+
+    if (targetGroupIds.size === 0) return;
+
+    for (const layer of doc.layers) {
+      if (layer.groupId && targetGroupIds.has(layer.groupId)) {
+        layer.groupId = undefined;
+      }
+    }
+    doc.layers = doc.layers.filter((l) => !(l.content.kind === "group" && targetGroupIds.has(l.id)));
+
+    set({
+      ...commit(state, doc),
+      selection: { ids: [] },
+    });
+  },
 
   /* ===== Layer CRUD ===== */
   addLayer: (layer) => {
@@ -239,7 +353,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   removeLayer: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    doc.layers = doc.layers.filter((l) => l.id !== id);
+    const target = doc.layers.find((l) => l.id === id);
+    if (target?.content.kind === "group") {
+      doc.layers = doc.layers.filter((l) => l.id !== id && l.groupId !== id);
+    } else {
+      doc.layers = doc.layers.filter((l) => l.id !== id);
+    }
     const sel = state.selection.ids.filter((sid) => sid !== id);
     set({
       ...commit(state, doc),

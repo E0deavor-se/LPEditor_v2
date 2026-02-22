@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Monitor, Smartphone, Columns2, Grid3X3, Magnet,
-  ZoomIn, ZoomOut, Undo2, Redo2, Plus, Type, Image, Square, MousePointer2,
+  ZoomIn, ZoomOut, Undo2, Redo2, Type, Image, Square, MousePointer2,
   Wand2, Eye, EyeOff, Ruler, LayoutTemplate, Maximize, ALargeSmall,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
@@ -74,6 +74,8 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const bringForward = useCanvasEditorStore((s) => s.bringForward);
   const sendBackward = useCanvasEditorStore((s) => s.sendBackward);
   const clearSelection = useCanvasEditorStore((s) => s.clearSelection);
+  const groupSelectedLayers = useCanvasEditorStore((s) => s.groupSelectedLayers);
+  const ungroupSelectedLayers = useCanvasEditorStore((s) => s.ungroupSelectedLayers);
 
   const [autoLayoutOpen, setAutoLayoutOpen] = useState(false);
 
@@ -81,6 +83,10 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const hasTextSelection = selection.ids.length > 0 && canvasDoc.layers.some(
     (l) => selection.ids.includes(l.id) && (l.content.kind === "text" || l.content.kind === "button"),
   );
+  const hasGroupSelection = selection.ids.some((id) => {
+    const layer = canvasDoc.layers.find((l) => l.id === id);
+    return layer?.content.kind === "group";
+  });
 
   const updateCanvasPage = useEditorStore((s) => s.updateCanvasPage);
   const addAsset = useEditorStore((s) => s.addAsset);
@@ -136,6 +142,18 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
         return;
       }
 
+      // Group / Ungroup
+      if (ctrl && e.key.toLowerCase() === "g" && !e.shiftKey) {
+        e.preventDefault();
+        groupSelectedLayers();
+        return;
+      }
+      if (ctrl && e.key.toLowerCase() === "g" && e.shiftKey) {
+        e.preventDefault();
+        ungroupSelectedLayers();
+        return;
+      }
+
       // Delete
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
@@ -167,7 +185,7 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, selection.primaryId, duplicateLayer, removeLayer, moveSelectedLayers, pushSnapshot, clearSelection, bringForward, sendBackward]);
+  }, [undo, redo, selection.primaryId, duplicateLayer, removeLayer, moveSelectedLayers, pushSnapshot, clearSelection, bringForward, sendBackward, groupSelectedLayers, ungroupSelectedLayers]);
 
   /* ---- Add layer helpers ---- */
   const handleAddText = () => addLayer(createTextLayer("テキスト"));
@@ -366,6 +384,25 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
         </button>
         <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={handleAddButton} title="ボタン追加">
           <MousePointer2 size={14} />
+        </button>
+
+        <button
+          type="button"
+          className={`${BTN} ${BTN_GHOST}`}
+          onClick={groupSelectedLayers}
+          title="グループ化 (Ctrl/Cmd+G)"
+          disabled={selection.ids.length < 2}
+        >
+          グループ化
+        </button>
+        <button
+          type="button"
+          className={`${BTN} ${BTN_GHOST}`}
+          onClick={ungroupSelectedLayers}
+          title="グループ解除 (Ctrl/Cmd+Shift+G)"
+          disabled={!hasGroupSelection}
+        >
+          解除
         </button>
 
         {/* Fit Text (visible when text/button selected) */}

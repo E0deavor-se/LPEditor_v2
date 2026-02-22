@@ -134,6 +134,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
     () =>
       doc.layers
         .filter((l) => !l.hidden)
+        .filter((l) => l.content.kind !== "group")
         .filter((l) => !l.visibleOn || l.visibleOn.includes(device))
         .sort((a, b) => getLayout(a, device).z - getLayout(b, device).z),
     [doc.layers, device]

@@ -44,6 +44,10 @@ const typeIcon = (type: string) => {
 type LayerRowProps = {
   layer: CanvasLayer;
   isSelected: boolean;
+  indent?: number;
+  isGroup?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: (id: string) => void;
   editingId: string | null;
   editName: string;
   setEditName: (name: string) => void;
@@ -62,6 +66,10 @@ type LayerRowProps = {
 const SortableLayerRow = ({
   layer,
   isSelected,
+  indent = 0,
+  isGroup = false,
+  isCollapsed = false,
+  onToggleCollapse,
   editingId,
   editName,
   setEditName,
@@ -98,6 +106,20 @@ const SortableLayerRow = ({
       {...attributes}
       {...listeners}
     >
+      <span style={{ width: indent * 12, minWidth: indent * 12 }} />
+      {isGroup ? (
+        <button
+          type="button"
+          className="p-0.5 rounded hover:bg-[var(--surface-2)]"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse?.(layer.id);
+          }}
+          title={isCollapsed ? "展開" : "折りたたみ"}
+        >
+          {isCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+        </button>
+      ) : null}
       <span className="flex-shrink-0 text-[var(--ui-muted)]">{typeIcon(layer.type)}</span>
 
       {editingId === layer.id ? (
@@ -185,6 +207,7 @@ export default function CanvasLayersPanel() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
 
   const sortedLayers = useMemo(
     () =>
@@ -194,7 +217,52 @@ export default function CanvasLayersPanel() {
     [doc.layers, device]
   );
 
+  const groupChildrenMap = useMemo(() => {
+    const map = new Map<string, CanvasLayer[]>();
+    const byId = new Map(sortedLayers.map((l) => [l.id, l]));
+    for (const layer of sortedLayers) {
+      if (!layer.groupId) continue;
+      if (!byId.has(layer.groupId)) continue;
+      const list = map.get(layer.groupId) ?? [];
+      list.push(layer);
+      map.set(layer.groupId, list);
+    }
+    return map;
+  }, [sortedLayers]);
+
+  const visibleRows = useMemo(() => {
+    const rows: Array<{ layer: CanvasLayer; indent: number; isGroup: boolean }> = [];
+    const childIds = new Set<string>();
+    for (const children of groupChildrenMap.values()) {
+      for (const child of children) childIds.add(child.id);
+    }
+
+    for (const layer of sortedLayers) {
+      if (childIds.has(layer.id)) continue;
+      if (layer.content.kind === "group") {
+        rows.push({ layer, indent: 0, isGroup: true });
+        if (!collapsedGroupIds.has(layer.id)) {
+          const children = groupChildrenMap.get(layer.id) ?? [];
+          for (const child of children) {
+            rows.push({ layer: child, indent: 1, isGroup: false });
+          }
+        }
+      } else {
+        rows.push({ layer, indent: 0, isGroup: false });
+      }
+    }
+    return rows;
+  }, [sortedLayers, groupChildrenMap, collapsedGroupIds]);
+
   const handleSelect = (layerId: string, e: MouseEvent) => {
+    const clicked = doc.layers.find((l) => l.id === layerId);
+    if (clicked?.content.kind === "group") {
+      const childIds = doc.layers.filter((l) => l.groupId === clicked.id).map((l) => l.id);
+      const ids = [clicked.id, ...childIds];
+      select(ids, clicked.id);
+      return;
+    }
+
     if (e.shiftKey) {
       const ids = selection.ids.includes(layerId)
         ? selection.ids.filter((id) => id !== layerId)
@@ -223,6 +291,15 @@ export default function CanvasLayersPanel() {
     reorderLayers(String(active.id), String(over.id));
   };
 
+  const toggleGroupCollapse = (id: string) => {
+    setCollapsedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <aside
       className="flex h-full min-h-0 flex-col bg-[var(--ui-panel)] text-[var(--ui-text)]"
@@ -237,12 +314,16 @@ export default function CanvasLayersPanel() {
 
       <div className="flex-1 overflow-y-auto">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={sortedLayers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-            {sortedLayers.map((layer) => (
+          <SortableContext items={visibleRows.map((row) => row.layer.id)} strategy={verticalListSortingStrategy}>
+            {visibleRows.map((row) => (
               <SortableLayerRow
-                key={layer.id}
-                layer={layer}
-                isSelected={selection.ids.includes(layer.id)}
+                key={row.layer.id}
+                layer={row.layer}
+                isSelected={selection.ids.includes(row.layer.id)}
+                indent={row.indent}
+                isGroup={row.isGroup}
+                isCollapsed={collapsedGroupIds.has(row.layer.id)}
+                onToggleCollapse={toggleGroupCollapse}
                 editingId={editingId}
                 editName={editName}
                 setEditName={setEditName}
