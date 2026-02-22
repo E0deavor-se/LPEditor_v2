@@ -11,6 +11,7 @@ import type {
   LayerStyle,
   CanvasPageData,
 } from "@/src/types/canvas";
+import { layerShadowToCss } from "@/src/lib/canvas/shadow";
 
 /* ---------- helpers ---------- */
 
@@ -61,7 +62,8 @@ const layerStyleCss = (style: LayerStyle): string => {
   if (typeof style.opacity === "number" && style.opacity < 1) {
     parts.push(`opacity: ${style.opacity}`);
   }
-  if (style.shadow) parts.push(`box-shadow: ${style.shadow}`);
+  const shadowCss = layerShadowToCss(style.shadow);
+  if (shadowCss) parts.push(`box-shadow: ${shadowCss}`);
   return parts.join("; ");
 };
 

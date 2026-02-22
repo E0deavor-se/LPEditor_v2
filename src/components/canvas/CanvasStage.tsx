@@ -27,6 +27,7 @@ import {
   type ActiveGuide,
   type SnapHysteresis,
 } from "@/src/lib/canvas/snapEngine";
+import { layerShadowToCss } from "@/src/lib/canvas/shadow";
 
 /* ---------- 定数 ---------- */
 
@@ -607,8 +608,9 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       overflow: "hidden",
     };
 
-    if (layer.style.shadow) {
-      wrapperStyle.boxShadow = layer.style.shadow;
+    const shadowCss = layerShadowToCss(layer.style.shadow);
+    if (shadowCss) {
+      wrapperStyle.boxShadow = shadowCss;
     }
 
     const content = layer.content;

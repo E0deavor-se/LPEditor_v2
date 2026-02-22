@@ -15,6 +15,7 @@ import type {
   LayerStyle,
 } from "@/src/types/canvas";
 import type { JSX } from "react";
+import { layerShadowToCss } from "@/src/lib/canvas/shadow";
 
 /* ---------- Props ---------- */
 
@@ -168,8 +169,9 @@ const LayerElement = ({
     overflow: "hidden",
   };
 
-  if (style.shadow) {
-    wrapperStyle.boxShadow = style.shadow;
+  const shadowCss = layerShadowToCss(style.shadow);
+  if (shadowCss) {
+    wrapperStyle.boxShadow = shadowCss;
   }
 
   switch (content.kind) {

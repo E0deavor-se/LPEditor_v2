@@ -7,8 +7,9 @@
 
 import { useMemo, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
-import type { CanvasLayer, LayerStyle, CanvasLayout } from "@/src/types/canvas";
+import type { CanvasLayer, LayerStyle, CanvasLayout, LayerShadow } from "@/src/types/canvas";
 import { getLayout } from "@/src/types/canvas";
+import { parseLayerShadow } from "@/src/lib/canvas/shadow";
 
 /* ---------- 再利用フィールド ---------- */
 
@@ -247,6 +248,10 @@ export default function CanvasInspectorPanel() {
   }
 
   const content = selectedLayer.content;
+  const shadowModel = parseLayerShadow(style.shadow);
+  const patchShadow = (patch: Partial<LayerShadow>) => {
+    patchStyle({ shadow: { ...shadowModel, ...patch } });
+  };
 
   return (
     <aside
@@ -363,16 +368,29 @@ export default function CanvasInspectorPanel() {
 
         {/* ---- シャドウ ---- */}
         <SectionHead title="シャドウ" />
-        <label className="flex items-center gap-1 text-[11px]">
-          <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">値</span>
+        <label className="flex items-center gap-2 text-[11px]">
+          <span className="w-16 flex-shrink-0 text-[var(--ui-muted)]">有効</span>
           <input
-            type="text"
-            className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
-            placeholder="0 2px 8px rgba(0,0,0,0.15)"
-            value={style.shadow ?? ""}
-            onChange={(e) => patchStyle({ shadow: e.target.value })}
+            type="checkbox"
+            checked={shadowModel.enabled}
+            onChange={(e) => patchShadow({ enabled: e.target.checked })}
           />
         </label>
+        <div className="grid grid-cols-2 gap-1">
+          <NumField label="X" value={shadowModel.x} step={1} onChange={(v) => patchShadow({ x: v })} />
+          <NumField label="Y" value={shadowModel.y} step={1} onChange={(v) => patchShadow({ y: v })} />
+          <NumField label="Blur" value={shadowModel.blur} min={0} step={1} onChange={(v) => patchShadow({ blur: v })} />
+          <NumField label="Spread" value={shadowModel.spread} step={1} onChange={(v) => patchShadow({ spread: v })} />
+        </div>
+        <ColorField label="色" value={shadowModel.color} onChange={(v) => patchShadow({ color: v })} />
+        <NumField
+          label="透明"
+          value={shadowModel.opacity}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={(v) => patchShadow({ opacity: v })}
+        />
       </div>
     </aside>
   );
