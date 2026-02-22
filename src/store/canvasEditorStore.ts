@@ -3,6 +3,7 @@
    ─────────────────────────────────────────────── */
 
 import { create } from "zustand";
+import { arrayMove } from "@dnd-kit/sortable";
 import type {
   CanvasDocument,
   CanvasLayer,
@@ -91,6 +92,7 @@ export type CanvasEditorActions = {
   addLayer: (layer: CanvasLayer) => void;
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
+  reorderLayers: (activeId: string, overId: string) => void;
 
   /* Update */
   updateLayerLayout: (id: string, patch: Partial<CanvasLayout>) => void;
@@ -267,6 +269,31 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       ...commit(state, doc),
       selection: { ids: [dup.id], primaryId: dup.id },
     });
+  },
+
+  reorderLayers: (activeId, overId) => {
+    if (!activeId || !overId || activeId === overId) return;
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sorted = [...doc.layers].sort(
+      (a, b) => getLayout(b, state.device).z - getLayout(a, state.device).z
+    );
+    const oldIndex = sorted.findIndex((l) => l.id === activeId);
+    const newIndex = sorted.findIndex((l) => l.id === overId);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const moved = arrayMove(sorted, oldIndex, newIndex);
+    const count = moved.length;
+
+    for (let i = 0; i < moved.length; i += 1) {
+      const layer = doc.layers.find((l) => l.id === moved[i].id);
+      if (!layer) continue;
+      const z = count - i;
+      layer.variants.pc.z = z;
+      layer.variants.sp.z = z;
+    }
+
+    set({ ...commit(state, doc) });
   },
 
   /* ===== Update Layout (current device only) ===== */
