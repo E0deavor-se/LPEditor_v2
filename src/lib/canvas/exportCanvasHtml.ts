@@ -10,7 +10,9 @@ import type {
   CanvasBackground,
   LayerStyle,
   CanvasPageData,
+  TableLayerContent,
 } from "@/src/types/canvas";
+import { getLayerStyle, getRenderableLayersForDocument, resolveLayerLayout } from "@/src/types/canvas";
 import { layerShadowToCss } from "@/src/lib/canvas/shadow";
 
 /* ---------- helpers ---------- */
@@ -97,6 +99,8 @@ const buttonStyleCss = (style: LayerStyle): string => {
   if (style.fontFamily) parts.push(`font-family: ${style.fontFamily}`);
   if (style.fontSize) parts.push(`font-size: ${px(style.fontSize)}`);
   if (style.fontWeight) parts.push(`font-weight: ${style.fontWeight}`);
+  if (style.lineHeight) parts.push(`line-height: ${style.lineHeight}`);
+  if (style.letterSpacing) parts.push(`letter-spacing: ${style.letterSpacing}px`);
   return parts.join("; ") + ";";
 };
 
@@ -105,21 +109,53 @@ const buttonStyleCss = (style: LayerStyle): string => {
 const layerToHtml = (
   layer: CanvasLayer,
   device: "pc" | "sp",
+  canvasWidth: number,
   resolveAsset?: (id: string) => string
 ): string => {
-  const layout = layer.variants[device];
-  const { content, style, id } = layer;
+  const layout = resolveLayerLayout(layer, device, canvasWidth);
+  const { content, id } = layer;
+  const style = getLayerStyle(layer, device);
   const cls = `layer-${id}`;
   const overflow = "overflow: hidden;";
+
+  /* -- Section background layer: use _sectionBg for gradient/image -- */
+  if (layer._sectionBg) {
+    const sbg = layer._sectionBg;
+    let bgCssStr = "";
+    switch (sbg.type) {
+      case "solid":
+        bgCssStr = `background-color: ${sbg.color};`;
+        break;
+      case "gradient": {
+        const stops = sbg.stops.map((s) => `${s.color} ${s.pos}%`).join(", ");
+        bgCssStr = `background: linear-gradient(${sbg.angle}deg, ${stops});`;
+        break;
+      }
+      case "image": {
+        const url = resolveAsset?.(sbg.assetId) ?? sbg.assetId;
+        bgCssStr = `background-image: url("${esc(url)}"); background-size: cover; background-position: center;`;
+        break;
+      }
+    }
+    const posStyle = `${layerPositionCss(layout)} ${bgCssStr} ${overflow}`;
+    return `<div class="${cls}" style="${posStyle}"></div>`;
+  }
+
   const posStyle = `${layerPositionCss(layout)} ${layerStyleCss(style)} ${overflow}`;
 
   switch (content.kind) {
-    case "text":
-      return `<div class="${cls}" style="${posStyle}"><div style="${textStyleCss(style)}">${esc(content.text)}</div></div>`;
+    case "text": {
+      const body = content.richText ? content.richText : esc(content.text);
+      return `<div class="${cls}" style="${posStyle}"><div style="${textStyleCss(style)}">${body}</div></div>`;
+    }
     case "image": {
       const src = resolveAsset?.(content.assetId) ?? content.assetId;
       const r = style.radius ? `border-radius: ${px(style.radius)};` : "";
-      return `<div class="${cls}" style="${posStyle}"><img src="${esc(src)}" alt="${esc(content.alt ?? "")}" style="width:100%;height:100%;object-fit:cover;${r}" /></div>`;
+      const fitMode = layer.imageSettings?.fitMode ?? "cover";
+      const focalX = Math.max(0, Math.min(1, layer.imageSettings?.focalPoint?.x ?? 0.5));
+      const focalY = Math.max(0, Math.min(1, layer.imageSettings?.focalPoint?.y ?? 0.5));
+      const objectFit = fitMode;
+      return `<div class="${cls}" style="${posStyle}"><img src="${esc(src)}" alt="${esc(content.alt ?? "")}" style="width:100%;height:100%;object-fit:${objectFit};object-position:${Math.round(focalX * 100)}% ${Math.round(focalY * 100)}%;${r}" /></div>`;
     }
     case "shape": {
       const fill = style.fill ?? "#cccccc";
@@ -143,6 +179,33 @@ const layerToHtml = (
       return `<div class="${cls}" style="${posStyle}"><a href="${esc(content.href)}" target="_blank" rel="noopener" style="${buttonStyleCss(style)}">${esc(content.label)}</a></div>`;
     case "svg":
       return `<div class="${cls}" style="${posStyle}">${content.svg}</div>`;
+    case "table": {
+      const tc = content as TableLayerContent;
+      const borderC = esc(tc.borderColor ?? "#ddd");
+      const borderW = tc.borderWidth ?? 1;
+      const cellPad = tc.cellPadding ?? 8;
+      const headerN = tc.headerRows ?? 0;
+      let tableHtml = `<table style="width:100%;height:100%;border-collapse:collapse;font-family:${esc(style.fontFamily ?? "system-ui")};font-size:${px(style.fontSize ?? 14)};color:${esc(style.textColor ?? "#333")};table-layout:fixed;">`;
+      for (let ri = 0; ri < tc.rows.length; ri++) {
+        tableHtml += "<tr>";
+        const isHeader = ri < headerN;
+        for (const cell of tc.rows[ri]) {
+          const tag = isHeader ? "th" : "td";
+          const bg = cell.bgColor ?? (isHeader ? "#f0f0f0" : "transparent");
+          const color = cell.textColor ?? "inherit";
+          const align = cell.textAlign ?? (isHeader ? "center" : "left");
+          const fw = cell.fontWeight ?? (isHeader ? 700 : 400);
+          const cs = cell.colSpan ? ` colspan="${cell.colSpan}"` : "";
+          const rs = cell.rowSpan ? ` rowspan="${cell.rowSpan}"` : "";
+          const cellStyle = `border:${borderW}px solid ${borderC};padding:${px(cellPad)};background:${bg};color:${color};text-align:${align};font-weight:${fw};vertical-align:middle;word-break:break-word;`;
+          const cellBody = cell.richText ?? esc(cell.text);
+          tableHtml += `<${tag}${cs}${rs} style="${cellStyle}">${cellBody}</${tag}>`;
+        }
+        tableHtml += "</tr>";
+      }
+      tableHtml += "</table>";
+      return `<div class="${cls}" style="${posStyle}">${tableHtml}</div>`;
+    }
     default:
       return `<div class="${cls}" style="${posStyle}"></div>`;
   }
@@ -168,21 +231,22 @@ export const exportCanvasHtml = (
   const pcSize = doc.meta.size.pc;
   const spSize = doc.meta.size.sp;
   const bgCss = bgToCss(doc.background, resolve);
-
-  const visibleLayers = doc.layers.filter((l) => !l.hidden && l.content.kind !== "group");
+  const renderableLayers = getRenderableLayersForDocument(doc, "pc", pcSize.width)
+    .filter((l) => !l.id.startsWith("section-bg:"));
+  const visibleLayers = renderableLayers.filter((l) => !l.hidden && l.content.kind !== "group");
 
   /* ---- PC HTML ---- */
   const pcLayers = visibleLayers
     .filter((l) => !l.visibleOn || l.visibleOn.includes("pc"))
     .sort((a, b) => a.variants.pc.z - b.variants.pc.z)
-    .map((l) => layerToHtml(l, "pc", resolve))
+    .map((l) => layerToHtml(l, "pc", pcSize.width, resolve))
     .join("\n      ");
 
   /* ---- SP HTML ---- */
   const spLayers = visibleLayers
     .filter((l) => !l.visibleOn || l.visibleOn.includes("sp"))
     .sort((a, b) => a.variants.sp.z - b.variants.sp.z)
-    .map((l) => layerToHtml(l, "sp", resolve))
+    .map((l) => layerToHtml(l, "sp", spSize.width, resolve))
     .join("\n      ");
 
   const html = `
@@ -265,7 +329,9 @@ export const renderCanvasStandaloneHtml = (
  */
 export const collectCanvasAssetIds = (doc: CanvasDocument): Set<string> => {
   const ids = new Set<string>();
-  for (const layer of doc.layers) {
+  const layers = getRenderableLayersForDocument(doc, "pc", doc.meta.size.pc.width)
+    .filter((l) => !l.id.startsWith("section-bg:"));
+  for (const layer of layers) {
     if (layer.content.kind === "image" && layer.content.assetId) {
       ids.add(layer.content.assetId);
     }

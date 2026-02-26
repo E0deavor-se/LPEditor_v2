@@ -12,11 +12,25 @@ import type {
   CanvasBackground,
   CanvasSize,
   CanvasGuide,
+  LayerConstraints,
+  ImageLayerSettings,
+  CanvasSection,
 } from "@/src/types/canvas";
 import {
   createDefaultCanvasDocument,
+  DEFAULT_SECTION_BG,
+  DEFAULT_SECTION_GAP,
+  DEFAULT_SECTION_MIN_HEIGHT,
+  DEFAULT_SECTION_PADDING_BOTTOM,
+  DEFAULT_SECTION_PADDING_TOP,
+  flattenSectionsToLayers,
+  getDocumentMode,
+  getFreeLayers,
+  getSectionContentYOffset,
+  getRenderableLayersForDocument,
   generateLayerId,
   getLayout,
+  normalizeSectionModel,
 } from "@/src/types/canvas";
 import type { CanvasDevice } from "@/src/types/canvas";
 import {
@@ -38,6 +52,91 @@ const MAX_HISTORY = 80;
 const cloneDoc = (doc: CanvasDocument): CanvasDocument =>
   JSON.parse(JSON.stringify(doc)) as CanvasDocument;
 
+const normalizeDocModel = (doc: CanvasDocument): CanvasDocument => {
+  const mode = getDocumentMode(doc);
+  const freeLayers = doc.free?.layers ?? doc.layers ?? [];
+  const sections = (doc.sections?.sections ?? []).map((section) => normalizeSectionModel(section));
+  return {
+    ...doc,
+    mode,
+    free: { layers: freeLayers },
+    sections: { sections },
+    layers: freeLayers,
+  };
+};
+
+const createSectionDraft = (index: number): CanvasSection => ({
+  id: `section_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+  name: `セクション ${index + 1}`,
+  background: DEFAULT_SECTION_BG,
+  paddingTop: DEFAULT_SECTION_PADDING_TOP,
+  paddingBottom: DEFAULT_SECTION_PADDING_BOTTOM,
+  gap: DEFAULT_SECTION_GAP,
+  minHeight: DEFAULT_SECTION_MIN_HEIGHT,
+  layers: [],
+});
+
+const createSectionId = () => `section_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+const buildCopiedSectionName = (name: string, fallbackIndex: number): string => {
+  const base = name.trim() || `セクション ${fallbackIndex + 1}`;
+  return `${base} コピー`;
+};
+
+const cloneSectionDeep = (source: CanvasSection, insertIndex: number): CanvasSection => {
+  const idMap = new Map<string, string>();
+  const clonedLayers = source.layers.map((layer) => {
+    const nextId = generateLayerId();
+    idMap.set(layer.id, nextId);
+    return JSON.parse(JSON.stringify(layer)) as CanvasLayer;
+  });
+
+  for (const layer of clonedLayers) {
+    const prevId = layer.id;
+    layer.id = idMap.get(prevId) ?? generateLayerId();
+    if (layer.groupId) {
+      layer.groupId = idMap.get(layer.groupId);
+    }
+  }
+
+  return normalizeSectionModel({
+    ...JSON.parse(JSON.stringify(source)),
+    id: createSectionId(),
+    name: buildCopiedSectionName(source.name ?? source.title ?? "", insertIndex),
+    layers: clonedLayers,
+  } as CanvasSection);
+};
+
+const getEditableLayers = (doc: CanvasDocument): CanvasLayer[] => {
+  if (getDocumentMode(doc) === "sections") {
+    return (doc.sections?.sections ?? []).flatMap((s) => s.layers);
+  }
+  return getFreeLayers(doc);
+};
+
+const findLayerRef = (
+  doc: CanvasDocument,
+  id: string,
+): { layer: CanvasLayer; sectionIndex: number | null } | null => {
+  if (getDocumentMode(doc) === "sections") {
+    const sections = doc.sections?.sections ?? [];
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+      const layer = sections[sectionIndex].layers.find((l) => l.id === id);
+      if (layer) return { layer, sectionIndex };
+    }
+  }
+  const layer = getFreeLayers(doc).find((l) => l.id === id);
+  return layer ? { layer, sectionIndex: null } : null;
+};
+
+const getRenderableLayersForState = (
+  state: CanvasEditorState,
+  device: CanvasDevice,
+): CanvasLayer[] => {
+  const designWidth = device === "pc" ? state.document.meta.size.pc.width : state.document.meta.size.sp.width;
+  return getRenderableLayersForDocument(state.document, device, designWidth);
+};
+
 /* -------- Types -------- */
 
 export type CanvasViewMode = "single" | "split";
@@ -45,6 +144,15 @@ export type CanvasViewMode = "single" | "split";
 export type CanvasSelection = {
   ids: string[];
   primaryId?: string;
+};
+
+export type CanvasSectionPatch = {
+  name?: string;
+  background?: string;
+  paddingTop?: number;
+  paddingBottom?: number;
+  gap?: number;
+  minHeight?: number;
 };
 
 export type CanvasEditorState = {
@@ -60,6 +168,7 @@ export type CanvasEditorState = {
   guidesVisible: boolean;
   gridSize: number;
   selection: CanvasSelection;
+  selectedSectionId?: string;
 
   /* ----- History ----- */
   past: CanvasDocument[];
@@ -87,6 +196,18 @@ export type CanvasEditorActions = {
   /* Selection */
   select: (ids: string[], primaryId?: string) => void;
   clearSelection: () => void;
+  selectSection: (sectionId?: string) => void;
+  setCanvasMode: (mode: "free" | "sections") => void;
+  convertFreeToSections: () => void;
+  convertSectionsToFree: () => void;
+  getRenderableLayers: (device?: CanvasDevice) => CanvasLayer[];
+  addSection: () => void;
+  duplicateSection: (sectionId: string) => void;
+  renameSection: (sectionId: string, name: string) => void;
+  removeSection: (sectionId: string) => void;
+  moveSection: (sectionId: string, direction: "up" | "down") => void;
+  moveSectionToIndex: (sectionId: string, targetIndex: number) => void;
+  updateSection: (sectionId: string, patch: CanvasSectionPatch) => void;
   groupSelectedLayers: () => void;
   ungroupSelectedLayers: () => void;
 
@@ -95,10 +216,13 @@ export type CanvasEditorActions = {
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
   reorderLayers: (activeId: string, overId: string) => void;
+  reorderSectionLayers: (sectionId: string, activeId: string, overId: string) => void;
 
   /* Update */
   updateLayerLayout: (id: string, patch: Partial<CanvasLayout>) => void;
   updateLayerStyle: (id: string, patch: Partial<LayerStyle>) => void;
+  updateLayerConstraints: (id: string, patch: Partial<LayerConstraints>) => void;
+  updateImageLayerSettings: (id: string, patch: Partial<ImageLayerSettings>) => void;
   updateLayerContent: (id: string, patch: Record<string, unknown>) => void;
   renameLayer: (id: string, name: string) => void;
 
@@ -144,6 +268,7 @@ export type CanvasEditorActions = {
 
   /* Fit Text */
   applyFitTextToSelection: () => void;
+  applyFitTextToAll: () => void;
 };
 
 export type CanvasEditorStore = CanvasEditorState & CanvasEditorActions;
@@ -154,10 +279,11 @@ const commit = (
   state: CanvasEditorState,
   nextDoc: CanvasDocument
 ): Partial<CanvasEditorState> => {
+  const normalizedDoc = normalizeDocModel(nextDoc);
   const past = [...state.past, cloneDoc(state.document)];
   if (past.length > MAX_HISTORY) past.splice(0, past.length - MAX_HISTORY);
   return {
-    document: nextDoc,
+    document: normalizedDoc,
     past,
     future: [],
     canUndo: true,
@@ -179,6 +305,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   guidesVisible: true,
   gridSize: 10,
   selection: { ids: [] },
+  selectedSectionId: undefined,
   past: [],
   future: [],
   canUndo: false,
@@ -187,26 +314,30 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
 
   /* ===== Document ===== */
   setDocument: (doc) => {
+    const normalized = normalizeDocModel(cloneDoc(doc));
     set({
-      document: cloneDoc(doc),
+      document: normalized,
       past: [],
       future: [],
       canUndo: false,
       canRedo: false,
       dirty: false,
       selection: { ids: [] },
+      selectedSectionId: normalized.sections?.sections?.[0]?.id,
     });
   },
 
   resetDocument: () => {
+    const next = createDefaultCanvasDocument();
     set({
-      document: createDefaultCanvasDocument(),
+      document: next,
       past: [],
       future: [],
       canUndo: false,
       canRedo: false,
       dirty: false,
       selection: { ids: [] },
+      selectedSectionId: undefined,
     });
   },
 
@@ -222,10 +353,11 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   select: (ids, primaryId) =>
     set((state) => {
       const expanded = new Set<string>(ids);
+      const editable = getEditableLayers(state.document);
       for (const id of ids) {
-        const layer = state.document.layers.find((l) => l.id === id);
+        const layer = editable.find((l) => l.id === id);
         if (layer?.content.kind === "group") {
-          for (const child of state.document.layers) {
+          for (const child of editable) {
             if (child.groupId === layer.id) {
               expanded.add(child.id);
             }
@@ -236,11 +368,198 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       return { selection: { ids: nextIds, primaryId: primaryId ?? nextIds[0] } };
     }),
   clearSelection: () => set({ selection: { ids: [] } }),
+  selectSection: (sectionId) => set({ selectedSectionId: sectionId }),
+
+  setCanvasMode: (mode) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    doc.mode = mode;
+    doc.free = { layers: getFreeLayers(doc) };
+    doc.sections = { sections: (doc.sections?.sections ?? []).map((s) => normalizeSectionModel(s)) };
+    const nextSelected = mode === "sections"
+      ? (state.selectedSectionId ?? doc.sections.sections[0]?.id)
+      : undefined;
+    set({ ...commit(state, normalizeDocModel(doc)), selectedSectionId: nextSelected });
+  },
+
+  convertFreeToSections: () => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const freeLayers = [...getFreeLayers(doc)].sort((a, b) => a.variants.pc.y - b.variants.pc.y);
+    const sections: CanvasSection[] = [];
+    let current: CanvasSection | null = null;
+    let lastBottom = -Infinity;
+
+    for (const layer of freeLayers) {
+      const y = layer.variants.pc.y;
+      if (!current || y - lastBottom > 80) {
+        current = createSectionDraft(sections.length);
+        sections.push(current);
+      }
+
+      const cloned = JSON.parse(JSON.stringify(layer)) as CanvasLayer;
+      const sectionTopPc = Math.min(...current.layers.map((l) => l.variants.pc.y), cloned.variants.pc.y);
+      const sectionTopSp = Math.min(...current.layers.map((l) => l.variants.sp.y), cloned.variants.sp.y);
+      cloned.variants.pc.y = Math.max(0, cloned.variants.pc.y - sectionTopPc);
+      cloned.variants.sp.y = Math.max(0, cloned.variants.sp.y - sectionTopSp);
+      current.layers.push(cloned);
+      lastBottom = layer.variants.pc.y + layer.variants.pc.h;
+    }
+
+    doc.mode = "sections";
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    doc.free = { layers: freeLayers };
+    set({
+      ...commit(state, normalizeDocModel(doc)),
+      selection: { ids: [] },
+      selectedSectionId: doc.sections.sections[0]?.id,
+    });
+  },
+
+  convertSectionsToFree: () => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const pcWidth = doc.meta.size.pc.width;
+    const flattened = flattenSectionsToLayers(doc.sections?.sections ?? [], "pc", pcWidth)
+      .filter((l) => !l.id.startsWith("section-bg:"));
+    doc.mode = "free";
+    doc.free = { layers: flattened };
+    doc.layers = flattened;
+    set({
+      ...commit(state, normalizeDocModel(doc)),
+      selection: { ids: [] },
+      selectedSectionId: undefined,
+    });
+  },
+
+  getRenderableLayers: (device) => {
+    const state = get();
+    return getRenderableLayersForState(state, device ?? state.device);
+  },
+
+  addSection: () => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = doc.sections?.sections ?? [];
+    const nextSection = createSectionDraft(sections.length);
+    sections.push(nextSection);
+    doc.mode = "sections";
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({
+      ...commit(state, doc),
+      selectedSectionId: nextSection.id,
+      selection: { ids: [] },
+    });
+  },
+
+  duplicateSection: (sectionId) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = [...(doc.sections?.sections ?? [])];
+    const fromIndex = sections.findIndex((s) => s.id === sectionId);
+    if (fromIndex < 0) return;
+
+    const source = sections[fromIndex];
+    const duplicated = cloneSectionDeep(source, fromIndex + 1);
+    sections.splice(fromIndex + 1, 0, duplicated);
+
+    doc.mode = "sections";
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({
+      ...commit(state, doc),
+      selectedSectionId: duplicated.id,
+      selection: { ids: [] },
+    });
+  },
+
+  renameSection: (sectionId, name) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = doc.sections?.sections ?? [];
+    const index = sections.findIndex((s) => s.id === sectionId);
+    if (index < 0) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if ((sections[index].name ?? "") === trimmed) return;
+    sections[index].name = trimmed;
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({ ...commit(state, doc) });
+  },
+
+  removeSection: (sectionId) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const currentSections = doc.sections?.sections ?? [];
+    const removedIndex = currentSections.findIndex((s) => s.id === sectionId);
+    if (removedIndex < 0) return;
+
+    const sections = currentSections.filter((s) => s.id !== sectionId);
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+
+    let nextSelected: string | undefined;
+    if (sections.length === 0) {
+      nextSelected = undefined;
+    } else {
+      nextSelected = sections[removedIndex]?.id ?? sections[removedIndex - 1]?.id;
+    }
+
+    set({
+      ...commit(state, doc),
+      selection: { ids: [] },
+      selectedSectionId: nextSelected,
+    });
+  },
+
+  updateSection: (sectionId, patch) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = doc.sections?.sections ?? [];
+    const index = sections.findIndex((s) => s.id === sectionId);
+    if (index < 0) return;
+    const section = sections[index];
+    if (patch.name !== undefined) section.name = patch.name;
+    if (patch.background !== undefined) section.background = patch.background;
+    if (patch.paddingTop !== undefined) section.paddingTop = patch.paddingTop;
+    if (patch.paddingBottom !== undefined) section.paddingBottom = patch.paddingBottom;
+    if (patch.gap !== undefined) section.gap = patch.gap;
+    if (patch.minHeight !== undefined) section.minHeight = patch.minHeight;
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({ ...commit(state, doc) });
+  },
+
+  moveSection: (sectionId, direction) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = [...(doc.sections?.sections ?? [])];
+    const index = sections.findIndex((s) => s.id === sectionId);
+    if (index < 0) return;
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= sections.length) return;
+    const [section] = sections.splice(index, 1);
+    sections.splice(target, 0, section);
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({ ...commit(state, doc), selectedSectionId: sectionId });
+  },
+
+  moveSectionToIndex: (sectionId, targetIndex) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = [...(doc.sections?.sections ?? [])];
+    const fromIndex = sections.findIndex((s) => s.id === sectionId);
+    if (fromIndex < 0) return;
+    const clampedTarget = Math.max(0, Math.min(sections.length - 1, targetIndex));
+    if (fromIndex === clampedTarget) return;
+    const [section] = sections.splice(fromIndex, 1);
+    sections.splice(clampedTarget, 0, section);
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({ ...commit(state, doc), selectedSectionId: sectionId });
+  },
 
   groupSelectedLayers: () => {
     const state = get();
+    const editable = getEditableLayers(state.document);
     const selected = state.selection.ids
-      .map((id) => state.document.layers.find((l) => l.id === id))
+      .map((id) => editable.find((l) => l.id === id))
       .filter(Boolean)
       .filter((l) => l?.content.kind !== "group") as CanvasLayer[];
     if (selected.length < 2) return;
@@ -248,7 +567,8 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const doc = cloneDoc(state.document);
     const selectedIds = new Set(selected.map((l) => l.id));
 
-    const selectedLayers = doc.layers.filter((l) => selectedIds.has(l.id));
+    const editableLayers = getEditableLayers(doc);
+    const selectedLayers = editableLayers.filter((l) => selectedIds.has(l.id));
     const bbPc = {
       minX: Math.min(...selectedLayers.map((l) => l.variants.pc.x)),
       minY: Math.min(...selectedLayers.map((l) => l.variants.pc.y)),
@@ -262,7 +582,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       maxY: Math.max(...selectedLayers.map((l) => l.variants.sp.y + l.variants.sp.h)),
     };
 
-    const maxZ = doc.layers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
+    const maxZ = editableLayers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
     const groupId = generateLayerId();
     const groupLayer: CanvasLayer = {
       id: groupId,
@@ -292,12 +612,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       },
     };
 
-    for (const layer of doc.layers) {
+    for (const layer of editableLayers) {
       if (selectedIds.has(layer.id)) {
         layer.groupId = groupId;
       }
     }
-    doc.layers.push(groupLayer);
+    editableLayers.push(groupLayer);
 
     set({
       ...commit(state, doc),
@@ -308,10 +628,11 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   ungroupSelectedLayers: () => {
     const state = get();
     const doc = cloneDoc(state.document);
+    const editableLayers = getEditableLayers(doc);
     const targetGroupIds = new Set<string>();
 
     for (const id of state.selection.ids) {
-      const layer = doc.layers.find((l) => l.id === id);
+      const layer = editableLayers.find((l) => l.id === id);
       if (!layer) continue;
       if (layer.content.kind === "group") {
         targetGroupIds.add(layer.id);
@@ -322,12 +643,20 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
 
     if (targetGroupIds.size === 0) return;
 
-    for (const layer of doc.layers) {
+    for (const layer of editableLayers) {
       if (layer.groupId && targetGroupIds.has(layer.groupId)) {
         layer.groupId = undefined;
       }
     }
-    doc.layers = doc.layers.filter((l) => !(l.content.kind === "group" && targetGroupIds.has(l.id)));
+    const kept = editableLayers.filter((l) => !(l.content.kind === "group" && targetGroupIds.has(l.id)));
+    if (getDocumentMode(doc) === "sections") {
+      for (const section of doc.sections?.sections ?? []) {
+        section.layers = section.layers.filter((l) => kept.some((k) => k.id === l.id));
+      }
+    } else {
+      doc.free = { layers: kept };
+      doc.layers = kept;
+    }
 
     set({
       ...commit(state, doc),
@@ -339,25 +668,55 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   addLayer: (layer) => {
     const state = get();
     const doc = cloneDoc(state.document);
+    const editableLayers = getEditableLayers(doc);
     // z-index を最大+1に
-    const maxZ = doc.layers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
+    const maxZ = editableLayers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
     layer.variants.pc.z = maxZ + 1;
     layer.variants.sp.z = maxZ + 1;
-    doc.layers.push(layer);
+    if (getDocumentMode(doc) === "sections") {
+      const sections = doc.sections?.sections ?? [];
+      if (sections.length === 0) {
+        sections.push(createSectionDraft(0));
+      }
+      const targetSectionId = state.selectedSectionId ?? sections[0].id;
+      const targetSection = sections.find((s) => s.id === targetSectionId) ?? sections[0];
+      const pcWidth = doc.meta.size.pc.width;
+      const spWidth = doc.meta.size.sp.width;
+      layer.variants.pc.x = Math.max(0, Math.round((pcWidth - layer.variants.pc.w) / 2));
+      layer.variants.sp.x = Math.max(0, Math.round((spWidth - layer.variants.sp.w) / 2));
+      layer.variants.pc.y = targetSection.paddingTop + 40;
+      layer.variants.sp.y = targetSection.paddingTop + 40;
+      targetSection.layers.push(layer);
+      doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    } else {
+      editableLayers.push(layer);
+      doc.free = { layers: editableLayers };
+      doc.layers = editableLayers;
+    }
     set({
       ...commit(state, doc),
       selection: { ids: [layer.id], primaryId: layer.id },
+      selectedSectionId: getDocumentMode(doc) === "sections"
+        ? (state.selectedSectionId ?? doc.sections?.sections?.[0]?.id)
+        : undefined,
     });
   },
 
   removeLayer: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const target = doc.layers.find((l) => l.id === id);
-    if (target?.content.kind === "group") {
-      doc.layers = doc.layers.filter((l) => l.id !== id && l.groupId !== id);
+    const editableLayers = getEditableLayers(doc);
+    const target = editableLayers.find((l) => l.id === id);
+    const next = target?.content.kind === "group"
+      ? editableLayers.filter((l) => l.id !== id && l.groupId !== id)
+      : editableLayers.filter((l) => l.id !== id);
+    if (getDocumentMode(doc) === "sections") {
+      for (const section of doc.sections?.sections ?? []) {
+        section.layers = section.layers.filter((l) => next.some((n) => n.id === l.id));
+      }
     } else {
-      doc.layers = doc.layers.filter((l) => l.id !== id);
+      doc.free = { layers: next };
+      doc.layers = next;
     }
     const sel = state.selection.ids.filter((sid) => sid !== id);
     set({
@@ -369,9 +728,10 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   duplicateLayer: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const src = doc.layers.find((l) => l.id === id);
+    const editableLayers = getEditableLayers(doc);
+    const src = editableLayers.find((l) => l.id === id);
     if (!src) return;
-    const maxZ = doc.layers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
+    const maxZ = editableLayers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
     const dup: CanvasLayer = {
       ...JSON.parse(JSON.stringify(src)),
       id: generateLayerId(),
@@ -383,7 +743,16 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     dup.variants.sp.y += 20;
     dup.variants.pc.z = maxZ + 1;
     dup.variants.sp.z = maxZ + 1;
-    doc.layers.push(dup);
+    if (getDocumentMode(doc) === "sections") {
+      const found = findLayerRef(doc, id);
+      if (found?.sectionIndex != null && doc.sections) {
+        doc.sections.sections[found.sectionIndex].layers.push(dup);
+      }
+    } else {
+      editableLayers.push(dup);
+      doc.free = { layers: editableLayers };
+      doc.layers = editableLayers;
+    }
     set({
       ...commit(state, doc),
       selection: { ids: [dup.id], primaryId: dup.id },
@@ -394,7 +763,8 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     if (!activeId || !overId || activeId === overId) return;
     const state = get();
     const doc = cloneDoc(state.document);
-    const sorted = [...doc.layers].sort(
+    const editableLayers = getEditableLayers(doc);
+    const sorted = [...editableLayers].sort(
       (a, b) => getLayout(b, state.device).z - getLayout(a, state.device).z
     );
     const oldIndex = sorted.findIndex((l) => l.id === activeId);
@@ -405,7 +775,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const count = moved.length;
 
     for (let i = 0; i < moved.length; i += 1) {
-      const layer = doc.layers.find((l) => l.id === moved[i].id);
+      const layer = editableLayers.find((l) => l.id === moved[i].id);
       if (!layer) continue;
       const z = count - i;
       layer.variants.pc.z = z;
@@ -415,14 +785,64 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     set({ ...commit(state, doc) });
   },
 
+  reorderSectionLayers: (sectionId, activeId, overId) => {
+    if (!sectionId || !activeId || !overId || activeId === overId) return;
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const sections = doc.sections?.sections ?? [];
+    const section = sections.find((s) => s.id === sectionId);
+    if (!section) return;
+
+    const oldIndex = section.layers.findIndex((l) => l.id === activeId);
+    const newIndex = section.layers.findIndex((l) => l.id === overId);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    section.layers = arrayMove(section.layers, oldIndex, newIndex);
+    for (let index = 0; index < section.layers.length; index += 1) {
+      const z = index + 1;
+      section.layers[index].variants.pc.z = z;
+      section.layers[index].variants.sp.z = z;
+    }
+
+    doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    set({ ...commit(state, doc), selectedSectionId: sectionId });
+  },
+
   /* ===== Update Layout (current device only) ===== */
   updateLayerLayout: (id, patch) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const layer = doc.layers.find((l) => l.id === id);
+    const found = findLayerRef(doc, id);
+    const layer = found?.layer;
     if (!layer) return;
     const layout = getLayout(layer, state.device);
-    Object.assign(layout, patch);
+    const nextPatch: Partial<CanvasLayout> = { ...patch };
+
+    if (getDocumentMode(doc) === "sections" && found?.sectionIndex != null) {
+      const sections = doc.sections?.sections ?? [];
+      const section = sections[found.sectionIndex];
+      if (section && typeof nextPatch.y === "number") {
+        const contentYOffset = getSectionContentYOffset(sections, section.id, state.device);
+        nextPatch.y = nextPatch.y - contentYOffset;
+      }
+    }
+
+    Object.assign(layout, nextPatch);
+
+    if ((layer.constraints?.horizontal ?? "fixed") === "stretch") {
+      const canvasW = state.device === "pc" ? doc.meta.size.pc.width : doc.meta.size.sp.width;
+      const marginLeft = Math.max(0, Math.round(layout.x));
+      const marginRight = Math.max(0, Math.round(canvasW - (layout.x + layout.w)));
+      layer.constraints = {
+        ...(layer.constraints ?? {}),
+        horizontal: "stretch",
+        marginLeft,
+        marginRight,
+      };
+      layout.x = marginLeft;
+      layout.w = Math.max(1, canvasW - marginLeft - marginRight);
+    }
+
     set({ document: doc, dirty: true });
   },
 
@@ -430,9 +850,55 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   updateLayerStyle: (id, patch) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const layer = doc.layers.find((l) => l.id === id);
+    const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     Object.assign(layer.style, patch);
+    set({ document: doc, dirty: true });
+  },
+
+  updateLayerConstraints: (id, patch) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const layer = findLayerRef(doc, id)?.layer;
+    if (!layer) return;
+    layer.constraints = {
+      horizontal: "fixed",
+      marginLeft: 0,
+      marginRight: 0,
+      ...(layer.constraints ?? {}),
+      ...patch,
+    };
+
+    if ((layer.constraints.horizontal ?? "fixed") === "stretch") {
+      const canvasW = state.device === "pc" ? doc.meta.size.pc.width : doc.meta.size.sp.width;
+      const marginLeft = Math.max(0, layer.constraints.marginLeft ?? 0);
+      const marginRight = Math.max(0, layer.constraints.marginRight ?? 0);
+      const layout = getLayout(layer, state.device);
+      layout.x = marginLeft;
+      layout.w = Math.max(1, canvasW - marginLeft - marginRight);
+    }
+
+    set({ document: doc, dirty: true });
+  },
+
+  updateImageLayerSettings: (id, patch) => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const layer = findLayerRef(doc, id)?.layer;
+    if (!layer || layer.content.kind !== "image") return;
+    const current = layer.imageSettings ?? {
+      lockAspect: true,
+      fitMode: "cover" as const,
+      focalPoint: { x: 0.5, y: 0.5 },
+    };
+    layer.imageSettings = {
+      ...current,
+      ...patch,
+      focalPoint: {
+        ...current.focalPoint,
+        ...(patch.focalPoint ?? {}),
+      },
+    };
     set({ document: doc, dirty: true });
   },
 
@@ -440,7 +906,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   updateLayerContent: (id, patch) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const layer = doc.layers.find((l) => l.id === id);
+    const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     Object.assign(layer.content, patch);
     set({ document: doc, dirty: true });
@@ -450,7 +916,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   renameLayer: (id, name) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const layer = doc.layers.find((l) => l.id === id);
+    const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     layer.name = name;
     set({ document: doc, dirty: true });
@@ -461,14 +927,15 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const state = get();
     const doc = cloneDoc(state.document);
     const { device } = state;
-    const sorted = [...doc.layers].sort((a, b) => getLayout(a, device).z - getLayout(b, device).z);
+    const editableLayers = getEditableLayers(doc);
+    const sorted = [...editableLayers].sort((a, b) => getLayout(a, device).z - getLayout(b, device).z);
     const idx = sorted.findIndex((l) => l.id === id);
     if (idx < 0 || idx >= sorted.length - 1) return;
     const curZ = getLayout(sorted[idx], device).z;
     const nextZ = getLayout(sorted[idx + 1], device).z;
     // swap z
-    const layerA = doc.layers.find((l) => l.id === sorted[idx].id);
-    const layerB = doc.layers.find((l) => l.id === sorted[idx + 1].id);
+    const layerA = editableLayers.find((l) => l.id === sorted[idx].id);
+    const layerB = editableLayers.find((l) => l.id === sorted[idx + 1].id);
     if (layerA) getLayout(layerA, device).z = nextZ;
     if (layerB) getLayout(layerB, device).z = curZ;
     set({ ...commit(state, doc) });
@@ -478,13 +945,14 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const state = get();
     const doc = cloneDoc(state.document);
     const { device } = state;
-    const sorted = [...doc.layers].sort((a, b) => getLayout(a, device).z - getLayout(b, device).z);
+    const editableLayers = getEditableLayers(doc);
+    const sorted = [...editableLayers].sort((a, b) => getLayout(a, device).z - getLayout(b, device).z);
     const idx = sorted.findIndex((l) => l.id === id);
     if (idx <= 0) return;
     const curZ = getLayout(sorted[idx], device).z;
     const prevZ = getLayout(sorted[idx - 1], device).z;
-    const layerA = doc.layers.find((l) => l.id === sorted[idx].id);
-    const layerB = doc.layers.find((l) => l.id === sorted[idx - 1].id);
+    const layerA = editableLayers.find((l) => l.id === sorted[idx].id);
+    const layerB = editableLayers.find((l) => l.id === sorted[idx - 1].id);
     if (layerA) getLayout(layerA, device).z = prevZ;
     if (layerB) getLayout(layerB, device).z = curZ;
     set({ ...commit(state, doc) });
@@ -493,8 +961,9 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   bringToFront: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const maxZ = doc.layers.reduce((m, l) => Math.max(m, getLayout(l, state.device).z), 0);
-    const layer = doc.layers.find((l) => l.id === id);
+    const editableLayers = getEditableLayers(doc);
+    const maxZ = editableLayers.reduce((m, l) => Math.max(m, getLayout(l, state.device).z), 0);
+    const layer = editableLayers.find((l) => l.id === id);
     if (!layer) return;
     getLayout(layer, state.device).z = maxZ + 1;
     set({ ...commit(state, doc) });
@@ -503,8 +972,9 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   sendToBack: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const minZ = doc.layers.reduce((m, l) => Math.min(m, getLayout(l, state.device).z), Infinity);
-    const layer = doc.layers.find((l) => l.id === id);
+    const editableLayers = getEditableLayers(doc);
+    const minZ = editableLayers.reduce((m, l) => Math.min(m, getLayout(l, state.device).z), Infinity);
+    const layer = editableLayers.find((l) => l.id === id);
     if (!layer) return;
     getLayout(layer, state.device).z = minZ - 1;
     set({ ...commit(state, doc) });
@@ -514,19 +984,19 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   toggleLock: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const layer = doc.layers.find((l) => l.id === id);
+    const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     layer.locked = !layer.locked;
-    set({ document: doc, dirty: true });
+    set({ ...commit(state, doc) });
   },
 
   toggleHidden: (id) => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const layer = doc.layers.find((l) => l.id === id);
+    const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     layer.hidden = !layer.hidden;
-    set({ document: doc, dirty: true });
+    set({ ...commit(state, doc) });
   },
 
   /* ===== Background ===== */
@@ -600,8 +1070,70 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const dev = state.device;
     let changed = false;
 
-    for (const layer of doc.layers) {
+    for (const layer of getEditableLayers(doc)) {
       if (!ids.includes(layer.id) || layer.hidden || layer.locked) continue;
+
+      const layout = dev === "pc" ? layer.variants.pc : layer.variants.sp;
+
+      if (layer.content.kind === "text") {
+        const fs = layer.style.fontSize ?? 16;
+        const lh = layer.style.lineHeight ?? 1.6;
+        const ls = layer.style.letterSpacing ?? 0;
+        const fw = layer.style.fontWeight ?? 400;
+        const isHeading = fs >= 28 || fw >= 700;
+        const result = fitTextToBox({
+          text: layer.content.text,
+          boxW: layout.w,
+          boxH: layout.h,
+          fontSize: fs,
+          lineHeight: lh,
+          letterSpacing: ls,
+          maxLines: isHeading ? 3 : 6,
+          minFontSize: isHeading ? 16 : 11,
+          maxFontSize: fs,
+          step: 1,
+        });
+        if (!result.unchanged) {
+          layer.style.fontSize = result.fontSize;
+          layer.style.lineHeight = result.lineHeight;
+          changed = true;
+        }
+      } else if (layer.content.kind === "button") {
+        const fs = layer.style.fontSize ?? 16;
+        const ls = layer.style.letterSpacing ?? 0;
+        const result = fitButtonText({
+          label: layer.content.label,
+          boxW: layout.w,
+          boxH: layout.h,
+          fontSize: fs,
+          letterSpacing: ls,
+          minFontSize: 11,
+        });
+        if (result.fontSize !== fs || result.suggestedW !== null) {
+          layer.style.fontSize = result.fontSize;
+          if (result.suggestedW !== null) {
+            const delta = result.suggestedW - layout.w;
+            layout.w = result.suggestedW;
+            layout.x = Math.round(layout.x - delta / 2);
+          }
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      set({ ...commit(state, doc) });
+    }
+  },
+
+  applyFitTextToAll: () => {
+    const state = get();
+    const doc = cloneDoc(state.document);
+    const dev = state.device;
+    let changed = false;
+
+    for (const layer of getEditableLayers(doc)) {
+      if (layer.hidden || layer.locked) continue;
 
       const layout = dev === "pc" ? layer.variants.pc : layer.variants.sp;
 
@@ -659,33 +1191,101 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   generateSpFromPc: () => {
     const state = get();
     const doc = cloneDoc(state.document);
-    const pcWidth = doc.meta.size.pc.width;
-    const spWidth = doc.meta.size.sp.width;
-    const sx = spWidth / pcWidth;
+    const pcDesignWidth = doc.meta.size.pc.width;
+    const pcDesignHeight = doc.meta.size.pc.height;
+    const spDesignWidth = doc.meta.size.sp.width;
+    const spDesignHeight = doc.meta.size.sp.height;
+    const sx = spDesignWidth / pcDesignWidth;
+    const sy = spDesignHeight / pcDesignHeight;
     const margin = 8;
 
-    for (const layer of doc.layers) {
+    const isHeadingText = (layer: CanvasLayer) => {
+      if (layer.content.kind !== "text") return false;
       const pc = layer.variants.pc;
-      let x = Math.round(pc.x * sx);
-      let w = Math.round(pc.w * sx);
-      const y = pc.y; // y は維持
-      const h = pc.h; // h は維持
+      const fs = layer.style.fontSize ?? 16;
+      const fw = layer.style.fontWeight ?? 400;
+      const isTopHalf = pc.y <= Math.round(pcDesignHeight * 0.45);
+      const isLargeBlock = pc.w >= Math.round(pcDesignWidth * 0.35);
+      return isTopHalf && isLargeBlock && (fs >= 30 || fw >= 700 || /見出し|heading|title/i.test(layer.name));
+    };
 
-      // はみ出し調整
-      if (x < margin) x = margin;
-      if (x + w > spWidth - margin) {
-        w = spWidth - margin - x;
-        if (w < 20) {
-          x = margin;
-          w = spWidth - margin * 2;
+    const largestImage = getEditableLayers(doc)
+      .filter((layer) => layer.content.kind === "image")
+      .map((layer) => ({
+        id: layer.id,
+        area: layer.variants.pc.w * layer.variants.pc.h,
+        y: layer.variants.pc.y,
+      }))
+      .sort((a, b) => b.area - a.area)[0];
+
+    for (const layer of getEditableLayers(doc)) {
+      const pc = layer.variants.pc;
+      const horizontal = layer.constraints?.horizontal ?? "fixed";
+
+      // constraints は常に存在させる（互換用デフォルト）
+      layer.constraints = {
+        horizontal,
+        marginLeft: layer.constraints?.marginLeft ?? 0,
+        marginRight: layer.constraints?.marginRight ?? 0,
+      };
+
+      // (a) scale 計算（floatのまま）
+      let x = pc.x * sx;
+      let w = pc.w * sx;
+      const y = pc.y * sy;
+      let h = pc.h * sy;
+      let centered = false;
+
+      if (horizontal === "stretch") {
+        const marginLeft = layer.constraints.marginLeft ?? 0;
+        const marginRight = layer.constraints.marginRight ?? 0;
+        x = marginLeft;
+        w = Math.max(1, spDesignWidth - marginLeft - marginRight);
+      }
+
+      if (layer.content.kind === "image") {
+        const settings = layer.imageSettings ?? {
+          lockAspect: true,
+          fitMode: "cover" as const,
+          focalPoint: { x: 0.5, y: 0.5 },
+        };
+        const shouldKeepAspect = settings.lockAspect;
+        if (shouldKeepAspect && pc.w > 0) {
+          h = Math.max(1, pc.h * sx);
         }
       }
 
+      // LP向け中央寄せ補正: ヒーロー画像（最大面積）/見出しテキスト
+      const isHeroImage =
+        layer.content.kind === "image" &&
+        largestImage?.id === layer.id &&
+        layer.variants.pc.y <= Math.round(pcDesignHeight * 0.6);
+
+      const shouldCenter = isHeroImage || isHeadingText(layer);
+      if (shouldCenter && horizontal !== "stretch") {
+        // (b) 中央寄せ決定（designWidth基準）
+        x = (spDesignWidth - w) / 2;
+        centered = true;
+      }
+
+      // はみ出し調整（stretch 以外）
+      if (horizontal !== "stretch" && !centered) {
+        if (x < margin) x = margin;
+        if (x + w > spDesignWidth - margin) {
+          w = spDesignWidth - margin - x;
+          if (w < 20) {
+            x = margin;
+            w = spDesignWidth - margin * 2;
+          }
+        }
+      }
+
+      // (c) 最後にround
       layer.variants.sp = {
-        x,
-        y,
-        w,
-        h,
+        x: Math.round(x),
+        y: Math.round(y),
+        w: Math.round(w),
+        h: Math.round(h),
         r: pc.r,
         z: pc.z,
       };
@@ -707,7 +1307,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const state = get();
     if (state.selection.ids.length === 0) return;
     const doc = cloneDoc(state.document);
-    for (const layer of doc.layers) {
+    for (const layer of getEditableLayers(doc)) {
       if (state.selection.ids.includes(layer.id) && !layer.locked) {
         const layout = getLayout(layer, state.device);
         layout.x += dx;
@@ -725,7 +1325,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const doc = cloneDoc(state.document);
     const entries = ids
       .map((id) => {
-        const layer = doc.layers.find((l) => l.id === id);
+        const layer = findLayerRef(doc, id)?.layer;
         return layer ? { id, layout: { ...getLayout(layer, state.device) } } : null;
       })
       .filter(Boolean) as { id: string; layout: CanvasLayout }[];
@@ -733,7 +1333,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
 
     const patches = computeAlign(entries, direction);
     for (const { id, patch } of patches) {
-      const layer = doc.layers.find((l) => l.id === id);
+      const layer = findLayerRef(doc, id)?.layer;
       if (layer) Object.assign(getLayout(layer, state.device), patch);
     }
     set({ ...commit(state, doc) });
@@ -746,7 +1346,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const doc = cloneDoc(state.document);
     const entries = ids
       .map((id) => {
-        const layer = doc.layers.find((l) => l.id === id);
+        const layer = findLayerRef(doc, id)?.layer;
         return layer ? { id, layout: { ...getLayout(layer, state.device) } } : null;
       })
       .filter(Boolean) as { id: string; layout: CanvasLayout }[];
@@ -754,7 +1354,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
 
     const patches = computeDistribute(entries, direction);
     for (const { id, patch } of patches) {
-      const layer = doc.layers.find((l) => l.id === id);
+      const layer = findLayerRef(doc, id)?.layer;
       if (layer) Object.assign(getLayout(layer, state.device), patch);
     }
     set({ ...commit(state, doc) });

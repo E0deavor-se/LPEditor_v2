@@ -5,16 +5,15 @@
 
 "use client";
 
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CanvasDocument,
   CanvasLayer,
-  CanvasLayout,
   CanvasBackground,
   CanvasDevice,
   LayerStyle,
 } from "@/src/types/canvas";
-import type { JSX } from "react";
+import { getLayout, getLayerStyle, getRenderableLayersForDocument, resolveLayerLayout } from "@/src/types/canvas";
 import { layerShadowToCss } from "@/src/lib/canvas/shadow";
 
 /* ---------- Props ---------- */
@@ -43,7 +42,8 @@ const bgToStyle = (bg: CanvasBackground, resolveAsset?: (id: string) => string):
       return { background: `linear-gradient(${bg.angle}deg, ${stops})` };
     }
     case "image": {
-      const url = resolveAsset?.(bg.assetId) ?? bg.assetId;
+      const url = (resolveAsset?.(bg.assetId) ?? bg.assetId ?? "").trim();
+      if (!url) return { backgroundColor: "#ffffff" };
       return {
         backgroundImage: `url("${url}")`,
         backgroundSize: "cover",
@@ -145,25 +145,29 @@ const renderShapeSvg = (
 
 const LayerElement = ({
   layer,
-  layout,
+  device,
+  canvasWidth,
   resolveAsset,
   interactive,
 }: {
   layer: CanvasLayer;
-  layout: CanvasLayout;
+  device: CanvasDevice;
+  canvasWidth: number;
   resolveAsset?: (id: string) => string;
   interactive?: boolean;
 }) => {
-  const { content, style } = layer;
+  const { content } = layer;
+  const style = getLayerStyle(layer, device);
+  const effectiveLayout = resolveLayerLayout(layer, device, canvasWidth);
 
   const wrapperStyle: CSSProperties = {
     position: "absolute",
-    left: layout.x,
-    top: layout.y,
-    width: layout.w,
-    height: layout.h,
-    transform: layout.r ? `rotate(${layout.r}deg)` : undefined,
-    zIndex: layout.z,
+    left: effectiveLayout.x,
+    top: effectiveLayout.y,
+    width: effectiveLayout.w,
+    height: effectiveLayout.h,
+    transform: effectiveLayout.r ? `rotate(${effectiveLayout.r}deg)` : undefined,
+    zIndex: effectiveLayout.z,
     opacity: style.opacity,
     pointerEvents: layer.locked || !interactive ? "none" : "auto",
     overflow: "hidden",
@@ -198,22 +202,51 @@ const LayerElement = ({
       );
     }
     case "image": {
-      const src = resolveAsset?.(content.assetId) ?? content.assetId;
+      const src = (resolveAsset?.(content.assetId) ?? content.assetId ?? "").trim();
+      const fitMode = layer.imageSettings?.fitMode ?? "cover";
+      const focalX = Math.max(0, Math.min(1, layer.imageSettings?.focalPoint?.x ?? 0.5));
+      const focalY = Math.max(0, Math.min(1, layer.imageSettings?.focalPoint?.y ?? 0.5));
+      const objectFit: CSSProperties["objectFit"] = fitMode;
       return (
         <div style={wrapperStyle} data-layer-id={layer.id}>
-          <img
-            src={src}
-            alt={content.alt ?? ""}
-            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: style.radius ?? 0 }}
-            draggable={false}
-          />
+          {src ? (
+            <img
+              src={src}
+              alt={content.alt ?? ""}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit,
+                objectPosition: `${Math.round(focalX * 100)}% ${Math.round(focalY * 100)}%`,
+                borderRadius: style.radius ?? 0,
+              }}
+              draggable={false}
+            />
+          ) : (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                border: "1px dashed rgba(148,163,184,0.8)",
+                borderRadius: style.radius ?? 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "rgba(100,116,139,0.9)",
+                fontSize: 12,
+                backgroundColor: "rgba(248,250,252,0.9)",
+              }}
+            >
+              画像未設定
+            </div>
+          )}
         </div>
       );
     }
     case "shape": {
       return (
         <div style={wrapperStyle} data-layer-id={layer.id}>
-          {renderShapeSvg(content.shape, layout.w, layout.h, style)}
+          {renderShapeSvg(content.shape, effectiveLayout.w, effectiveLayout.h, style)}
         </div>
       );
     }
@@ -230,6 +263,8 @@ const LayerElement = ({
         fontFamily: style.fontFamily ?? "system-ui",
         fontSize: style.fontSize ?? 16,
         fontWeight: style.fontWeight ?? 700,
+        lineHeight: style.lineHeight ?? 1.4,
+        letterSpacing: style.letterSpacing ?? 0,
         textDecoration: "none",
         cursor: interactive ? "pointer" : "default",
         border: "none",
@@ -269,17 +304,34 @@ export default function CanvasRenderer({
   style: outerStyle,
   scale = 1,
 }: CanvasRendererProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [fitScale, setFitScale] = useState(1);
   const size = device === "pc" ? doc.meta.size.pc : doc.meta.size.sp;
+  const renderScale = scale * fitScale;
   const bgStyle = useMemo(() => bgToStyle(doc.background, resolveAsset), [doc.background, resolveAsset]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const rect = el.getBoundingClientRect();
+      const next = Math.min(1, rect.width / Math.max(1, size.width));
+      setFitScale(next);
+    };
+    recompute();
+    const observer = new ResizeObserver(() => recompute());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [size.width]);
 
   const visibleLayers = useMemo(
     () =>
-      doc.layers
+      getRenderableLayersForDocument(doc, device, size.width)
         .filter((l) => !l.hidden)
         .filter((l) => l.content.kind !== "group")
         .filter((l) => !l.visibleOn || l.visibleOn.includes(device))
-        .sort((a, b) => (device === "pc" ? a.variants.pc.z : a.variants.sp.z) - (device === "pc" ? b.variants.pc.z : b.variants.sp.z)),
-    [doc.layers, device]
+        .sort((a, b) => getLayout(a, device).z - getLayout(b, device).z),
+    [doc, device, size.width]
   );
 
   const rootStyle: CSSProperties = {
@@ -289,21 +341,24 @@ export default function CanvasRenderer({
     ...bgStyle,
     overflow: "hidden",
     transformOrigin: "top left",
-    transform: scale !== 1 ? `scale(${scale})` : undefined,
+    transform: renderScale !== 1 ? `scale(${renderScale})` : undefined,
     ...outerStyle,
   };
 
   return (
-    <div className={className} style={rootStyle} data-canvas-device={device}>
-      {visibleLayers.map((layer) => (
-        <LayerElement
-          key={layer.id}
-          layer={layer}
-          layout={device === "pc" ? layer.variants.pc : layer.variants.sp}
-          resolveAsset={resolveAsset}
-          interactive={interactive}
-        />
-      ))}
+    <div ref={containerRef} className={className} style={{ width: "100%", height: size.height * renderScale }}>
+      <div style={rootStyle} data-canvas-device={device}>
+        {visibleLayers.map((layer) => (
+          <LayerElement
+            key={layer.id}
+            layer={layer}
+            device={device}
+            canvasWidth={size.width}
+            resolveAsset={resolveAsset}
+            interactive={interactive}
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -25,6 +25,7 @@ import type {
   TitleContentItem,
 } from "@/src/types/project";
 import type { CsvImportPreview } from "@/src/lib/csv/importSummary";
+import { createDefaultCanvasDocument } from "@/src/types/canvas";
 import {
   DEFAULT_SECTION_CARD_STYLE,
   extractLegacyPresetId,
@@ -1843,6 +1844,10 @@ export type EditorUIState = {
   replaceProject: (project: ProjectState) => void;
   markDirty: () => void;
   addAsset: (asset: { id?: string; filename: string; data: string }) => string;
+  /* ---- Canvas Pages ---- */
+  addCanvasPage: (name?: string) => string;
+  removeCanvasPage: (id: string) => void;
+  updateCanvasPage: (id: string, canvas: import("@/src/types/canvas").CanvasDocument) => void;
 };
 
 const createDefaultProjectState = (): ProjectState => {
@@ -5984,5 +5989,65 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       };
     });
     return id;
+  },
+
+  /* ---- Canvas Pages ---- */
+  addCanvasPage: (name) => {
+    const id = `canvas_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const pageName = name || `Canvas ${((get().project.canvasPages ?? []).length) + 1}`;
+    set((state) => {
+      const pages = [...(state.project.canvasPages ?? [])];
+      pages.push({
+        type: "canvas",
+        id,
+        name: pageName,
+        canvas: createDefaultCanvasDocument(),
+      });
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+          canvasPages: pages,
+        },
+        saveStatus: "dirty" as const,
+        hasUserEdits: true,
+      };
+    });
+    return id;
+  },
+
+  removeCanvasPage: (id) => {
+    set((state) => {
+      const pages = (state.project.canvasPages ?? []).filter((p) => p.id !== id);
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+          canvasPages: pages,
+        },
+        saveStatus: "dirty" as const,
+        hasUserEdits: true,
+      };
+    });
+  },
+
+  updateCanvasPage: (id, canvas) => {
+    set((state) => {
+      const pages = (state.project.canvasPages ?? []).map((p) =>
+        p.id === id ? { ...p, canvas } : p
+      );
+      return {
+        ...state,
+        project: {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+          canvasPages: pages,
+        },
+        saveStatus: "dirty" as const,
+        hasUserEdits: true,
+      };
+    });
   },
 }));

@@ -8,8 +8,8 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import {
   Eye, EyeOff, Lock, Unlock,
-  ChevronUp, ChevronDown, Type, Image, Square, MousePointer2, Layers,
-  Copy, Trash2,
+  ChevronUp, ChevronDown, Type, ImageIcon, Square, MousePointer2, Layers,
+  Copy, Trash2, GripVertical, Table2,
 } from "lucide-react";
 import {
   DndContext,
@@ -18,6 +18,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -27,16 +28,17 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import type { CanvasLayer } from "@/src/types/canvas";
-import { getLayout } from "@/src/types/canvas";
+import { getDocumentMode, getLayout } from "@/src/types/canvas";
 
 const ICON_SIZE = 14;
 
 const typeIcon = (type: string) => {
   switch (type) {
     case "text": return <Type size={ICON_SIZE} />;
-    case "image": return <Image size={ICON_SIZE} />;
+    case "image": return <ImageIcon size={ICON_SIZE} />;
     case "shape": return <Square size={ICON_SIZE} />;
     case "button": return <MousePointer2 size={ICON_SIZE} />;
+    case "table": return <Table2 size={ICON_SIZE} />;
     default: return <Layers size={ICON_SIZE} />;
   }
 };
@@ -61,6 +63,36 @@ type LayerRowProps = {
   sendBackward: (id: string) => void;
   duplicateLayer: (id: string) => void;
   removeLayer: (id: string) => void;
+};
+
+type SectionRowProps = {
+  id: string;
+  name: string;
+  isSelected: boolean;
+  isDragOver: boolean;
+  isEditing: boolean;
+  editName: string;
+  onEditNameChange: (name: string) => void;
+  onEditStart: (id: string, name: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
+  onSelect: (id: string) => void;
+  onDuplicate: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+  disableUp: boolean;
+  disableDown: boolean;
+};
+
+type SectionLayerRowProps = {
+  layer: CanvasLayer;
+  isSelected: boolean;
+  isDragOver: boolean;
+  onSelect: (layerId: string, e: MouseEvent) => void;
+  onToggleHidden: (id: string) => void;
+  onToggleLock: (id: string) => void;
+  onRemove: (id: string) => void;
 };
 
 const SortableLayerRow = ({
@@ -189,9 +221,213 @@ const SortableLayerRow = ({
   );
 };
 
+const SortableSectionRow = ({
+  id,
+  name,
+  isSelected,
+  isDragOver,
+  isEditing,
+  editName,
+  onEditNameChange,
+  onEditStart,
+  onEditCommit,
+  onEditCancel,
+  onSelect,
+  onDuplicate,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+  disableUp,
+  disableDown,
+}: SectionRowProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={
+        "relative flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] " +
+        (isSelected
+          ? "border-[var(--ui-text)] bg-[color-mix(in_srgb,var(--ui-text)_10%,transparent)]"
+          : "border-[var(--ui-border)]")
+      }
+      onClick={() => onSelect(id)}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onEditStart(id, name);
+      }}
+    >
+      {isDragOver ? (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-[2px] bg-[var(--ui-text)]" />
+      ) : null}
+
+      <button
+        type="button"
+        className="rounded p-0.5 text-[var(--ui-muted)] hover:bg-[var(--surface-2)]"
+        title="ドラッグで並び替え"
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical size={10} />
+      </button>
+
+      {isEditing ? (
+        <input
+          className="min-w-0 flex-1 rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1 py-0 text-[10px]"
+          value={editName}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onEditNameChange(e.target.value)}
+          onBlur={onEditCommit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onEditCommit();
+            if (e.key === "Escape") onEditCancel();
+          }}
+          autoFocus
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+      )}
+      <button
+        type="button"
+        className="rounded p-0.5 hover:bg-[var(--surface-2)] disabled:opacity-40"
+        onClick={(e) => {
+          e.stopPropagation();
+          onMoveUp();
+        }}
+        disabled={disableUp}
+        title="上へ"
+      >
+        <ChevronUp size={10} />
+      </button>
+      <button
+        type="button"
+        className="rounded p-0.5 hover:bg-[var(--surface-2)] disabled:opacity-40"
+        onClick={(e) => {
+          e.stopPropagation();
+          onMoveDown();
+        }}
+        disabled={disableDown}
+        title="下へ"
+      >
+        <ChevronDown size={10} />
+      </button>
+      <button
+        type="button"
+        className="rounded p-0.5 hover:bg-[var(--surface-2)]"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDuplicate();
+        }}
+        title="複製"
+      >
+        <Copy size={10} />
+      </button>
+      <button
+        type="button"
+        className="rounded p-0.5 text-red-400 hover:bg-[var(--surface-2)]"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        title="削除"
+      >
+        <Trash2 size={10} />
+      </button>
+    </div>
+  );
+};
+
+const SortableSectionLayerRow = ({
+  layer,
+  isSelected,
+  isDragOver,
+  onSelect,
+  onToggleHidden,
+  onToggleLock,
+  onRemove,
+}: SectionLayerRowProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: layer.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : layer.hidden ? 0.45 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={
+        "relative group flex items-center gap-1.5 border-b border-[var(--ui-border)] px-2 py-1.5 text-[11px] transition-colors " +
+        (isSelected
+          ? "bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"
+          : "hover:bg-[color-mix(in_srgb,var(--ui-text)_4%,transparent)]")
+      }
+      onClick={(e) => onSelect(layer.id, e)}
+    >
+      {isDragOver ? (
+        <div className="pointer-events-none absolute inset-x-0 -top-px h-[2px] bg-[var(--ui-text)]" />
+      ) : null}
+
+      <button
+        type="button"
+        className="rounded p-0.5 text-[var(--ui-muted)] hover:bg-[var(--surface-2)]"
+        title="ドラッグで並び替え"
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical size={11} />
+      </button>
+      <span className="flex-shrink-0 text-[var(--ui-muted)]">{typeIcon(layer.type)}</span>
+      <span className="min-w-0 flex-1 truncate">{layer.name}</span>
+      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="p-0.5 rounded hover:bg-[var(--surface-2)]"
+          title={layer.hidden ? "表示" : "非表示"}
+          onClick={() => onToggleHidden(layer.id)}
+        >
+          {layer.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
+        </button>
+        <button
+          type="button"
+          className="p-0.5 rounded hover:bg-[var(--surface-2)]"
+          title={layer.locked ? "ロック解除" : "ロック"}
+          onClick={() => onToggleLock(layer.id)}
+        >
+          {layer.locked ? <Lock size={11} /> : <Unlock size={11} />}
+        </button>
+        <button
+          type="button"
+          className="p-0.5 rounded text-red-400 hover:bg-[var(--surface-2)]"
+          title="削除"
+          onClick={() => {
+            if (window.confirm("このレイヤーを削除しますか？")) {
+              onRemove(layer.id);
+            }
+          }}
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export default function CanvasLayersPanel() {
   const doc = useCanvasEditorStore((s) => s.document);
   const device = useCanvasEditorStore((s) => s.device);
+  const getRenderableLayers = useCanvasEditorStore((s) => s.getRenderableLayers);
   const selection = useCanvasEditorStore((s) => s.selection);
   const select = useCanvasEditorStore((s) => s.select);
   const toggleLock = useCanvasEditorStore((s) => s.toggleLock);
@@ -202,19 +438,41 @@ export default function CanvasLayersPanel() {
   const duplicateLayer = useCanvasEditorStore((s) => s.duplicateLayer);
   const renameLayer = useCanvasEditorStore((s) => s.renameLayer);
   const reorderLayers = useCanvasEditorStore((s) => s.reorderLayers);
+  const reorderSectionLayers = useCanvasEditorStore((s) => s.reorderSectionLayers);
+  const addSection = useCanvasEditorStore((s) => s.addSection);
+  const duplicateSection = useCanvasEditorStore((s) => s.duplicateSection);
+  const removeSection = useCanvasEditorStore((s) => s.removeSection);
+  const moveSection = useCanvasEditorStore((s) => s.moveSection);
+  const moveSectionToIndex = useCanvasEditorStore((s) => s.moveSectionToIndex);
+  const selectedSectionId = useCanvasEditorStore((s) => s.selectedSectionId);
+  const selectSection = useCanvasEditorStore((s) => s.selectSection);
+  const renameSection = useCanvasEditorStore((s) => s.renameSection);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(new Set());
+  const [sectionDragOverId, setSectionDragOverId] = useState<string | null>(null);
+  const [sectionLayerDragOverId, setSectionLayerDragOverId] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editingSectionName, setEditingSectionName] = useState("");
+  const [editingSectionOriginalName, setEditingSectionOriginalName] = useState("");
+  const mode = getDocumentMode(doc);
+  const sections = doc.sections?.sections ?? [];
+  const selectedSection = sections.find((section) => section.id === selectedSectionId);
+  const selectedSectionLayers = selectedSection?.layers ?? [];
+  const editableLayers = useMemo(
+    () => getRenderableLayers(device).filter((l) => !l.id.startsWith("section-bg:")),
+    [getRenderableLayers, device]
+  );
 
   const sortedLayers = useMemo(
     () =>
-      [...doc.layers].sort(
+      [...editableLayers].sort(
         (a, b) => getLayout(b, device).z - getLayout(a, device).z
       ),
-    [doc.layers, device]
+    [editableLayers, device]
   );
 
   const groupChildrenMap = useMemo(() => {
@@ -255,9 +513,9 @@ export default function CanvasLayersPanel() {
   }, [sortedLayers, groupChildrenMap, collapsedGroupIds]);
 
   const handleSelect = (layerId: string, e: MouseEvent) => {
-    const clicked = doc.layers.find((l) => l.id === layerId);
+    const clicked = editableLayers.find((l) => l.id === layerId);
     if (clicked?.content.kind === "group") {
-      const childIds = doc.layers.filter((l) => l.groupId === clicked.id).map((l) => l.id);
+      const childIds = editableLayers.filter((l) => l.groupId === clicked.id).map((l) => l.id);
       const ids = [clicked.id, ...childIds];
       select(ids, clicked.id);
       return;
@@ -291,6 +549,55 @@ export default function CanvasLayersPanel() {
     reorderLayers(String(active.id), String(over.id));
   };
 
+  const handleSectionDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setSectionDragOverId(over ? String(over.id) : null);
+  };
+
+  const handleSectionDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setSectionDragOverId(null);
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const targetIndex = sections.findIndex((s) => s.id === overId);
+    if (targetIndex < 0) return;
+    moveSectionToIndex(activeId, targetIndex);
+  };
+
+  const handleSectionLayerDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setSectionLayerDragOverId(over ? String(over.id) : null);
+  };
+
+  const handleSectionLayerDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setSectionLayerDragOverId(null);
+    if (!selectedSectionId || !over || active.id === over.id) return;
+    reorderSectionLayers(selectedSectionId, String(active.id), String(over.id));
+  };
+
+  const startSectionRename = (sectionId: string, currentName: string) => {
+    setEditingSectionId(sectionId);
+    setEditingSectionName(currentName);
+    setEditingSectionOriginalName(currentName);
+  };
+
+  const commitSectionRename = () => {
+    if (editingSectionId && editingSectionName.trim()) {
+      renameSection(editingSectionId, editingSectionName.trim());
+    }
+    setEditingSectionId(null);
+    setEditingSectionName("");
+    setEditingSectionOriginalName("");
+  };
+
+  const cancelSectionRename = () => {
+    setEditingSectionId(null);
+    setEditingSectionName(editingSectionOriginalName);
+    setEditingSectionOriginalName("");
+  };
+
   const toggleGroupCollapse = (id: string) => {
     setCollapsedGroupIds((prev) => {
       const next = new Set(prev);
@@ -308,46 +615,139 @@ export default function CanvasLayersPanel() {
       <div className="border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-3 py-2">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold">レイヤー</span>
-          <span className="text-[11px] text-[var(--ui-muted)]">{doc.layers.length}</span>
+          <span className="text-[11px] text-[var(--ui-muted)]">{sortedLayers.length}</span>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={visibleRows.map((row) => row.layer.id)} strategy={verticalListSortingStrategy}>
-            {visibleRows.map((row) => (
-              <SortableLayerRow
-                key={row.layer.id}
-                layer={row.layer}
-                isSelected={selection.ids.includes(row.layer.id)}
-                indent={row.indent}
-                isGroup={row.isGroup}
-                isCollapsed={collapsedGroupIds.has(row.layer.id)}
-                onToggleCollapse={toggleGroupCollapse}
-                editingId={editingId}
-                editName={editName}
-                setEditName={setEditName}
-                setEditingId={setEditingId}
-                commitRename={commitRename}
-                onSelect={handleSelect}
-                onDoubleClick={handleDoubleClick}
-                toggleHidden={toggleHidden}
-                toggleLock={toggleLock}
-                bringForward={bringForward}
-                sendBackward={sendBackward}
-                duplicateLayer={duplicateLayer}
-                removeLayer={removeLayer}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-
-        {doc.layers.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[11px] text-[var(--ui-muted)]">
-            レイヤーがありません
+      {mode === "sections" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b border-[var(--ui-border)] px-2 py-2 space-y-1">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] text-[var(--ui-muted)]">Sections</span>
+              <button
+                type="button"
+                className="rounded border border-[var(--ui-border)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--surface-2)]"
+                onClick={() => addSection()}
+              >
+                + Add
+              </button>
+            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragOver={handleSectionDragOver}
+              onDragEnd={handleSectionDragEnd}
+            >
+              <SortableContext items={sections.map((section) => section.id)} strategy={verticalListSortingStrategy}>
+                {sections.map((section, index) => (
+                  <SortableSectionRow
+                    key={section.id}
+                    id={section.id}
+                    name={section.name ?? section.title ?? `セクション ${index + 1}`}
+                    isSelected={selectedSectionId === section.id}
+                    isDragOver={sectionDragOverId === section.id}
+                    isEditing={editingSectionId === section.id}
+                    editName={editingSectionName}
+                    onEditNameChange={setEditingSectionName}
+                    onEditStart={startSectionRename}
+                    onEditCommit={commitSectionRename}
+                    onEditCancel={cancelSectionRename}
+                    onSelect={selectSection}
+                    onDuplicate={() => duplicateSection(section.id)}
+                    onMoveUp={() => moveSection(section.id, "up")}
+                    onMoveDown={() => moveSection(section.id, "down")}
+                    onRemove={() => {
+                      if (window.confirm("このセクションを削除しますか？")) {
+                        removeSection(section.id);
+                      }
+                    }}
+                    disableUp={index === 0}
+                    disableDown={index === sections.length - 1}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
-        ) : null}
-      </div>
+
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[var(--ui-border)]">
+            <div className="border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-2 py-1.5 text-[11px] text-[var(--ui-muted)]">
+              {selectedSection
+                ? `Layers: ${selectedSection.name ?? selectedSection.title}`
+                : "Layers"}
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {!selectedSection ? (
+                <div className="px-3 py-6 text-center text-[11px] text-[var(--ui-muted)]">
+                  セクションを選択してください
+                </div>
+              ) : selectedSectionLayers.length === 0 ? (
+                <div className="px-3 py-6 text-center text-[11px] text-[var(--ui-muted)]">
+                  レイヤーがありません
+                </div>
+              ) : (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragOver={handleSectionLayerDragOver}
+                  onDragEnd={handleSectionLayerDragEnd}
+                >
+                  <SortableContext items={selectedSectionLayers.map((layer) => layer.id)} strategy={verticalListSortingStrategy}>
+                    {selectedSectionLayers.map((layer) => (
+                      <SortableSectionLayerRow
+                        key={layer.id}
+                        layer={layer}
+                        isSelected={selection.ids.includes(layer.id)}
+                        isDragOver={sectionLayerDragOverId === layer.id}
+                        onSelect={handleSelect}
+                        onToggleHidden={toggleHidden}
+                        onToggleLock={toggleLock}
+                        onRemove={removeLayer}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={visibleRows.map((row) => row.layer.id)} strategy={verticalListSortingStrategy}>
+              {visibleRows.map((row) => (
+                <SortableLayerRow
+                  key={row.layer.id}
+                  layer={row.layer}
+                  isSelected={selection.ids.includes(row.layer.id)}
+                  indent={row.indent}
+                  isGroup={row.isGroup}
+                  isCollapsed={collapsedGroupIds.has(row.layer.id)}
+                  onToggleCollapse={toggleGroupCollapse}
+                  editingId={editingId}
+                  editName={editName}
+                  setEditName={setEditName}
+                  setEditingId={setEditingId}
+                  commitRename={commitRename}
+                  onSelect={handleSelect}
+                  onDoubleClick={handleDoubleClick}
+                  toggleHidden={toggleHidden}
+                  toggleLock={toggleLock}
+                  bringForward={bringForward}
+                  sendBackward={sendBackward}
+                  duplicateLayer={duplicateLayer}
+                  removeLayer={removeLayer}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+
+          {sortedLayers.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[11px] text-[var(--ui-muted)]">
+              レイヤーがありません
+            </div>
+          ) : null}
+        </div>
+      )}
     </aside>
   );
 }

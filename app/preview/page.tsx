@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import PreviewSsr from "@/src/preview/PreviewSsr";
 import type { ProjectState } from "@/src/types/project";
+import type { CanvasPageData } from "@/src/types/canvas";
+import dynamic from "next/dynamic";
+
+const CanvasRenderer = dynamic(
+  () => import("@/src/components/canvas/CanvasRenderer"),
+  { ssr: false }
+);
 
 const PREVIEW_READY = "CLP_PREVIEW_READY";
 const PROJECT_UPDATE = "CLP_PROJECT_UPDATE";
@@ -400,23 +407,46 @@ export default function PreviewPage() {
       <div className="lp-preview-guides" aria-hidden="true" />
       <div className="lp-preview-safearea" aria-hidden="true" />
       {project ? (
-        <PreviewSsr
-          project={project}
-          ui={ui}
-          onUpdateTargetStoresFilters={(
-            sectionId: string,
-            filters: Record<string, boolean>
-          ) => {
-            window.parent.postMessage(
-              {
-                type: PREVIEW_UPDATE_TARGET_STORES_FILTERS,
-                sectionId,
-                payload: { storeFilters: filters },
-              },
-              window.location.origin
+        <>
+          <PreviewSsr
+            project={project}
+            ui={ui}
+            onUpdateTargetStoresFilters={(
+              sectionId: string,
+              filters: Record<string, boolean>
+            ) => {
+              window.parent.postMessage(
+                {
+                  type: PREVIEW_UPDATE_TARGET_STORES_FILTERS,
+                  sectionId,
+                  payload: { storeFilters: filters },
+                },
+                window.location.origin
+              );
+            }}
+          />
+          {/* Canvas pages */}
+          {(project.canvasPages ?? []).map((cp: CanvasPageData) => {
+            const previewDevice = (ui?.previewMode === "mobile" ? "sp" : "pc") as "pc" | "sp";
+            const resolveAsset = (assetId: string) => {
+              const assets = project.assets ?? {};
+              return assets[assetId]?.data ?? assetId;
+            };
+            return (
+              <div key={cp.id} style={{ marginTop: 32 }}>
+                <div style={{ fontSize: 11, color: "#94a3b8", padding: "4px 8px", borderBottom: "1px solid #e2e8f0" }}>
+                  Canvas: {cp.name}
+                </div>
+                <CanvasRenderer
+                  document={cp.canvas}
+                  device={previewDevice}
+                  resolveAsset={resolveAsset}
+                  interactive={false}
+                />
+              </div>
             );
-          }}
-        />
+          })}
+        </>
       ) : (
         <div className="min-h-screen bg-white px-6 py-8 text-sm text-slate-500">
           プレビューを待機しています…

@@ -8,7 +8,7 @@
 import { useMemo, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import type { CanvasLayer, LayerStyle, CanvasLayout, LayerShadow } from "@/src/types/canvas";
-import { getLayout } from "@/src/types/canvas";
+import { getDocumentMode, getLayout } from "@/src/types/canvas";
 import { parseLayerShadow } from "@/src/lib/canvas/shadow";
 
 /* ---------- 再利用フィールド ---------- */
@@ -158,11 +158,16 @@ const SectionHead = ({ title }: { title: string }) => (
 export default function CanvasInspectorPanel() {
   const doc = useCanvasEditorStore((s) => s.document);
   const device = useCanvasEditorStore((s) => s.device);
+  const getRenderableLayers = useCanvasEditorStore((s) => s.getRenderableLayers);
   const selection = useCanvasEditorStore((s) => s.selection);
   const updateLayerLayout = useCanvasEditorStore((s) => s.updateLayerLayout);
   const updateLayerStyle = useCanvasEditorStore((s) => s.updateLayerStyle);
+  const updateLayerConstraints = useCanvasEditorStore((s) => s.updateLayerConstraints);
+  const updateImageLayerSettings = useCanvasEditorStore((s) => s.updateImageLayerSettings);
   const updateLayerContent = useCanvasEditorStore((s) => s.updateLayerContent);
   const pushSnapshot = useCanvasEditorStore((s) => s.pushSnapshot);
+  const selectedSectionId = useCanvasEditorStore((s) => s.selectedSectionId);
+  const updateSection = useCanvasEditorStore((s) => s.updateSection);
 
   const historyOpenRef = useRef<{ layout: boolean; style: boolean; content: boolean }>({
     layout: false,
@@ -195,9 +200,10 @@ export default function CanvasInspectorPanel() {
     if (timers.content) window.clearTimeout(timers.content);
   }, []);
 
+  const renderableLayers = getRenderableLayers(device).filter((l) => !l.id.startsWith("section-bg:"));
   const selectedLayer: CanvasLayer | undefined = useMemo(
-    () => doc.layers.find((l) => l.id === selection.primaryId),
-    [doc.layers, selection.primaryId]
+    () => renderableLayers.find((l) => l.id === selection.primaryId),
+    [renderableLayers, selection.primaryId]
   );
 
   const layout: CanvasLayout | undefined = selectedLayer ? getLayout(selectedLayer, device) : undefined;
@@ -231,7 +237,129 @@ export default function CanvasInspectorPanel() {
     [selectedLayer, updateLayerContent, beginHistoryBurst]
   );
 
+  const patchConstraints = useCallback(
+    (patch: { horizontal?: "fixed" | "left" | "right" | "stretch"; marginLeft?: number; marginRight?: number }) => {
+      if (!selectedLayer) return;
+      beginHistoryBurst("layout");
+      updateLayerConstraints(selectedLayer.id, patch);
+    },
+    [selectedLayer, updateLayerConstraints, beginHistoryBurst]
+  );
+
+  const patchImageSettings = useCallback(
+    (patch: { lockAspect?: boolean; fitMode?: "contain" | "cover"; focalPoint?: { x?: number; y?: number } }) => {
+      if (!selectedLayer || selectedLayer.content.kind !== "image") return;
+      beginHistoryBurst("content");
+      const current = selectedLayer.imageSettings ?? {
+        lockAspect: true,
+        fitMode: "cover" as const,
+        focalPoint: { x: 0.5, y: 0.5 },
+      };
+      updateImageLayerSettings(selectedLayer.id, {
+        ...(patch.lockAspect !== undefined ? { lockAspect: patch.lockAspect } : {}),
+        ...(patch.fitMode !== undefined ? { fitMode: patch.fitMode } : {}),
+        ...(patch.focalPoint
+          ? {
+              focalPoint: {
+                x: patch.focalPoint.x !== undefined ? Math.max(0, Math.min(1, patch.focalPoint.x)) : current.focalPoint.x,
+                y: patch.focalPoint.y !== undefined ? Math.max(0, Math.min(1, patch.focalPoint.y)) : current.focalPoint.y,
+              },
+            }
+          : {}),
+      });
+    },
+    [selectedLayer, updateImageLayerSettings, beginHistoryBurst]
+  );
+
+  /* --- Section editing helpers --- */
+  const canvasMode = getDocumentMode(doc);
+  const sections = useMemo(() => doc.sections?.sections ?? [], [doc.sections?.sections]);
+  const selectedSection = useMemo(
+    () => sections.find((s) => s.id === selectedSectionId),
+    [sections, selectedSectionId]
+  );
+
+  const patchSectionProp = useCallback(
+    (patch: Record<string, unknown>) => {
+      if (!selectedSectionId) return;
+      beginHistoryBurst("style");
+      updateSection(selectedSectionId, patch);
+    },
+    [selectedSectionId, updateSection, beginHistoryBurst]
+  );
+
+  const selectedSectionBg =
+    selectedSection && typeof selectedSection.background === "string"
+      ? selectedSection.background
+      : "#f5f5f5";
+
   if (!selectedLayer || !layout || !style) {
+    // --- Section Inspector ---
+    if (canvasMode === "sections" && selectedSection) {
+      return (
+        <aside
+          className="flex h-full min-h-0 flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] overflow-y-auto"
+          style={{ width: 300 }}
+        >
+          <div className="px-3 py-2 border-b border-[var(--ui-border)] bg-[var(--surface-2)]">
+            <span className="text-[13px] font-semibold">セクション設定</span>
+          </div>
+          <div className="space-y-1 px-3 py-2">
+            <SectionHead title="基本" />
+            <label className="flex items-center gap-1 text-[11px]">
+              <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">名前</span>
+              <input
+                type="text"
+                className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
+                value={selectedSection.name ?? ""}
+                onChange={(e) => patchSectionProp({ name: e.target.value })}
+              />
+            </label>
+            <ColorField
+              label="背景"
+              value={selectedSectionBg}
+              onChange={(v) => patchSectionProp({ background: v })}
+            />
+
+            <SectionHead title="余白・間隔" />
+            <NumField
+              label="上余白"
+              value={selectedSection.paddingTop ?? 24}
+              min={0}
+              onChange={(v) => patchSectionProp({ paddingTop: v })}
+              unit="px"
+            />
+            <NumField
+              label="下余白"
+              value={selectedSection.paddingBottom ?? 24}
+              min={0}
+              onChange={(v) => patchSectionProp({ paddingBottom: v })}
+              unit="px"
+            />
+            <NumField
+              label="間隔"
+              value={selectedSection.gap ?? 24}
+              min={0}
+              onChange={(v) => patchSectionProp({ gap: v })}
+              unit="px"
+            />
+            <NumField
+              label="最小高"
+              value={selectedSection.minHeight ?? 320}
+              min={0}
+              onChange={(v) => patchSectionProp({ minHeight: v })}
+              unit="px"
+            />
+
+            <SectionHead title="情報" />
+            <div className="text-[11px] text-[var(--ui-muted)]">
+              レイヤー数: {selectedSection.layers.length}
+            </div>
+          </div>
+        </aside>
+      );
+    }
+
     return (
       <aside
         className="flex h-full min-h-0 flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)]"
@@ -248,6 +376,19 @@ export default function CanvasInspectorPanel() {
   }
 
   const content = selectedLayer.content;
+  const constraints = {
+    horizontal: selectedLayer.constraints?.horizontal ?? "fixed",
+    marginLeft: selectedLayer.constraints?.marginLeft ?? 0,
+    marginRight: selectedLayer.constraints?.marginRight ?? 0,
+  };
+  const imageSettings = {
+    lockAspect: selectedLayer.imageSettings?.lockAspect ?? true,
+    fitMode: selectedLayer.imageSettings?.fitMode ?? "cover",
+    focalPoint: {
+      x: selectedLayer.imageSettings?.focalPoint?.x ?? 0.5,
+      y: selectedLayer.imageSettings?.focalPoint?.y ?? 0.5,
+    },
+  };
   const shadowModel = parseLayerShadow(style.shadow);
   const patchShadow = (patch: Partial<LayerShadow>) => {
     patchStyle({ shadow: { ...shadowModel, ...patch } });
@@ -286,6 +427,23 @@ export default function CanvasInspectorPanel() {
             <ColorField label="線" value={style.stroke ?? "#000000"} onChange={(v) => patchStyle({ stroke: v })} />
             <NumField label="線幅" value={style.strokeWidth ?? 0} min={0} onChange={(v) => patchStyle({ strokeWidth: v })} />
             <NumField label="角丸" value={style.radius ?? 0} min={0} onChange={(v) => patchStyle({ radius: v })} />
+
+            <SectionHead title="横幅制約" />
+            <SelectField
+              label="横幅"
+              value={constraints.horizontal}
+              options={[
+                { value: "fixed", label: "固定" },
+                { value: "stretch", label: "伸縮(フル幅)" },
+              ]}
+              onChange={(v) => patchConstraints({ horizontal: v as "fixed" | "stretch" })}
+            />
+            {constraints.horizontal === "stretch" ? (
+              <>
+                <NumField label="左余白" value={constraints.marginLeft} min={0} onChange={(v) => patchConstraints({ marginLeft: v })} />
+                <NumField label="右余白" value={constraints.marginRight} min={0} onChange={(v) => patchConstraints({ marginRight: v })} />
+              </>
+            ) : null}
           </>
         ) : null}
 
@@ -363,6 +521,26 @@ export default function CanvasInspectorPanel() {
               />
             </label>
             <NumField label="角丸" value={style.radius ?? 0} min={0} onChange={(v) => patchStyle({ radius: v })} />
+
+            <label className="flex items-center gap-2 text-[11px]">
+              <span className="w-20 flex-shrink-0 text-[var(--ui-muted)]">比率固定</span>
+              <input
+                type="checkbox"
+                checked={imageSettings.lockAspect}
+                onChange={(e) => patchImageSettings({ lockAspect: e.target.checked })}
+              />
+            </label>
+            <SelectField
+              label="フィット"
+              value={imageSettings.fitMode}
+              options={[
+                { value: "cover", label: "cover" },
+                { value: "contain", label: "contain" },
+              ]}
+              onChange={(v) => patchImageSettings({ fitMode: v as "cover" | "contain" })}
+            />
+            <NumField label="焦点X" value={imageSettings.focalPoint.x} min={0} max={1} step={0.05} onChange={(v) => patchImageSettings({ focalPoint: { x: v } })} />
+            <NumField label="焦点Y" value={imageSettings.focalPoint.y} min={0} max={1} step={0.05} onChange={(v) => patchImageSettings({ focalPoint: { y: v } })} />
           </>
         ) : null}
 

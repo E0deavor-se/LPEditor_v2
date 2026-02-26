@@ -101,3 +101,25 @@ export const getAssetKind = (mimeType: string, filename: string) => {
   }
   return "other" as const;
 };
+
+export const getImageNaturalSize = (
+  src: string,
+): Promise<{ width: number; height: number } | null> => {
+  if (!src) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const width = image.naturalWidth;
+      const height = image.naturalHeight;
+      if (width > 0 && height > 0) {
+        resolve({ width, height });
+        return;
+      }
+      resolve(null);
+    };
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+};

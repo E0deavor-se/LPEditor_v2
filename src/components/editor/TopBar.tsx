@@ -14,7 +14,7 @@ import {
   downloadProjectJson,
   pickAndLoadProjectJson,
 } from "@/src/lib/projectFile";
-import { exportProjectToZip, triggerZipDownload } from "@/src/export/exportZip";
+import { exportProjectToZip, exportCanvasOnlyToZip, triggerZipDownload } from "@/src/export/exportZip";
 import { pickAndImportZip } from "@/src/lib/importZip";
 import { exportPreviewToPng } from "@/src/lib/exportImage";
 
@@ -23,9 +23,13 @@ type TopBarProps = {
   onOpenTemplate?: () => void;
   /** プレビューiframeへの参照 */
   previewIframeRef?: React.RefObject<HTMLIFrameElement | null>;
+  /** 現在のエディタモード */
+  editorMode?: "lp" | "canvas";
+  /** Canvas モード時のアクティブ Canvas ページ ID */
+  activeCanvasPageId?: string | null;
 };
 
-export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps) {
+export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = "lp", activeCanvasPageId }: TopBarProps) {
   const themeMode = useThemeStore((state) => state.mode);
   const themeAccent = useThemeStore((state) => state.accent);
   const setThemeMode = useThemeStore((state) => state.setMode);
@@ -236,6 +240,22 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "書き出しに失敗しました。";
+      setSaveStatus("error", message);
+    }
+  };
+
+  const handleExportCanvasOnlyZip = async () => {
+    if (!activeCanvasPageId) return;
+    try {
+      setSaveStatus("saving", "Canvas ZIPを書き出し中…");
+      const result = await exportCanvasOnlyToZip(project, activeCanvasPageId);
+      const canvasPage = (project.canvasPages ?? []).find((p) => p.id === activeCanvasPageId);
+      const baseName = canvasPage?.name || project.meta.projectName || "canvas-lp";
+      triggerZipDownload(result.blob, baseName);
+      setSaveStatus("saved", "Canvas ZIPを書き出しました");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Canvas書き出しに失敗しました。";
       setSaveStatus("error", message);
     }
   };
@@ -605,8 +625,21 @@ export default function TopBar({ onOpenTemplate, previewIframeRef }: TopBarProps
                   handleExportZip();
                 }}
               >
-                ZIPを書き出し
+                {editorMode === "canvas" ? "ZIP（プロジェクト全体）" : "ZIPを書き出し"}
               </button>
+              {activeCanvasPageId ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={exportItemBase}
+                  onClick={() => {
+                    setIsExportOpen(false);
+                    void handleExportCanvasOnlyZip();
+                  }}
+                >
+                  Canvasのみ（独立LP）
+                </button>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"

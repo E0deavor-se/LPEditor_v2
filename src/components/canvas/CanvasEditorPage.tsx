@@ -8,24 +8,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Monitor, Smartphone, Columns2, Grid3X3, Magnet,
-  ZoomIn, ZoomOut, Undo2, Redo2, Type, Image, Square, MousePointer2,
+  ZoomIn, ZoomOut, Undo2, Redo2, Type, ImageIcon, Square, MousePointer2,
   Wand2, Eye, EyeOff, Ruler, LayoutTemplate, Maximize, ALargeSmall,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
+  Table2,
 } from "lucide-react";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import { useEditorStore } from "@/src/store/editorStore";
 import CanvasStage from "@/src/components/canvas/CanvasStage";
-import CanvasLayersPanel from "@/src/components/canvas/LayersPanel";
+import CanvasLayersPanel from "./LayersPanel";
 import CanvasInspectorPanel from "@/src/components/canvas/CanvasInspectorPanel";
 import {
   createTextLayer,
   createShapeLayer,
   createButtonLayer,
   createImageLayer,
+  createTableLayer,
 } from "@/src/types/canvas";
-import { AUTO_LAYOUT_PRESETS, type AutoLayoutPreset } from "@/src/lib/canvas/autoLayout";
+import { AUTO_LAYOUT_PRESETS } from "@/src/lib/canvas/autoLayout";
+import { CANVAS_TEMPLATES, buildDocumentFromTemplate } from "@/src/lib/canvas/canvasTemplates";
 
 const BTN = "h-7 px-2 rounded text-[11px] font-medium flex items-center gap-1 transition-colors";
 const BTN_ACTIVE = "bg-[var(--ui-text)] text-[var(--ui-bg)]";
@@ -38,6 +41,7 @@ type CanvasEditorPageProps = {
 export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps = {}) {
   const device = useCanvasEditorStore((s) => s.device);
   const viewMode = useCanvasEditorStore((s) => s.viewMode);
+  const canvasMode = useCanvasEditorStore((s) => s.document.mode ?? "free");
   const zoom = useCanvasEditorStore((s) => s.zoom);
   const gridEnabled = useCanvasEditorStore((s) => s.gridEnabled);
   const snapEnabled = useCanvasEditorStore((s) => s.snapEnabled);
@@ -46,6 +50,9 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
 
   const setDevice = useCanvasEditorStore((s) => s.setDevice);
   const setViewMode = useCanvasEditorStore((s) => s.setViewMode);
+  const setCanvasMode = useCanvasEditorStore((s) => s.setCanvasMode);
+  const convertFreeToSections = useCanvasEditorStore((s) => s.convertFreeToSections);
+  const convertSectionsToFree = useCanvasEditorStore((s) => s.convertSectionsToFree);
   const setZoom = useCanvasEditorStore((s) => s.setZoom);
   const toggleGrid = useCanvasEditorStore((s) => s.toggleGrid);
   const toggleSnap = useCanvasEditorStore((s) => s.toggleSnap);
@@ -58,6 +65,7 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const moveSelectedLayers = useCanvasEditorStore((s) => s.moveSelectedLayers);
   const pushSnapshot = useCanvasEditorStore((s) => s.pushSnapshot);
   const generateSpFromPc = useCanvasEditorStore((s) => s.generateSpFromPc);
+  const getRenderableLayers = useCanvasEditorStore((s) => s.getRenderableLayers);
   const canvasDoc = useCanvasEditorStore((s) => s.document);
   const setDocument = useCanvasEditorStore((s) => s.setDocument);
   const dirty = useCanvasEditorStore((s) => s.dirty);
@@ -68,9 +76,9 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const alignSelected = useCanvasEditorStore((s) => s.alignSelected);
   const distributeSelected = useCanvasEditorStore((s) => s.distributeSelected);
   const addGuide = useCanvasEditorStore((s) => s.addGuide);
-  const removeGuide = useCanvasEditorStore((s) => s.removeGuide);
   const applyAutoLayout = useCanvasEditorStore((s) => s.applyAutoLayout);
   const applyFitTextToSelection = useCanvasEditorStore((s) => s.applyFitTextToSelection);
+  const applyFitTextToAll = useCanvasEditorStore((s) => s.applyFitTextToAll);
   const bringForward = useCanvasEditorStore((s) => s.bringForward);
   const sendBackward = useCanvasEditorStore((s) => s.sendBackward);
   const clearSelection = useCanvasEditorStore((s) => s.clearSelection);
@@ -78,13 +86,16 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const ungroupSelectedLayers = useCanvasEditorStore((s) => s.ungroupSelectedLayers);
 
   const [autoLayoutOpen, setAutoLayoutOpen] = useState(false);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const renderableLayers = getRenderableLayers(device).filter((l) => !l.id.startsWith("section-bg:"));
 
   // Fit Text: 選択レイヤーに text/button が含まれるか判定
-  const hasTextSelection = selection.ids.length > 0 && canvasDoc.layers.some(
+  const hasTextSelection = selection.ids.length > 0 && renderableLayers.some(
     (l) => selection.ids.includes(l.id) && (l.content.kind === "text" || l.content.kind === "button"),
   );
+  const hasFitTargets = renderableLayers.some((l) => l.content.kind === "text" || l.content.kind === "button");
   const hasGroupSelection = selection.ids.some((id) => {
-    const layer = canvasDoc.layers.find((l) => l.id === id);
+    const layer = renderableLayers.find((l) => l.id === id);
     return layer?.content.kind === "group";
   });
 
@@ -101,6 +112,12 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
 
   /* ---- Sync: load from project ---- */
   const loadedPageIdRef = useRef<string | null>(null);
+  const canvasModeRef = useRef(canvasMode);
+
+  useEffect(() => {
+    canvasModeRef.current = canvasMode;
+  }, [canvasMode]);
+
   useEffect(() => {
     if (!canvasPageId) return;
     if (loadedPageIdRef.current === canvasPageId) return;
@@ -156,6 +173,10 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
 
       // Delete
       if (e.key === "Delete" || e.key === "Backspace") {
+        if (canvasModeRef.current === "sections") {
+          e.preventDefault();
+          return;
+        }
         e.preventDefault();
         if (selection.primaryId) removeLayer(selection.primaryId);
         return;
@@ -191,6 +212,7 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const handleAddText = () => addLayer(createTextLayer("テキスト"));
   const handleAddShape = () => addLayer(createShapeLayer("rect"));
   const handleAddButton = () => addLayer(createButtonLayer("ボタン", "#"));
+  const handleAddTable = () => addLayer(createTableLayer());
   const handleAddImage = () => fileInputRef.current?.click();
 
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -289,6 +311,25 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
           </button>
         </div>
 
+        {/* Mode switch */}
+        <div className="flex items-center gap-0.5 rounded-md border border-[var(--ui-border)] p-0.5">
+          <button type="button" className={`${BTN} ${canvasMode === "free" ? BTN_ACTIVE : BTN_GHOST}`} onClick={() => setCanvasMode("free")}>
+            Free
+          </button>
+          <button type="button" className={`${BTN} ${canvasMode === "sections" ? BTN_ACTIVE : BTN_GHOST}`} onClick={() => setCanvasMode("sections")}>
+            Sections
+          </button>
+        </div>
+        {canvasMode === "free" ? (
+          <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={convertFreeToSections} title="Free→Sections変換">
+            Free→Sections
+          </button>
+        ) : (
+          <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={convertSectionsToFree} title="Sections→Free変換">
+            Sections→Free
+          </button>
+        )}
+
         {/* Split */}
         <button
           type="button"
@@ -377,13 +418,16 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
           <Type size={14} />
         </button>
         <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={handleAddImage} title="画像追加">
-          <Image size={14} />
+          <ImageIcon size={14} />
         </button>
         <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={handleAddShape} title="図形追加">
           <Square size={14} />
         </button>
         <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={handleAddButton} title="ボタン追加">
           <MousePointer2 size={14} />
+        </button>
+        <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={handleAddTable} title="テーブル追加">
+          <Table2 size={14} />
         </button>
 
         <button
@@ -409,6 +453,11 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
         {hasTextSelection && (
           <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={applyFitTextToSelection} title="枠にフィット (Fit Text)">
             <ALargeSmall size={14} /> Fit
+          </button>
+        )}
+        {hasFitTargets && (
+          <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={applyFitTextToAll} title="全テキスト/ボタンを自動フィット">
+            <ALargeSmall size={14} /> 全Fit
           </button>
         )}
 
@@ -443,6 +492,43 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
                 >
                   <span className="font-medium">{p.label}</span>
                   <span className="text-[10px] opacity-60">{p.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* テンプレート */}
+        <div className="relative">
+          <button
+            type="button"
+            className={`${BTN} ${BTN_GHOST}`}
+            onClick={() => setTemplateMenuOpen((v) => !v)}
+            title="LPテンプレート"
+          >
+            <Maximize size={14} /> テンプレ
+          </button>
+          {templateMenuOpen && (
+            <div className="absolute left-0 top-full z-50 mt-1 w-60 rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] shadow-lg py-1">
+              {CANVAS_TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-[12px] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)] flex flex-col"
+                  onClick={() => {
+                    if (!window.confirm(`「${t.label}」テンプレートを適用します。\n現在のキャンバス内容は置き換わります。よろしいですか？`)) {
+                      setTemplateMenuOpen(false);
+                      return;
+                    }
+                    const pcW = canvasDoc.meta?.size?.pc?.width ?? 1200;
+                    const spW = canvasDoc.meta?.size?.sp?.width ?? 375;
+                    const doc = buildDocumentFromTemplate(t.id, pcW, spW);
+                    if (doc) setDocument(doc);
+                    setTemplateMenuOpen(false);
+                  }}
+                >
+                  <span className="font-medium">{t.label}</span>
+                  <span className="text-[10px] opacity-60">{t.description}</span>
                 </button>
               ))}
             </div>

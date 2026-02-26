@@ -42,6 +42,17 @@ export type ExportResult = {
   report: ExportReport;
 };
 
+/* ---------- Export Scope ---------- */
+
+/**
+ * 書き出し範囲:
+ * - project: プロジェクト全体 (LP + Canvas pages) ← 従来動作
+ * - canvas:  指定 Canvas ページのみ独立 LP として書き出し
+ */
+export type ExportScope =
+  | { kind: "project" }
+  | { kind: "canvas"; pageId: string };
+
 const str = (value: unknown) =>
   typeof value === "string" ? value : value == null ? "" : String(value);
 
@@ -3338,6 +3349,40 @@ export const exportProjectToZip = async (
     }
     exportHtml = applyBackgroundLayersToHtml(htmlWithCss, project, assetMeta);
 
+    /* ---- Canvas pages injection ---- */
+    const canvasPages = project.canvasPages ?? [];
+    if (canvasPages.length > 0) {
+      try {
+        const { exportCanvasHtml } = await import("@/src/lib/canvas/exportCanvasHtml");
+        const canvasAssetResolve = (assetId: string) => {
+          const meta = assetMeta.find((m) => m.id === assetId);
+          return meta ? meta.path : assetId;
+        };
+        let canvasHtmlAll = "";
+        let canvasCssAll = "";
+        for (const cp of canvasPages) {
+          const { html, css } = exportCanvasHtml(cp.canvas, { resolveAsset: canvasAssetResolve });
+          canvasHtmlAll += `\n<!-- Canvas: ${escapeHtml(cp.name)} -->\n${html}\n`;
+          canvasCssAll += css + "\n";
+        }
+        // Inject canvas HTML before </body>
+        exportHtml = exportHtml.replace("</body>", `${canvasHtmlAll}</body>`);
+        // Inject canvas CSS
+        if (canvasCssAll.trim()) {
+          const canvasStyle = `<style>${canvasCssAll}</style>`;
+          exportHtml = exportHtml.replace("</head>", `${canvasStyle}</head>`);
+        }
+        logStep("canvas pages injected", { count: canvasPages.length });
+      } catch (canvasErr) {
+        console.warn("[export] canvas injection failed", canvasErr);
+        warnings.push({
+          type: "other",
+          message: "canvas pages injection failed",
+          detail: canvasErr instanceof Error ? canvasErr.message : String(canvasErr),
+        });
+      }
+    }
+
     if (/\/_next\//.test(exportHtml) || /src="\//.test(exportHtml)) {
       console.warn("[export] html still contains absolute paths", {
         hasNext: /\/_next\//.test(exportHtml),
@@ -3450,6 +3495,157 @@ export const exportProjectToZip = async (
     distHtmlSize: exportHtml.length,
     distCssSize: exportCss.length,
     distJsSize: exportJs.length,
+    zipSize: blob.size,
+    warnings,
+  };
+
+  return { blob, report };
+};
+
+/* ─────────────────────────────────────────────────────
+   Canvas Only Export
+   指定 Canvas ページだけを独立 LP として ZIP 出力
+   ───────────────────────────────────────────────────── */
+
+export const exportCanvasOnlyToZip = async (
+  project: ProjectState,
+  pageId: string,
+): Promise<ExportResult> => {
+  const zip = new JSZip();
+  const startedAt = performance.now();
+  const logStep = (label: string, payload?: Record<string, unknown>) => {
+    const elapsed = Math.round(performance.now() - startedAt);
+    if (payload) {
+      console.log(`[export:canvas] ${label} (${elapsed}ms)`, payload);
+    } else {
+      console.log(`[export:canvas] ${label} (${elapsed}ms)`);
+    }
+  };
+  const warnings: ExportWarning[] = [];
+
+  /* ---- Canvasページ検索 ---- */
+  const canvasPages = project.canvasPages ?? [];
+  const page = canvasPages.find((p) => p.id === pageId);
+  if (!page) {
+    throw new Error(`Canvas page not found: ${pageId}`);
+  }
+
+  logStep("canvas only export start", { pageId, pageName: page.name });
+
+  /* ---- Canvasが参照するアセットだけ収集 ---- */
+  const { collectCanvasPageAssetIds, renderCanvasStandaloneHtml } = await import(
+    "@/src/lib/canvas/exportCanvasHtml"
+  );
+  const canvasAssetIds = collectCanvasPageAssetIds(page);
+  const assets = project.assets ?? {};
+  const assetMeta: AssetMeta[] = [];
+
+  for (const assetId of canvasAssetIds) {
+    const record = assets[assetId];
+    if (!record?.data) {
+      warnings.push({ type: "asset", assetId, message: "canvas asset data is empty" });
+      continue;
+    }
+    try {
+      let parsed: { mimeType: string; bytes: Uint8Array } | null = null;
+      if (record.data.startsWith("data:")) {
+        parsed = parseDataUrl(record.data);
+      } else if (
+        record.data.startsWith("http") ||
+        record.data.startsWith("/") ||
+        record.data.startsWith("blob:")
+      ) {
+        parsed = await fetchAssetBytes(record.data);
+      }
+      if (!parsed) {
+        warnings.push({
+          type: "asset",
+          assetId,
+          message: "canvas asset data is not valid",
+          detail: record.data.slice(0, 100),
+        });
+        continue;
+      }
+      const hash = await hashBytes(parsed.bytes);
+      const kind = resolveAssetKind(parsed.mimeType);
+      const extension = resolveAssetExtension(record.filename, parsed.mimeType);
+      const folder = getAssetFolder(kind);
+      const filename = `${hash}.${extension}`;
+      const path = normalizePath(`${folder}/${filename}`);
+      zip.file(path, parsed.bytes);
+      assetMeta.push({
+        id: assetId,
+        filename: record.filename,
+        path,
+        kind,
+        mimeType: parsed.mimeType,
+        size: parsed.bytes.length,
+      });
+    } catch (err) {
+      warnings.push({
+        type: "asset",
+        assetId,
+        message: "canvas asset fetch failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  logStep("canvas assets done", { count: assetMeta.length });
+
+  /* ---- アセットID → パス変換 ---- */
+  const resolveAsset = (id: string): string => {
+    const meta = assetMeta.find((m) => m.id === id);
+    return meta ? `./${meta.path}` : id;
+  };
+
+  /* ---- HTML 生成 ---- */
+  const pageMeta = (project.settings?.pageMeta ?? {}) as {
+    title?: string;
+    description?: string;
+  };
+  const title = page.name || pageMeta.title || project.meta.projectName || "Canvas LP";
+  const exportHtml = renderCanvasStandaloneHtml(page.canvas, {
+    resolveAsset,
+    title,
+    description: pageMeta.description,
+  });
+
+  logStep("canvas html generated", { htmlChars: exportHtml.length });
+
+  /* ---- ZIP 構成 ---- */
+  zip.file("index.html", exportHtml);
+
+  /* ---- ZIP 生成 ---- */
+  let blob: Blob;
+  try {
+    blob = await withTimeout(
+      zip.generateAsync({ type: "blob" }),
+      20000,
+      "ZIP generate (canvas)",
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    warnings.push({ type: "other", message: "zip generation failed", detail });
+    const fallbackZip = new JSZip();
+    fallbackZip.file("index.html", exportHtml);
+    blob = await withTimeout(
+      fallbackZip.generateAsync({ type: "blob" }),
+      10000,
+      "ZIP generate (canvas fallback)",
+    );
+  }
+
+  logStep("canvas zip done", { size: blob.size });
+
+  const report: ExportReport = {
+    projectJsonSize: 0,
+    assetCount: assetMeta.length,
+    assetFailures: warnings.filter((w) => w.type === "asset").length,
+    distGenerated: true,
+    distHtmlSize: exportHtml.length,
+    distCssSize: 0,
+    distJsSize: 0,
     zipSize: blob.size,
     warnings,
   };

@@ -454,6 +454,8 @@ export type ProjectState = {
   storeListSpec?: StoreListSpec;
   themeSpec?: ThemeSpec;
   animationRegistry?: AnimationSpec[];
+  /** Canvas ページ一覧（LP モードと共存） */
+  canvasPages?: import("./canvas").CanvasPageData[];
 };
 
 export type AssetRecord = {

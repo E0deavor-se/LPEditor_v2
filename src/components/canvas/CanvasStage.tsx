@@ -19,7 +19,7 @@ import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import { useEditorStore } from "@/src/store/editorStore";
 import type { CanvasDevice, CanvasGuide } from "@/src/types/canvas";
 import type { CanvasLayer, CanvasLayout } from "@/src/types/canvas";
-import { getLayout } from "@/src/types/canvas";
+import { getDocumentMode, getLayout, resolveLayerLayout } from "@/src/types/canvas";
 import {
   buildSnapEdges,
   computeSnapForMove,
@@ -72,6 +72,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   const snapEnabled = useCanvasEditorStore((s) => s.snapEnabled);
   const guidesVisible = useCanvasEditorStore((s) => s.guidesVisible);
   const gridSize = useCanvasEditorStore((s) => s.gridSize);
+  const selectedSectionId = useCanvasEditorStore((s) => s.selectedSectionId);
 
   const select = useCanvasEditorStore((s) => s.select);
   const clearSelection = useCanvasEditorStore((s) => s.clearSelection);
@@ -80,6 +81,9 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   const setDevice = useCanvasEditorStore((s) => s.setDevice);
   const updateGuidePosition = useCanvasEditorStore((s) => s.updateGuidePosition);
   const setZoom = useCanvasEditorStore((s) => s.setZoom);
+  const getRenderableLayers = useCanvasEditorStore((s) => s.getRenderableLayers);
+  const renameSection = useCanvasEditorStore((s) => s.renameSection);
+  const selectSection = useCanvasEditorStore((s) => s.selectSection);
   const assets = useEditorStore((s) => s.project.assets);
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -89,10 +93,14 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [fitScale, setFitScale] = useState(1);
   const panStartRef = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
 
   /* ---- hover ---- */
   const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
+  const [hoveredSectionId, setHoveredSectionId] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editingSectionName, setEditingSectionName] = useState("");
 
   /* ---- drag state (layers) ---- */
   type DragState = {
@@ -123,7 +131,14 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   const snapHysteresisRef = useRef<SnapHysteresis>({ x: null, y: null });
 
   const size = device === "pc" ? doc.meta.size.pc : doc.meta.size.sp;
-  const guides: CanvasGuide[] = doc.guides ?? [];
+  const viewScale = zoom * fitScale;
+  const guides = useMemo<CanvasGuide[]>(() => doc.guides ?? [], [doc.guides]);
+  const canvasMode = getDocumentMode(doc);
+  const renderableLayers = getRenderableLayers(device);
+  const editableLayers = useMemo(
+    () => renderableLayers.filter((l) => !l.id.startsWith("section-bg:")),
+    [renderableLayers]
+  );
 
   const resolveAsset = useCallback(
     (assetId: string) => assets?.[assetId]?.data ?? assetId,
@@ -133,12 +148,50 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- visible layers ---- */
   const visibleLayers = useMemo(
     () =>
-      doc.layers
+      renderableLayers
         .filter((l) => !l.hidden)
         .filter((l) => l.content.kind !== "group")
         .filter((l) => !l.visibleOn || l.visibleOn.includes(device))
         .sort((a, b) => getLayout(a, device).z - getLayout(b, device).z),
-    [doc.layers, device]
+    [renderableLayers, device]
+  );
+
+  const sectionRects = useMemo(() => {
+    if (canvasMode !== "sections") return [] as Array<{ id: string; x: number; y: number; w: number; h: number }>;
+    return renderableLayers
+      .filter((layer) => layer.id.startsWith("section-bg:"))
+      .map((layer) => {
+        const layout = resolveLayerLayout(layer, device, size.width);
+        return {
+          id: layer.id.slice("section-bg:".length),
+          x: layout.x,
+          y: layout.y,
+          w: layout.w,
+          h: layout.h,
+        };
+      })
+      .sort((a, b) => a.y - b.y);
+  }, [canvasMode, renderableLayers, device, size.width]);
+
+  const sectionNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    const sections = doc.sections?.sections ?? [];
+    sections.forEach((section, index) => {
+      map.set(section.id, section.name ?? `セクション${index + 1}`);
+    });
+    return map;
+  }, [doc.sections?.sections]);
+
+  const findSectionAtCanvasPoint = useCallback(
+    (cx: number, cy: number) =>
+      sectionRects.find(
+        (section) =>
+          cx >= section.x &&
+          cx <= section.x + section.w &&
+          cy >= section.y &&
+          cy <= section.y + section.h,
+      ) ?? null,
+    [sectionRects],
   );
 
   /* ---- Background style ---- */
@@ -196,6 +249,25 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
     return () => el.removeEventListener("wheel", handler);
   }, [zoom, setZoom]);
 
+  /* ---- Responsive fit scale (containerWidth / designWidth) ---- */
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const recompute = () => {
+      const rect = el.getBoundingClientRect();
+      const horizontalPadding = 80;
+      const containerWidth = Math.max(1, rect.width - horizontalPadding);
+      const next = Math.min(1, containerWidth / Math.max(1, size.width));
+      setFitScale(next);
+    };
+
+    recompute();
+    const observer = new ResizeObserver(() => recompute());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [size.width]);
+
   /* ---- Pan pointer handlers ---- */
   const handleWrapperPointerDown = (e: ReactPointerEvent) => {
     if (spaceHeld) {
@@ -234,11 +306,40 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
     }
   };
 
+  const handleStagePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (canvasMode !== "sections") return;
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const cx = (e.clientX - rect.left - panOffset.x) / viewScale;
+    const cy = (e.clientY - rect.top - panOffset.y) / viewScale;
+
+    const hit = findSectionAtCanvasPoint(cx, cy);
+
+    const nextId = hit?.id ?? null;
+    setHoveredSectionId((prev) => (prev === nextId ? prev : nextId));
+  };
+
+  const handleStageDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (canvasMode !== "sections") return;
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const cx = (e.clientX - rect.left - panOffset.x) / viewScale;
+    const cy = (e.clientY - rect.top - panOffset.y) / viewScale;
+    const hit = findSectionAtCanvasPoint(cx, cy);
+    if (!hit) return;
+
+    const currentName = sectionNameById.get(hit.id) ?? "";
+    selectSection(hit.id);
+    setEditingSectionId(hit.id);
+    setEditingSectionName(currentName);
+  };
+
   /* ---- Layer click ---- */
   const handleLayerPointerDown = (e: ReactPointerEvent, layer: CanvasLayer) => {
     e.stopPropagation();
     if (spaceHeld) { handleWrapperPointerDown(e); return; }
-    if (layer.locked) return;
     if (targetDevice && targetDevice !== storeDevice) {
       setDevice(targetDevice);
     }
@@ -257,15 +358,19 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       currentIds = selection.ids;
     }
 
+    if (layer.locked) {
+      return;
+    }
+
     // Start move drag — record all selected layers' start positions
     pushSnapshot();
-    const layout = getLayout(layer, device);
+    const layout = resolveLayerLayout(layer, device, size.width);
     const startLayouts = new Map<string, CanvasLayout>();
     const activeDragIds = currentIds.length > 0 ? currentIds : [layer.id];
     for (const id of activeDragIds) {
-      const l = doc.layers.find((ll) => ll.id === id);
+      const l = editableLayers.find((ll) => ll.id === id);
       if (l && !l.locked) {
-        startLayouts.set(id, { ...getLayout(l, device) });
+        startLayouts.set(id, { ...resolveLayerLayout(l, device, size.width) });
       }
     }
 
@@ -282,10 +387,10 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Resize handle ---- */
   const handleResizePointerDown = (e: ReactPointerEvent, layerId: string, dir: HandleDir) => {
     e.stopPropagation();
-    const layer = doc.layers.find((l) => l.id === layerId);
+    const layer = editableLayers.find((l) => l.id === layerId);
     if (!layer || layer.locked) return;
     pushSnapshot();
-    const layout = getLayout(layer, device);
+    const layout = resolveLayerLayout(layer, device, size.width);
     setDragState({
       type: "resize",
       layerId,
@@ -299,10 +404,10 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Rotation handle ---- */
   const handleRotatePointerDown = (e: ReactPointerEvent, layerId: string) => {
     e.stopPropagation();
-    const layer = doc.layers.find((l) => l.id === layerId);
+    const layer = editableLayers.find((l) => l.id === layerId);
     if (!layer || layer.locked) return;
     pushSnapshot();
-    const layout = getLayout(layer, device);
+    const layout = resolveLayerLayout(layer, device, size.width);
     setDragState({
       type: "rotate",
       layerId,
@@ -328,12 +433,12 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Build snap edges excluding drag targets ---- */
   const buildSnapEdgesForDrag = useCallback(
     (dragLayerIds: string[]) => {
-      const otherLayouts = doc.layers
+      const otherLayouts = editableLayers
         .filter((l) => !l.hidden && !dragLayerIds.includes(l.id))
-        .map((l) => getLayout(l, device));
+        .map((l) => resolveLayerLayout(l, device, size.width));
       return buildSnapEdges(size, otherLayouts, guides);
     },
-    [doc.layers, device, size, guides],
+    [editableLayers, device, size, guides],
   );
 
   /* ---- Pointer move / up (document level) ---- */
@@ -341,8 +446,8 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
     if (!dragState) return;
 
     const handlePointerMove = (e: PointerEvent) => {
-      const dx = (e.clientX - dragState.startX) / zoom;
-      const dy = (e.clientY - dragState.startY) / zoom;
+      const dx = (e.clientX - dragState.startX) / viewScale;
+      const dy = (e.clientY - dragState.startY) / viewScale;
       const sl = dragState.startLayout;
 
       if (dragState.type === "move") {
@@ -415,8 +520,13 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
           y = sl.y + sl.h - h;
         }
 
-        // Shift = aspect-ratio lock
-        if (e.shiftKey && sl.w > 0 && sl.h > 0) {
+        const draggingLayer = editableLayers.find((l) => l.id === dragState.layerId);
+        const lockAspectByLayer =
+          draggingLayer?.content.kind === "image" &&
+          (draggingLayer.imageSettings?.lockAspect ?? true);
+
+        // Shift または画像 lockAspect=true で比率固定
+        if ((e.shiftKey || lockAspectByLayer) && sl.w > 0 && sl.h > 0) {
           const ratio = sl.w / sl.h;
           const isCorner = dir.length === 2;
           if (isCorner) {
@@ -468,8 +578,8 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       if (dragState.type === "rotate") {
         const stageRect = stageRef.current?.getBoundingClientRect();
         if (!stageRect) return;
-        const cx = (sl.x + sl.w / 2) * zoom + stageRect.left;
-        const cy = (sl.y + sl.h / 2) * zoom + stageRect.top;
+        const cx = (sl.x + sl.w / 2) * viewScale + stageRect.left;
+        const cy = (sl.y + sl.h / 2) * viewScale + stageRect.top;
         const angle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI) + 90;
         let r = Math.round(angle);
         if (e.shiftKey) {
@@ -491,7 +601,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [dragState, zoom, gridEnabled, snapEnabled, gridSize, selection.ids, doc.layers, device, updateLayerLayout, buildSnapEdgesForDrag]);
+  }, [dragState, viewScale, gridEnabled, snapEnabled, gridSize, selection.ids, editableLayers, device, updateLayerLayout, buildSnapEdgesForDrag]);
 
   /* ---- Pointer move / up — guide drag ---- */
   useEffect(() => {
@@ -499,8 +609,8 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
 
     const handlePointerMove = (e: PointerEvent) => {
       const delta = guideDrag.axis === "x"
-        ? (e.clientX - guideDrag.startClientX) / zoom
-        : (e.clientY - guideDrag.startClientY) / zoom;
+        ? (e.clientX - guideDrag.startClientX) / viewScale
+        : (e.clientY - guideDrag.startClientY) / viewScale;
       updateGuidePosition(guideDrag.guideId, Math.round(guideDrag.startPos + delta));
     };
 
@@ -514,7 +624,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       document.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [guideDrag, zoom, updateGuidePosition]);
+  }, [guideDrag, viewScale, updateGuidePosition]);
 
   /* ---- Grid overlay ---- */
   const gridOverlay = gridEnabled ? (
@@ -587,10 +697,138 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
     </svg>
   ) : null;
 
+  const sectionHighlightOverlay = canvasMode === "sections" && sectionRects.length > 0 ? (
+    <>
+      {sectionRects.map((section) => {
+        const isSelected = selectedSectionId === section.id;
+        const isHovered = hoveredSectionId === section.id;
+        if (!isSelected && !isHovered) return null;
+
+        return (
+          <div
+            key={`section-highlight:${section.id}`}
+            style={{
+              position: "absolute",
+              left: section.x,
+              top: section.y,
+              width: section.w,
+              height: section.h,
+              border: `${isSelected ? 2 : 1}px solid var(--ui-accent, #1f6feb)`,
+              backgroundColor: isSelected
+                ? "rgba(31, 111, 235, 0.10)"
+                : "rgba(31, 111, 235, 0.05)",
+              boxSizing: "border-box",
+              pointerEvents: "none",
+              zIndex: isSelected ? 7000 : 6500,
+            }}
+          />
+        );
+      })}
+    </>
+  ) : null;
+
+  const selectedSectionLabel = useMemo(() => {
+    if (canvasMode !== "sections" || !selectedSectionId) return null;
+    const rect = sectionRects.find((s) => s.id === selectedSectionId);
+    if (!rect) return null;
+
+    const label = sectionNameById.get(selectedSectionId) ?? "";
+    const minW = 88;
+    const innerX = rect.x + 8;
+    const maxX = Math.max(rect.x + 8, rect.x + rect.w - minW - 8);
+    const x = Math.min(Math.max(innerX, rect.x + 8), maxX);
+    const y = rect.h >= 28 ? rect.y + 8 : Math.max(0, rect.y - 26);
+
+    return {
+      x,
+      y,
+      w: Math.max(80, rect.w - 16),
+      label,
+    };
+  }, [canvasMode, selectedSectionId, sectionRects, sectionNameById]);
+
+  const commitSectionLabelEdit = () => {
+    if (editingSectionId && editingSectionName.trim()) {
+      renameSection(editingSectionId, editingSectionName.trim());
+    }
+    setEditingSectionId(null);
+  };
+
+  const selectedSectionLabelOverlay = selectedSectionLabel ? (
+    <div
+      style={{
+        position: "absolute",
+        left: selectedSectionLabel.x,
+        top: selectedSectionLabel.y,
+        maxWidth: selectedSectionLabel.w,
+        padding: "4px 8px",
+        borderRadius: 9999,
+        backgroundColor: "var(--ui-accent, #1f6feb)",
+        color: "#ffffff",
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.3,
+        boxShadow: "0 1px 4px rgba(0,0,0,0.14)",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        pointerEvents: editingSectionId === selectedSectionId ? "auto" : "none",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        zIndex: 7600,
+      }}
+      title={selectedSectionLabel.label}
+      onDoubleClick={(e) => {
+        if (!selectedSectionId) return;
+        e.stopPropagation();
+        setEditingSectionId(selectedSectionId);
+        setEditingSectionName(selectedSectionLabel.label);
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 9999,
+          backgroundColor: "#ffffff",
+          opacity: 0.92,
+          flexShrink: 0,
+        }}
+      />
+      {editingSectionId === selectedSectionId ? (
+        <input
+          value={editingSectionName}
+          onChange={(e) => setEditingSectionName(e.target.value)}
+          onBlur={commitSectionLabelEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitSectionLabelEdit();
+            if (e.key === "Escape") setEditingSectionId(null);
+          }}
+          autoFocus
+          style={{
+            minWidth: 64,
+            maxWidth: Math.max(64, selectedSectionLabel.w - 24),
+            border: "none",
+            outline: "none",
+            background: "transparent",
+            color: "#ffffff",
+            fontSize: 12,
+            fontWeight: 600,
+            lineHeight: 1.3,
+          }}
+        />
+      ) : (
+        <span>{selectedSectionLabel.label}</span>
+      )}
+    </div>
+  ) : null;
+
   /* ---------- Render layer ---------- */
   const renderLayer = (layer: CanvasLayer) => {
-    const layout = getLayout(layer, device);
+    const layout = resolveLayerLayout(layer, device, size.width);
     const isSelected = selection.ids.includes(layer.id);
+    const isSectionBg = layer.id.startsWith("section-bg:");
 
     const wrapperStyle: CSSProperties = {
       position: "absolute",
@@ -601,11 +839,20 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       transform: layout.r ? `rotate(${layout.r}deg)` : undefined,
       zIndex: layout.z,
       opacity: layer.style.opacity,
-      cursor: spaceHeld ? (isPanning ? "grabbing" : "grab") : layer.locked ? "default" : dragState?.type === "move" ? "grabbing" : "grab",
+      cursor: isSectionBg
+        ? "default"
+        : spaceHeld
+          ? (isPanning ? "grabbing" : "grab")
+          : layer.locked
+            ? "default"
+            : dragState?.type === "move"
+              ? "grabbing"
+              : "grab",
       outline: isSelected ? "2px solid #1f6feb" : (hoveredLayerId === layer.id && !layer.locked) ? "1px solid rgba(31,111,235,0.45)" : undefined,
       outlineOffset: isSelected ? 1 : 0,
       userSelect: "none",
       overflow: "hidden",
+      pointerEvents: isSectionBg ? "none" : undefined,
     };
 
     const shadowCss = layerShadowToCss(layer.style.shadow);
@@ -638,11 +885,21 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       }
       case "image": {
         const src = resolveAsset(content.assetId);
+        const fitMode = layer.imageSettings?.fitMode ?? "cover";
+        const focalX = Math.max(0, Math.min(1, layer.imageSettings?.focalPoint?.x ?? 0.5));
+        const focalY = Math.max(0, Math.min(1, layer.imageSettings?.focalPoint?.y ?? 0.5));
+        const objectFit: CSSProperties["objectFit"] = fitMode;
         inner = (
           <img
             src={src}
             alt={content.alt ?? ""}
-            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: layer.style.radius ?? 0 }}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit,
+              objectPosition: `${Math.round(focalX * 100)}% ${Math.round(focalY * 100)}%`,
+              borderRadius: layer.style.radius ?? 0,
+            }}
             draggable={false}
           />
         );
@@ -703,7 +960,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
       <div
         key={layer.id}
         style={wrapperStyle}
-        onPointerDown={(e) => handleLayerPointerDown(e, layer)}
+        onPointerDown={isSectionBg ? undefined : (e) => handleLayerPointerDown(e, layer)}
         onPointerEnter={() => setHoveredLayerId(layer.id)}
         onPointerLeave={() => setHoveredLayerId((prev) => prev === layer.id ? null : prev)}
         data-layer-id={layer.id}
@@ -795,16 +1052,21 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
           height: size.height,
           ...bgStyle,
           transformOrigin: "top left",
-          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${viewScale})`,
           boxShadow: "0 2px 24px rgba(0,0,0,0.12)",
           flexShrink: 0,
         }}
         onClick={handleStageClick}
+        onDoubleClick={handleStageDoubleClick}
+        onPointerMove={handleStagePointerMove}
+        onPointerLeave={() => setHoveredSectionId(null)}
       >
         {gridOverlay}
         {guideOverlay}
         {snapGuideOverlay}
         {visibleLayers.map(renderLayer)}
+        {sectionHighlightOverlay}
+        {selectedSectionLabelOverlay}
       </div>
     </div>
   );
