@@ -2,35 +2,38 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import LeftPanel from "@/src/components/editor/LeftPanel";
-import PreviewPane from "@/src/components/editor/PreviewPane";
+import { useRouter } from "next/navigation";
+import CampaignHandoffPanel from "@/src/components/editor/CampaignHandoffPanel";
 import TopBar from "@/src/components/editor/TopBar";
-import TopTextToolbar from "@/src/components/editor/TopTextToolbar";
 import TooltipLayer from "@/src/components/editor/TooltipLayer";
-import InspectorPanel from "@/src/components/editor/right/InspectorPanel";
 import { getDb } from "@/src/db/db";
 import { createProjectFromTemplate, useEditorStore } from "@/src/store/editorStore";
 import {
 	TEMPLATE_OPTIONS,
 	TEMPLATE_STORAGE_KEY,
 } from "@/src/lib/templateOptions";
+import { serializeProjectForPersistence } from "@/src/lib/editorProject";
+import { isTemplateDebugEnabled } from "@/src/lib/debugFlags";
 import type { TemplateOption } from "@/src/lib/templateOptions";
+import { getLayoutSections } from "@/src/lib/editorProject";
 
 const CanvasEditorPage = dynamic(
 	() => import("@/src/components/canvas/CanvasEditorPage"),
 	{ ssr: false, loading: () => <div className="flex-1 flex items-center justify-center text-sm text-[var(--ui-muted)]">Canvas Loading…</div> }
 );
 
-const RIGHT_PANEL_WIDTH = 360;
-
-type EditorPageMode = "lp" | "canvas";
+const LayoutV2Shell = dynamic(
+	() => import("@/src/components/layout-v2/LayoutV2Shell"),
+	{ ssr: false, loading: () => <div className="flex-1 flex items-center justify-center text-sm text-[var(--ui-muted)]">Layout Loading…</div> }
+);
 
 export default function EditorLayout() {
-	const [leftWidth, setLeftWidth] = useState(320);
+	const router = useRouter();
+	const templateDebug = isTemplateDebugEnabled();
 	const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
 	const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-	const [pageMode, setPageMode] = useState<EditorPageMode>("lp");
-	const [activeCanvasPageId, setActiveCanvasPageId] = useState<string | null>(null);
+	const editorMode = useEditorStore((state) => state.project.editorDocuments?.mode ?? "layout");
+	const setEditorMode = useEditorStore((state) => state.setEditorMode);
 	const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
 	const manualSaveTick = useEditorStore((state) => state.manualSaveTick);
 	const project = useEditorStore((state) => state.project);
@@ -43,8 +46,8 @@ export default function EditorLayout() {
 	const replaceProject = useEditorStore((state) => state.replaceProject);
 	const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
 	const setPageBackground = useEditorStore((state) => state.setPageBackground);
+	const setSelectedSection = useEditorStore((state) => state.setSelectedSection);
 	const projectRef = useRef(project);
-	const showLeftPanel = true;
 	const lastSavedVersionRef = useRef<string | undefined>(
 		project.meta.updatedAt
 	);
@@ -52,6 +55,8 @@ export default function EditorLayout() {
 	const autoSaveInFlightRef = useRef(false);
 	const randomBgAppliedRef = useRef(false);
 	const loadAttemptedRef = useRef(false);
+	const launchContextAppliedRef = useRef(false);
+	const [launchContext, setLaunchContext] = useState<{ mode?: string; sectionId?: string } | null>(null);
 	const lastTemplate = useMemo(
 		() =>
 			TEMPLATE_OPTIONS.find((option) => option.id === selectedTemplateId) ?? null,
@@ -99,16 +104,81 @@ export default function EditorLayout() {
 	}, [replaceProject, setSaveStatus]);
 
 	const handleTemplateSelect = (option: TemplateOption) => {
-		window.localStorage.setItem(TEMPLATE_STORAGE_KEY, option.id);
-		setSelectedTemplateId(option.id);
-		setProject(
-			createProjectFromTemplate(
+		try {
+			if (templateDebug) {
+				console.log("[TemplateDebug] 2.handleTemplateSelect called", {
+					templateId: option.id,
+					templateType: option.templateType,
+					sectionOrder: option.sectionOrder,
+				});
+			}
+			window.localStorage.setItem(TEMPLATE_STORAGE_KEY, option.id);
+			setSelectedTemplateId(option.id);
+			if (templateDebug) {
+				console.log("[TemplateDebug] 3.templateKey resolved", option.id);
+				console.log("[TemplateDebug] 4.template definition", option);
+			}
+			const nextProject = createProjectFromTemplate(
 				option.templateType,
 				option.title,
 				option.sectionOrder
-			)
-		);
-		setTemplateChooserOpen(false);
+			);
+			const docs = nextProject.editorDocuments;
+			if (!docs?.layoutDocument) {
+				throw new Error("layoutDocument is missing during template apply");
+			}
+			const syncedProject: typeof nextProject = {
+				...nextProject,
+				editorDocuments: {
+					...docs,
+					mode: "layout",
+					layoutDocument: {
+						...docs.layoutDocument,
+						sections: getLayoutSections(nextProject),
+					},
+				},
+			};
+			if (templateDebug) {
+				const syncedSections = getLayoutSections(syncedProject);
+				console.log("[TemplateDebug] 5.sections generated", {
+					sectionsLength: syncedSections.length,
+					sectionTypes: syncedSections.map((section) => section.type),
+					layoutDocSectionsLength:
+						syncedProject.editorDocuments?.layoutDocument?.sections?.length,
+				});
+				console.log("[TemplateDebug] 6.before setProject");
+			}
+			setProject(syncedProject);
+			if (templateDebug) {
+				const after = useEditorStore.getState();
+				const afterSections = getLayoutSections(after.project);
+				console.log("[TemplateDebug] 7.after setProject", {
+					projectSectionsLength: afterSections.length,
+					projectSectionTypes: afterSections.map((section) => section.type),
+					layoutDocSectionsLength:
+						after.project.editorDocuments?.layoutDocument?.sections?.length,
+					layoutDocSectionTypes:
+						after.project.editorDocuments?.layoutDocument?.sections?.map(
+							(section) => section.type
+						),
+				});
+			}
+			const syncedSections = getLayoutSections(syncedProject);
+			if (syncedSections[0]?.id) {
+				setSelectedSection(syncedSections[0].id);
+			}
+			if (editorMode !== "layout") {
+				setEditorMode("layout");
+			}
+			if (templateDebug) {
+				console.log("[TemplateDebug] 9.before modal close", {
+					templateChooserOpen,
+				});
+			}
+			setTemplateChooserOpen(false);
+		} catch (error) {
+			console.error("[TemplateDebug] 10.handleTemplateSelect error", error);
+		}
 	};
 
 	useEffect(() => {
@@ -169,12 +239,13 @@ export default function EditorLayout() {
 			setSaveStatus("saving", label);
 			try {
 				const db = await getDb();
+				const normalizedProject = serializeProjectForPersistence(projectRef.current);
 				await db.projects.put({
 					id: "project_default",
-					data: projectRef.current,
+					data: normalizedProject,
 					updatedAt: Date.now(),
 				});
-				lastSavedVersionRef.current = projectRef.current.meta.updatedAt;
+				lastSavedVersionRef.current = normalizedProject.meta.updatedAt;
 				const doneLabel =
 					reason === "manual"
 						? "デバッグ保存しました"
@@ -238,77 +309,90 @@ export default function EditorLayout() {
 		return undefined;
 	}, [manualSaveTick, saveProject]);
 
-	/* ---- Canvas page helpers ---- */
-	const addCanvasPage = useEditorStore((state) => state.addCanvasPage);
-	const canvasPages = project.canvasPages ?? [];
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+		const params = new URLSearchParams(window.location.search);
+		setLaunchContext({
+			mode: params.get("mode") ?? undefined,
+			sectionId: params.get("sectionId") ?? undefined,
+		});
+	}, []);
 
-	const handleAddCanvasPage = () => {
-		const id = addCanvasPage();
-		setActiveCanvasPageId(id);
-		setPageMode("canvas");
-	};
-
-	const handleSwitchToCanvas = (id: string) => {
-		setActiveCanvasPageId(id);
-		setPageMode("canvas");
-	};
+	useEffect(() => {
+		if (launchContextAppliedRef.current) {
+			return;
+		}
+		const requestedMode = launchContext?.mode;
+		const requestedSectionId = launchContext?.sectionId;
+		if (!requestedMode && !requestedSectionId) {
+			launchContextAppliedRef.current = true;
+			return;
+		}
+		if ((requestedMode === "layout" || requestedMode === "canvas") && requestedMode !== editorMode) {
+			setEditorMode(requestedMode);
+		}
+		if (requestedSectionId) {
+			const exists = getLayoutSections(project).some((section) => section.id === requestedSectionId);
+			if (exists) {
+				setSelectedSection(requestedSectionId);
+			}
+		}
+		launchContextAppliedRef.current = true;
+	}, [editorMode, launchContext, project, setEditorMode, setSelectedSection]);
 
 	return (
 		<div className="lp-editor flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
-			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} previewIframeRef={previewIframeRef} editorMode={pageMode} activeCanvasPageId={activeCanvasPageId} />
+			<TopBar onOpenTemplate={() => setTemplateChooserOpen(true)} previewIframeRef={previewIframeRef} editorMode={editorMode} />
 			{/* ===== Page Mode Switcher ===== */}
-			<div className="flex items-center gap-1 border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-3 py-1">
+			<div className="flex items-center gap-1 border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-3 py-1.5">
 				<button
 					type="button"
-					className={`h-7 rounded px-3 text-[11px] font-semibold transition-colors ${pageMode === "lp" ? "bg-[var(--ui-text)] text-[var(--ui-bg)]" : "text-[var(--ui-text)] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"}`}
-					onClick={() => setPageMode("lp")}
+					className={`h-7 rounded px-3 text-[11px] font-semibold transition-colors ${editorMode === "layout" ? "bg-[var(--ui-text)] text-[var(--ui-bg)]" : "text-[var(--ui-text)] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"}`}
+					onClick={() => setEditorMode("layout")}
 				>
-					LP モード
+					Layout
 				</button>
-				{canvasPages.map((cp) => (
-					<button
-						key={cp.id}
-						type="button"
-						className={`h-7 rounded px-3 text-[11px] font-semibold transition-colors ${pageMode === "canvas" && activeCanvasPageId === cp.id ? "bg-[var(--ui-text)] text-[var(--ui-bg)]" : "text-[var(--ui-text)] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"}`}
-						onClick={() => handleSwitchToCanvas(cp.id)}
-					>
-						{cp.name}
-					</button>
-				))}
 				<button
 					type="button"
-					className="ml-1 flex h-7 items-center gap-1 rounded px-2 text-[11px] text-[var(--ui-muted)] hover:bg-[color-mix(in_srgb,var(--ui-text)_6%,transparent)]"
-					onClick={handleAddCanvasPage}
+					className={`h-7 rounded px-3 text-[11px] font-semibold transition-colors ${editorMode === "canvas" ? "bg-[var(--ui-text)] text-[var(--ui-bg)]" : "text-[var(--ui-text)] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"}`}
+					onClick={() => setEditorMode("canvas")}
 				>
-					+ Canvas
+					Canvas
+				</button>
+				<button
+					type="button"
+					className="h-7 rounded px-3 text-[11px] font-semibold text-[var(--ui-text)] transition-colors hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"
+					onClick={() => {
+						const params = new URLSearchParams();
+						params.set("source", "mode");
+						params.set("returnTo", `/editor?mode=${editorMode}`);
+						router.push(`/creative?${params.toString()}`);
+					}}
+				>
+					AI
+				</button>
+				<button
+					type="button"
+					className="h-7 rounded px-3 text-[11px] font-semibold text-[var(--ui-text)] transition-colors hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)]"
+					onClick={() => router.push("/campaign")}
+				>
+					Campaign
 				</button>
 			</div>
 
-			{pageMode === "lp" ? (
-				<>
-					<TopTextToolbar />
-					<div className="flex min-h-0 flex-1 gap-2 px-2 pb-2 md:gap-3 md:px-3">
-						{showLeftPanel ? (
-							<div className="hidden lg:block">
-								<LeftPanel width={leftWidth} onWidthPreset={setLeftWidth} />
-							</div>
-						) : null}
-						<PreviewPane iframeRef={previewIframeRef} />
-						<aside
-							className="ui-panel lp-right-panel hidden h-full min-h-0 w-[360px] flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] xl:flex"
-							style={{ width: RIGHT_PANEL_WIDTH }}
-						>
-							<InspectorPanel />
-						</aside>
-					</div>
-				</>
+			{editorMode === "layout" ? <CampaignHandoffPanel /> : null}
+
+			{editorMode === "layout" ? (
+				<LayoutV2Shell previewIframeRef={previewIframeRef} />
 			) : (
 				<div className="min-h-0 flex-1">
-					<CanvasEditorPage canvasPageId={activeCanvasPageId} />
+					<CanvasEditorPage />
 				</div>
 			)}
 			<footer className="flex items-center justify-center border-t border-[var(--ui-border)] bg-[var(--surface-2)] px-4 py-2 text-xs text-[var(--ui-muted)]">
-				LP Editor.v2 / Created By Jhastine.K
+				AURBIT - LP Editor / Created By Jhastine.K
 			</footer>
 			<TooltipLayer />
 			{templateChooserOpen ? (
@@ -323,7 +407,7 @@ export default function EditorLayout() {
 									使いたいテンプレートを選択してください
 								</div>
 								<div className="text-sm text-[var(--ui-muted)]">
-									キャンペーンを選ぶと、今の並びのLPが読み込まれます。
+									テンプレートを選ぶと、必要なセクションが読み込まれます。
 								</div>
 							</div>
 							<div className="flex items-center gap-2">
@@ -337,7 +421,7 @@ export default function EditorLayout() {
 									className="ui-button ui-button-secondary h-8 px-3 text-[11px]"
 									onClick={() => setTemplateChooserOpen(false)}
 								>
-									LP Editorに戻る
+									編集画面に戻る
 								</button>
 							</div>
 						</div>
@@ -346,7 +430,16 @@ export default function EditorLayout() {
 								<button
 									key={option.id}
 									type="button"
-									onClick={() => handleTemplateSelect(option)}
+									onClick={(event) => {
+										if (templateDebug) {
+											console.log("[TemplateDebug] 1.template card onClick", {
+												templateId: option.id,
+												disabled: (event.currentTarget as HTMLButtonElement).disabled,
+												targetTag: (event.target as HTMLElement).tagName,
+											});
+										}
+										handleTemplateSelect(option);
+									}}
 									className="group relative flex h-full flex-col gap-3 rounded-xl border border-[var(--ui-border)] bg-[var(--surface)] p-5 text-left transition-colors duration-150 ease-out hover:border-[var(--ui-text)] hover:bg-[var(--surface-2)]"
 								>
 									<div className="flex items-center justify-between">

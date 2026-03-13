@@ -83,7 +83,7 @@ const ja = {
         paddingRight: "右余白",
         paddingBottom: "下余白",
         paddingLeft: "左余白",
-        heroFullSize: "LPフルサイズ表示",
+        heroFullSize: "ページフルサイズ表示",
         imageSrc: "画像URL",
         imageAlt: "代替テキスト",
         imageLayout: "表示方法",

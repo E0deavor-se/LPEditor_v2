@@ -1217,17 +1217,21 @@ body {
 .lp-periodbar {
   width: 100%;
   margin: 0;
-  padding: 0;
+  padding: calc(12px + var(--lp-periodbar-pad-y, 0px)) 0;
   height: auto;
-  min-height: 48px;
+  min-height: 52px;
   border-radius: 0;
-  background: var(--lp-periodbar-bg, #EB5505);
+  background: linear-gradient(
+    180deg,
+    var(--lp-periodbar-bg-top, #ff6a1a) 0%,
+    var(--lp-periodbar-bg-bottom, #eb5505) 100%
+  );
   color: var(--lp-periodbar-text, #ffffff);
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  box-shadow: none;
+  box-shadow: var(--lp-periodbar-shadow, 0 2px 6px rgba(0, 0, 0, 0.08));
 }
 
 .lp-periodbar--surface {
@@ -1258,19 +1262,20 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 0 18px;
-  gap: 14px;
+  padding: 0 var(--lp-periodbar-pad-x, 18px);
+  gap: 12px;
   flex-wrap: nowrap;
   white-space: nowrap;
   min-width: 0;
 }
 
 .lp-periodbar__label {
-  font-weight: 900;
-  font-size: 13px;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--lp-periodbar-label, var(--lp-periodbar-text, #ffffff));
   white-space: nowrap;
-  opacity: 0.95;
+  opacity: 1;
   flex: 0 0 auto;
 }
 
@@ -1278,8 +1283,9 @@ body {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 10px;
-  font-weight: 900;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 18px;
   white-space: nowrap;
   flex-wrap: nowrap;
   flex: 0 1 auto;
@@ -1301,15 +1307,15 @@ body {
 
 .lp-periodbar__num {
   display: inline-block;
-  font-size: 24px;
-  font-weight: 900;
+  font-size: 18px;
+  font-weight: 700;
   line-height: 1;
 }
 
 .lp-periodbar__unit {
   display: inline-block;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 600;
   opacity: 0.92;
   margin-right: 2px;
   line-height: 1;
@@ -1327,40 +1333,57 @@ body {
   justify-content: center;
   align-self: center;
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  min-width: 0;
+  height: auto;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  background: var(--lp-periodbar-band, #EB5505);
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
   color: var(--lp-periodbar-text, #ffffff);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 1px 0 rgba(0, 0, 0, 0.25);
-  font-size: 12px;
-  font-weight: 900;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1;
+  padding: 2px 6px;
   margin-left: 2px;
+}
+
+.lp-periodbar--nowrap .lp-periodbar__center {
+  flex-direction: row;
+  white-space: nowrap;
+}
+
+.lp-periodbar--nowrap .lp-periodbar__date {
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
 
 @media (max-width: 640px) {
   .lp-periodbar {
-    min-height: 44px;
+    min-height: 48px;
+    padding: calc(10px + var(--lp-periodbar-pad-y, 0px)) 0;
   }
   .lp-periodbar__label {
-    font-size: 12px;
+    font-size: 13px;
+  }
+  .lp-periodbar__date {
+    font-size: 16px;
   }
   .lp-periodbar__num {
-    font-size: 20px;
+    font-size: 16px;
+  }
+  .lp-periodbar__unit {
+    font-size: 12px;
   }
   .lp-periodbar__badge {
-    width: 20px;
-    height: 20px;
-    font-size: 12px;
+    font-size: 11px;
+    padding: 2px 6px;
   }
 }
 
 @media (max-width: 480px) {
   .lp-periodbar {
     min-height: 52px;
+    padding: calc(8px + var(--lp-periodbar-pad-y, 0px)) 0;
   }
   .lp-periodbar__center {
     flex-direction: column;
@@ -1379,20 +1402,33 @@ body {
     flex-wrap: nowrap;
     align-items: baseline;
     gap: 8px;
+    font-size: 14px;
   }
   .lp-periodbar__num {
-    font-size: 20px;
+    font-size: 14px;
   }
   .lp-periodbar__unit {
-    font-size: 12px;
+    font-size: 11px;
   }
   .lp-periodbar__badge {
-    width: 18px;
-    height: 18px;
     font-size: 11px;
+    padding: 2px 6px;
   }
   .lp-periodbar__sep {
     margin: 0 6px;
+  }
+
+  .lp-periodbar--nowrap .lp-periodbar__center {
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .lp-periodbar--nowrap .lp-periodbar__label {
+    order: 0;
+  }
+
+  .lp-periodbar--nowrap .lp-periodbar__date {
+    order: 0;
   }
 }
 
@@ -1404,6 +1440,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.lp-couponflow__titlebar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ea5504;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 15px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  margin: 0 auto 8px;
 }
 
 .lp-couponflow__lead {
@@ -1429,6 +1479,15 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 260px;
+}
+
+.lp-couponflow__slide {
+  display: none;
+  width: 100%;
+}
+
+.lp-couponflow__slide.is-active {
+  display: block;
 }
 
 .lp-couponflow__image {
@@ -1508,6 +1567,9 @@ body {
 }
 
 .lp-couponflow__dot {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -1527,6 +1589,204 @@ body {
   color: var(--lp-muted, #475569);
   font-size: 12px;
   text-align: center;
+}
+
+.lp-couponflow__cta {
+  margin: 14px auto 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 26px;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.18);
+  min-width: 240px;
+}
+
+.payment-guide {
+  margin-top: 16px;
+}
+
+.payment-guide__body {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.7;
+  font-weight: 600;
+}
+
+.payment-guide__link {
+  color: #bf1d20;
+  text-decoration: underline;
+  font-weight: 700;
+}
+
+.payment-guide__alert {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #bf1d20;
+  line-height: 1.7;
+}
+
+.payment-guide__image {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.payment-guide__image img {
+  max-width: 240px;
+  width: 100%;
+  height: auto;
+  display: inline-block;
+}
+
+.payment-guide__image--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 180px;
+  border: 1px dashed #e2e8f0;
+  color: #64748b;
+  border-radius: 6px;
+}
+
+@media (max-width: 640px) {
+  .payment-guide__body,
+  .payment-guide__alert {
+    font-size: 12px;
+  }
+}
+
+.coupon-flow {
+  margin: 24px 0;
+}
+
+.coupon-flow__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coupon-flow__lead {
+  margin: 0;
+  color: #d7262b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.coupon-flow__steps--cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.coupon-flow__step-card {
+  border: 1px solid var(--coupon-card-border, #d1d5db);
+  background: var(--coupon-card-bg, #ffffff);
+  color: var(--coupon-card-text, #0f172a);
+  border-radius: var(--coupon-card-radius, 12px);
+  padding: 12px;
+}
+
+.coupon-flow__step-head {
+  margin-bottom: 8px;
+}
+
+.coupon-flow__step-no {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--coupon-step-number-color, #ffffff);
+  background: var(--coupon-step-number-bg, #eb5505);
+}
+
+.coupon-flow__step-image {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.coupon-flow__step-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.coupon-flow__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.coupon-flow__timeline-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.coupon-flow__timeline-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--coupon-step-number-color, #ffffff);
+  background: var(--coupon-step-number-bg, #eb5505);
+}
+
+.coupon-flow__simple-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coupon-flow__simple-item {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.coupon-flow__simple-no {
+  font-weight: 700;
+}
+
+.coupon-flow__note {
+  margin: 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.coupon-flow__cta {
+  margin: 14px auto 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 26px;
+  border-style: solid;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
 }
 
 @media (max-width: 640px) {
@@ -1996,7 +2256,7 @@ body {
   }
 
   .lp-inspector .ui-field-label {
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--ui-muted);
@@ -2004,7 +2264,18 @@ body {
 
   .lp-inspector .ui-input,
   .lp-inspector .ui-select {
-    height: 32px;
+    height: 28px;
+    font-size: 11px;
+  }
+
+  .lp-inspector .ui-input.h-8,
+  .lp-inspector .ui-select.h-8,
+  .lp-inspector .ui-button.h-8 {
+    height: 28px;
+  }
+
+  .lp-inspector .ui-textarea {
+    font-size: 11px;
   }
 
   .lp-inspector .ui-input:hover,
@@ -2022,16 +2293,44 @@ body {
   }
 
   .lp-inspector-accordion-stack > .lp-inspector-accordion {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
   }
 
   .lp-inspector-accordion-stack
     > .lp-inspector-accordion:first-child:not(:last-child) {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
   }
 
   .lp-inspector-accordion-stack > .lp-inspector-accordion:last-child {
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .lp-inspector .rounded-lg {
+    border-radius: 0.375rem;
+  }
+
+  .lp-inspector .h-8.w-8 {
+    height: 1.75rem;
+    width: 1.75rem;
+  }
+
+  .lp-inspector .gap-3 {
+    gap: 0.5rem;
+  }
+
+  .lp-inspector .p-3 {
+    padding: 0.625rem;
+  }
+
+  .lp-inspector .py-3 {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .lp-inspector .shadow-sm,
+  .lp-inspector .shadow,
+  .lp-inspector .shadow-md {
+    box-shadow: none;
   }
 }
 

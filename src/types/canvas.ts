@@ -232,6 +232,8 @@ export type CanvasDocument = {
   background: CanvasBackground;
   /** legacy flat layers (互換維持) */
   layers: CanvasLayer[];
+  /** Canonical canvas selection state for editor project persistence */
+  selectedNodeIds?: string[];
   guides?: CanvasGuide[];
 };
 
@@ -329,6 +331,7 @@ export const createDefaultCanvasDocument = (): CanvasDocument => ({
   },
   background: { type: "solid", color: "#ffffff" },
   layers: [],
+  selectedNodeIds: [],
 });
 
 export const getDocumentMode = (doc: CanvasDocument): CanvasMode => doc.mode ?? "free";

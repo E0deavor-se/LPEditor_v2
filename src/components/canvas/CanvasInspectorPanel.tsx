@@ -10,6 +10,15 @@ import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import type { CanvasLayer, LayerStyle, CanvasLayout, LayerShadow } from "@/src/types/canvas";
 import { getDocumentMode, getLayout } from "@/src/types/canvas";
 import { parseLayerShadow } from "@/src/lib/canvas/shadow";
+import InspectorShell from "@/src/components/inspector/InspectorShell";
+import InspectorHeader from "@/src/components/inspector/InspectorHeader";
+import InspectorField from "@/src/components/inspector/InspectorField";
+import InspectorSection from "@/src/components/inspector/InspectorSection";
+import InspectorFieldRow from "@/src/components/inspector/InspectorFieldRow";
+import InspectorInput from "@/src/components/inspector/InspectorInput";
+import InspectorTextarea from "@/src/components/inspector/InspectorTextarea";
+import InspectorSelect from "@/src/components/inspector/InspectorSelect";
+import InspectorColorInput from "@/src/components/inspector/InspectorColorInput";
 
 /* ---------- 再利用フィールド ---------- */
 
@@ -61,11 +70,9 @@ const NumField = ({ label, value, onChange, min, max, step = 1, unit, shiftStep 
   };
 
   return (
-    <label className="flex items-center gap-1 text-[11px]">
-      <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">{label}</span>
-      <input
+    <InspectorField label={label} helper={unit}>
+      <InspectorInput
         type="number"
-        className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
         value={draft ?? value}
         min={min}
         max={max}
@@ -84,8 +91,7 @@ const NumField = ({ label, value, onChange, min, max, step = 1, unit, shiftStep 
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      {unit ? <span className="text-[var(--ui-muted)] text-[10px]">{unit}</span> : null}
-    </label>
+    </InspectorField>
   );
 };
 
@@ -96,33 +102,22 @@ type ColorFieldProps = {
 };
 
 const ColorField = ({ label, value, onChange }: ColorFieldProps) => (
-  <label className="flex items-center gap-1 text-[11px]">
-    <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">{label}</span>
-    <input
-      type="color"
-      className="h-6 w-6 cursor-pointer rounded border border-[var(--ui-border)]"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-    <input
-      type="text"
-      className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  </label>
+  <InspectorField label={label}>
+    <div className="flex items-center gap-1.5">
+      <InspectorColorInput value={value} onChange={(e) => onChange(e.target.value)} />
+      <InspectorInput type="text" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  </InspectorField>
 );
 
 const TextField = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => (
-  <label className="flex items-start gap-1 text-[11px]">
-    <span className="w-10 flex-shrink-0 pt-1 text-[var(--ui-muted)]">{label}</span>
-    <textarea
-      className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-1 text-[11px]"
+  <InspectorField label={label}>
+    <InspectorTextarea
       rows={3}
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
-  </label>
+  </InspectorField>
 );
 
 const SelectField = ({ label, value, options, onChange }: {
@@ -131,26 +126,13 @@ const SelectField = ({ label, value, options, onChange }: {
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
 }) => (
-  <label className="flex items-center gap-1 text-[11px]">
-    <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">{label}</span>
-    <select
-      className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
+  <InspectorField label={label}>
+    <InspectorSelect value={value} onChange={(e) => onChange(e.target.value)}>
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
       ))}
-    </select>
-  </label>
-);
-
-/* ---- Section heading ---- */
-
-const SectionHead = ({ title }: { title: string }) => (
-  <div className="mt-3 mb-1 border-b border-[var(--ui-border)] pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--ui-muted)]">
-    {title}
-  </div>
+    </InspectorSelect>
+  </InspectorField>
 );
 
 /* ====================== Inspector ====================== */
@@ -297,81 +279,72 @@ export default function CanvasInspectorPanel() {
     // --- Section Inspector ---
     if (canvasMode === "sections" && selectedSection) {
       return (
-        <aside
-          className="flex h-full min-h-0 flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] overflow-y-auto"
-          style={{ width: 300 }}
-        >
-          <div className="px-3 py-2 border-b border-[var(--ui-border)] bg-[var(--surface-2)]">
-            <span className="text-[13px] font-semibold">セクション設定</span>
-          </div>
+        <InspectorShell width={300}>
+          <InspectorHeader title="セクション設定" />
           <div className="space-y-1 px-3 py-2">
-            <SectionHead title="基本" />
-            <label className="flex items-center gap-1 text-[11px]">
-              <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">名前</span>
-              <input
-                type="text"
-                className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
-                value={selectedSection.name ?? ""}
-                onChange={(e) => patchSectionProp({ name: e.target.value })}
+            <InspectorSection title="基本" defaultOpen={true}>
+              <InspectorField label="名前">
+                <InspectorInput
+                  type="text"
+                  value={selectedSection.name ?? ""}
+                  onChange={(e) => patchSectionProp({ name: e.target.value })}
+                />
+              </InspectorField>
+              <ColorField
+                label="背景"
+                value={selectedSectionBg}
+                onChange={(v) => patchSectionProp({ background: v })}
               />
-            </label>
-            <ColorField
-              label="背景"
-              value={selectedSectionBg}
-              onChange={(v) => patchSectionProp({ background: v })}
-            />
+            </InspectorSection>
 
-            <SectionHead title="余白・間隔" />
-            <NumField
-              label="上余白"
-              value={selectedSection.paddingTop ?? 24}
-              min={0}
-              onChange={(v) => patchSectionProp({ paddingTop: v })}
-              unit="px"
-            />
-            <NumField
-              label="下余白"
-              value={selectedSection.paddingBottom ?? 24}
-              min={0}
-              onChange={(v) => patchSectionProp({ paddingBottom: v })}
-              unit="px"
-            />
-            <NumField
-              label="間隔"
-              value={selectedSection.gap ?? 24}
-              min={0}
-              onChange={(v) => patchSectionProp({ gap: v })}
-              unit="px"
-            />
-            <NumField
-              label="最小高"
-              value={selectedSection.minHeight ?? 320}
-              min={0}
-              onChange={(v) => patchSectionProp({ minHeight: v })}
-              unit="px"
-            />
+            <InspectorSection title="余白・間隔" defaultOpen={true}>
+              <NumField
+                label="上余白"
+                value={selectedSection.paddingTop ?? 24}
+                min={0}
+                onChange={(v) => patchSectionProp({ paddingTop: v })}
+                unit="px"
+              />
+              <NumField
+                label="下余白"
+                value={selectedSection.paddingBottom ?? 24}
+                min={0}
+                onChange={(v) => patchSectionProp({ paddingBottom: v })}
+                unit="px"
+              />
+              <NumField
+                label="間隔"
+                value={selectedSection.gap ?? 24}
+                min={0}
+                onChange={(v) => patchSectionProp({ gap: v })}
+                unit="px"
+              />
+              <NumField
+                label="最小高"
+                value={selectedSection.minHeight ?? 320}
+                min={0}
+                onChange={(v) => patchSectionProp({ minHeight: v })}
+                unit="px"
+              />
+            </InspectorSection>
 
-            <SectionHead title="情報" />
-            <div className="text-[11px] text-[var(--ui-muted)]">
-              レイヤー数: {selectedSection.layers.length}
-            </div>
+            <InspectorSection title="情報" defaultOpen={true}>
+              <div className="text-[11px] text-[var(--ui-muted)]">
+                レイヤー数: {selectedSection.layers.length}
+              </div>
+            </InspectorSection>
           </div>
-        </aside>
+        </InspectorShell>
       );
     }
 
     return (
-      <aside
-        className="flex h-full min-h-0 flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)]"
-        style={{ width: 300 }}
-      >
-        <div className="px-3 py-2 border-b border-[var(--ui-border)] bg-[var(--surface-2)]">
-          <span className="text-[13px] font-semibold">インスペクター</span>
-        </div>
+      <InspectorShell width={300} scrollable={false}>
+        <InspectorHeader title="インスペクター" />
         <div className="flex-1 flex items-center justify-center text-[12px] text-[var(--ui-muted)]">
           レイヤーを選択してください
         </div>
-      </aside>
+      </InspectorShell>
     );
   }
 
@@ -390,45 +363,41 @@ export default function CanvasInspectorPanel() {
     },
   };
   const shadowModel = parseLayerShadow(style.shadow);
+  const deviceLabel = device === "pc" ? "デスクトップ" : "モバイル";
   const patchShadow = (patch: Partial<LayerShadow>) => {
     patchStyle({ shadow: { ...shadowModel, ...patch } });
   };
 
   return (
-    <aside
-      className="flex h-full min-h-0 flex-col border-l border-[var(--ui-border)] bg-[var(--ui-panel)] text-[var(--ui-text)] overflow-y-auto"
-      style={{ width: 300 }}
-    >
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-[var(--ui-border)] bg-[var(--surface-2)]">
-        <span className="text-[13px] font-semibold">{selectedLayer.name}</span>
-        <span className="ml-2 text-[10px] text-[var(--ui-muted)]">{device.toUpperCase()}</span>
-      </div>
+    <InspectorShell width={300}>
+      <InspectorHeader title={selectedLayer.name} subtitle={deviceLabel} />
 
       <div className="space-y-1 px-3 py-2">
-        {/* ---- 配置 ---- */}
-        <SectionHead title="配置" />
-        <div className="grid grid-cols-2 gap-1">
-          <NumField label="X" value={layout.x} onChange={(v) => patchLayout({ x: v })} />
-          <NumField label="Y" value={layout.y} onChange={(v) => patchLayout({ y: v })} />
-          <NumField label="W" value={layout.w} min={10} onChange={(v) => patchLayout({ w: v })} />
-          <NumField label="H" value={layout.h} min={10} onChange={(v) => patchLayout({ h: v })} />
-          <NumField label="回転" value={layout.r} unit="°" shiftStep={15} onChange={(v) => patchLayout({ r: v })} />
-          <NumField label="Z" value={layout.z} onChange={(v) => patchLayout({ z: v })} />
-        </div>
+        <InspectorSection title="配置" defaultOpen={true}>
+          <InspectorFieldRow>
+            <NumField label="X" value={layout.x} onChange={(v) => patchLayout({ x: v })} />
+            <NumField label="Y" value={layout.y} onChange={(v) => patchLayout({ y: v })} />
+            <NumField label="W" value={layout.w} min={10} onChange={(v) => patchLayout({ w: v })} />
+            <NumField label="H" value={layout.h} min={10} onChange={(v) => patchLayout({ h: v })} />
+            <NumField label="回転" value={layout.r} unit="°" shiftStep={15} onChange={(v) => patchLayout({ r: v })} />
+            <NumField label="Z" value={layout.z} onChange={(v) => patchLayout({ z: v })} />
+          </InspectorFieldRow>
+        </InspectorSection>
 
-        {/* ---- スタイル ---- */}
-        <SectionHead title="スタイル" />
-        <NumField label="透過" value={style.opacity} min={0} max={1} step={0.05} onChange={(v) => patchStyle({ opacity: v })} />
+        <InspectorSection title="スタイル" defaultOpen={true}>
+          <NumField label="透過" value={style.opacity} min={0} max={1} step={0.05} onChange={(v) => patchStyle({ opacity: v })} />
+        </InspectorSection>
 
         {content.kind === "shape" ? (
-          <>
+          <InspectorSection title="シェイプ" defaultOpen={true}>
             <ColorField label="塗り" value={style.fill ?? "#cccccc"} onChange={(v) => patchStyle({ fill: v })} />
             <ColorField label="線" value={style.stroke ?? "#000000"} onChange={(v) => patchStyle({ stroke: v })} />
             <NumField label="線幅" value={style.strokeWidth ?? 0} min={0} onChange={(v) => patchStyle({ strokeWidth: v })} />
             <NumField label="角丸" value={style.radius ?? 0} min={0} onChange={(v) => patchStyle({ radius: v })} />
 
-            <SectionHead title="横幅制約" />
+            <div className="mt-1 mb-1 border-b border-[var(--ui-border)]/50 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--ui-muted)]">
+              横幅制約
+            </div>
             <SelectField
               label="横幅"
               value={constraints.horizontal}
@@ -444,13 +413,11 @@ export default function CanvasInspectorPanel() {
                 <NumField label="右余白" value={constraints.marginRight} min={0} onChange={(v) => patchConstraints({ marginRight: v })} />
               </>
             ) : null}
-          </>
+          </InspectorSection>
         ) : null}
 
-        {/* ---- テキスト固有 ---- */}
         {content.kind === "text" ? (
-          <>
-            <SectionHead title="テキスト" />
+          <InspectorSection title="テキスト" defaultOpen={true}>
             <TextField label="内容" value={content.text} onChange={(v) => patchContent({ text: v })} />
             <SelectField
               label="書体"
@@ -480,38 +447,30 @@ export default function CanvasInspectorPanel() {
               onChange={(v) => patchStyle({ textAlign: v as "left" | "center" | "right" })}
             />
             <ColorField label="文字色" value={style.textColor ?? "#111111"} onChange={(v) => patchStyle({ textColor: v })} />
-          </>
+          </InspectorSection>
         ) : null}
 
-        {/* ---- ボタン固有 ---- */}
         {content.kind === "button" ? (
-          <>
-            <SectionHead title="ボタン" />
+          <InspectorSection title="ボタン" defaultOpen={true}>
             <TextField label="ラベル" value={content.label} onChange={(v) => patchContent({ label: v })} />
-            <label className="flex items-center gap-1 text-[11px]">
-              <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">URL</span>
-              <input
+            <InspectorField label="URL">
+              <InspectorInput
                 type="text"
-                className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
                 value={content.href}
                 onChange={(e) => patchContent({ href: e.target.value })}
               />
-            </label>
+            </InspectorField>
             <ColorField label="背景" value={style.buttonBgColor ?? "#1f6feb"} onChange={(v) => patchStyle({ buttonBgColor: v })} />
             <ColorField label="文字" value={style.buttonTextColor ?? "#ffffff"} onChange={(v) => patchStyle({ buttonTextColor: v })} />
             <NumField label="角丸" value={style.buttonRadius ?? 8} min={0} onChange={(v) => patchStyle({ buttonRadius: v })} />
-          </>
+          </InspectorSection>
         ) : null}
 
-        {/* ---- 画像固有 ---- */}
         {content.kind === "image" ? (
-          <>
-            <SectionHead title="画像" />
-            <label className="flex items-center gap-1 text-[11px]">
-              <span className="w-10 flex-shrink-0 text-[var(--ui-muted)]">AssetID</span>
-              <input
+          <InspectorSection title="画像" defaultOpen={true}>
+            <InspectorField label="AssetID">
+              <InspectorInput
                 type="text"
-                className="w-full rounded border border-[var(--ui-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px]"
                 value={content.assetId}
                 onChange={(e) => {
                   const next = e.target.value.trim();
@@ -519,7 +478,7 @@ export default function CanvasInspectorPanel() {
                   patchContent({ assetId: next });
                 }}
               />
-            </label>
+            </InspectorField>
             <NumField label="角丸" value={style.radius ?? 0} min={0} onChange={(v) => patchStyle({ radius: v })} />
 
             <label className="flex items-center gap-2 text-[11px]">
@@ -541,35 +500,35 @@ export default function CanvasInspectorPanel() {
             />
             <NumField label="焦点X" value={imageSettings.focalPoint.x} min={0} max={1} step={0.05} onChange={(v) => patchImageSettings({ focalPoint: { x: v } })} />
             <NumField label="焦点Y" value={imageSettings.focalPoint.y} min={0} max={1} step={0.05} onChange={(v) => patchImageSettings({ focalPoint: { y: v } })} />
-          </>
+          </InspectorSection>
         ) : null}
 
-        {/* ---- シャドウ ---- */}
-        <SectionHead title="シャドウ" />
-        <label className="flex items-center gap-2 text-[11px]">
-          <span className="w-16 flex-shrink-0 text-[var(--ui-muted)]">有効</span>
-          <input
-            type="checkbox"
-            checked={shadowModel.enabled}
-            onChange={(e) => patchShadow({ enabled: e.target.checked })}
+        <InspectorSection title="シャドウ" defaultOpen={true}>
+          <label className="flex items-center gap-2 text-[11px]">
+            <span className="w-16 flex-shrink-0 text-[var(--ui-muted)]">有効</span>
+            <input
+              type="checkbox"
+              checked={shadowModel.enabled}
+              onChange={(e) => patchShadow({ enabled: e.target.checked })}
+            />
+          </label>
+          <InspectorFieldRow>
+            <NumField label="X" value={shadowModel.x} step={1} onChange={(v) => patchShadow({ x: v })} />
+            <NumField label="Y" value={shadowModel.y} step={1} onChange={(v) => patchShadow({ y: v })} />
+            <NumField label="Blur" value={shadowModel.blur} min={0} step={1} onChange={(v) => patchShadow({ blur: v })} />
+            <NumField label="Spread" value={shadowModel.spread} step={1} onChange={(v) => patchShadow({ spread: v })} />
+          </InspectorFieldRow>
+          <ColorField label="色" value={shadowModel.color} onChange={(v) => patchShadow({ color: v })} />
+          <NumField
+            label="透明"
+            value={shadowModel.opacity}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(v) => patchShadow({ opacity: v })}
           />
-        </label>
-        <div className="grid grid-cols-2 gap-1">
-          <NumField label="X" value={shadowModel.x} step={1} onChange={(v) => patchShadow({ x: v })} />
-          <NumField label="Y" value={shadowModel.y} step={1} onChange={(v) => patchShadow({ y: v })} />
-          <NumField label="Blur" value={shadowModel.blur} min={0} step={1} onChange={(v) => patchShadow({ blur: v })} />
-          <NumField label="Spread" value={shadowModel.spread} step={1} onChange={(v) => patchShadow({ spread: v })} />
-        </div>
-        <ColorField label="色" value={shadowModel.color} onChange={(v) => patchShadow({ color: v })} />
-        <NumField
-          label="透明"
-          value={shadowModel.opacity}
-          min={0}
-          max={1}
-          step={0.05}
-          onChange={(v) => patchShadow({ opacity: v })}
-        />
+        </InspectorSection>
       </div>
-    </aside>
+    </InspectorShell>
   );
 }

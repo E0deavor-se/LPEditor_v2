@@ -1,346 +1,201 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useEditorStore } from "@/src/store/editorStore";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTextSelection } from "@/src/components/editor/TextSelectionContext";
 
-const RB_START = "[[rb]]";
-const RB_END = "[[/rb]]";
-
-type ActiveTarget =
-  | {
-      kind: "line";
-      sectionId: string;
-      itemId: string;
-      lineId: string;
-      element: HTMLInputElement | HTMLTextAreaElement;
-    }
-  | {
-      kind: "title";
-      sectionId: string;
-      itemId: string;
-      element: HTMLInputElement | HTMLTextAreaElement;
-    };
-
-const resolveActiveTarget = (): ActiveTarget | null => {
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const element = document.activeElement;
-  if (!element) {
-    return null;
-  }
-  if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
-    return null;
-  }
-  const kind = element.dataset.kind;
-  const sectionId = element.dataset.sectionId;
-  const itemId = element.dataset.itemId;
-  const lineId = element.dataset.lineId ?? "";
-  if (typeof kind !== "string" || typeof sectionId !== "string" || typeof itemId !== "string") {
-    return null;
-  }
-  if (kind === "line" && !lineId) {
-    return null;
-  }
-  if (kind === "line") {
-    return { kind: "line", sectionId, itemId, lineId, element };
-  }
-  if (kind === "title") {
-    return { kind: "title", sectionId, itemId, element };
-  }
-  return null;
+const debugLog = (message: string, payload?: Record<string, unknown>) => {
+  console.debug("[toolbar-debug]", message, payload ?? {});
 };
 
 export default function TopTextToolbar() {
-  const updateTextLineText = useEditorStore((state) => state.updateTextLineText);
-  const updateTitleItemText = useEditorStore((state) => state.updateTitleItemText);
-  const updateTextLineMarks = useEditorStore((state) => state.updateTextLineMarks);
-  const updateTitleItemMarks = useEditorStore((state) => state.updateTitleItemMarks);
-  const [toolbarColor, setToolbarColor] = useState("#e11d48");
-  const [toolbarSize, setToolbarSize] = useState(16);
-  const [toolbarLetterSpacing, setToolbarLetterSpacing] = useState(0);
-  const [toolbarLineHeight, setToolbarLineHeight] = useState(1.6);
-  const [canApply, setCanApply] = useState(false);
-  const lastTargetRef = useRef<ActiveTarget | null>(null);
-  const lastSelectionRef = useRef<{ start: number; end: number } | null>(null);
+  const { applyCommand, hasSelection, hasActiveEditor } = useTextSelection();
+  const [color, setColor] = useState("#ef4444");
+  const [pendingColor, setPendingColor] = useState<string | null>(null);
+  const [isPickingColor, setIsPickingColor] = useState(false);
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const [boldClickCount, setBoldClickCount] = useState(0);
+  const [lastCommand, setLastCommand] = useState<string | null>(null);
+  const colorInputRef = useRef<HTMLInputElement | null>(null);
+
+  const selectionExists = hasSelection();
+  const activeEditorExists = hasActiveEditor();
+  const disabled = useMemo(() => !selectionExists, [selectionExists]);
 
   useEffect(() => {
-    const updateFromElement = (target: ActiveTarget | null) => {
-      if (!target) {
-        return;
-      }
-      lastTargetRef.current = target;
-      const start = target.element.selectionStart ?? 0;
-      const end = target.element.selectionEnd ?? 0;
-      lastSelectionRef.current = { start, end };
-    };
-    const update = () => {
-      const target = resolveActiveTarget();
-      updateFromElement(target);
-      const selection = lastSelectionRef.current;
-      setCanApply(Boolean(target || lastTargetRef.current) && Boolean(selection) && selection!.end > selection!.start);
-    };
-    update();
-    document.addEventListener("selectionchange", update);
-    document.addEventListener("focusin", update);
-    document.addEventListener("focusout", update);
-    return () => {
-      document.removeEventListener("selectionchange", update);
-      document.removeEventListener("focusin", update);
-      document.removeEventListener("focusout", update);
-    };
-  }, []);
-
-  const applyInlineTag = useCallback(
-    (tag: string, value?: string) => {
-      const target = resolveActiveTarget() ?? lastTargetRef.current;
-      if (!target) {
-        return;
-      }
-      const { element } = target;
-      const selection = lastSelectionRef.current;
-      const start = selection?.start ?? element.selectionStart ?? 0;
-      const end = selection?.end ?? element.selectionEnd ?? 0;
-      if (start === end) {
-        return;
-      }
-      const currentValue = element.value ?? "";
-      const open = value ? `[[${tag}:${value}]]` : `[[${tag}]]`;
-      const close = `[[/${tag}]]`;
-      const before = currentValue.slice(0, start);
-      const selected = currentValue.slice(start, end);
-      const after = currentValue.slice(end);
-      const nextValue = `${before}${open}${selected}${close}${after}`;
-
-      if (target.kind === "line") {
-        updateTextLineText(
-          target.sectionId,
-          target.itemId,
-          target.lineId,
-          nextValue
-        );
-      } else {
-        updateTitleItemText(target.sectionId, target.itemId, nextValue);
-      }
-
-      requestAnimationFrame(() => {
-        element.focus();
-        const caret = before.length + open.length + selected.length + close.length;
-        element.setSelectionRange(caret, caret);
-        lastSelectionRef.current = { start: caret, end: caret };
-      });
-    },
-    [updateTextLineText, updateTitleItemText]
-  );
-
-  const applyRedBold = useCallback(() => {
-    const target = resolveActiveTarget() ?? lastTargetRef.current;
-    if (!target) {
-      return;
-    }
-    const element = target.element;
-    const selection = lastSelectionRef.current;
-    const start = selection?.start ?? element.selectionStart ?? 0;
-    const end = selection?.end ?? element.selectionEnd ?? 0;
-    if (start === end) {
-      return;
-    }
-    const currentValue = element.value ?? "";
-    const before = currentValue.slice(0, start);
-    const selected = currentValue.slice(start, end);
-    const after = currentValue.slice(end);
-    const nextValue = `${before}${RB_START}${selected}${RB_END}${after}`;
-
-    if (target.kind === "line") {
-      updateTextLineText(
-        target.sectionId,
-        target.itemId,
-        target.lineId,
-        nextValue
-      );
-    } else {
-      updateTitleItemText(target.sectionId, target.itemId, nextValue);
-    }
-
-    requestAnimationFrame(() => {
-      element.focus();
-      const caret = before.length + RB_START.length + selected.length + RB_END.length;
-      element.setSelectionRange(caret, caret);
-      lastSelectionRef.current = { start: caret, end: caret };
+    debugLog("toolbar render", {
+      activeEditorExists,
+      selectionExists,
+      disabled,
+      isColorPickerOpen,
     });
-  }, [updateTextLineText, updateTitleItemText]);
+    debugLog("active editor exists", { value: activeEditorExists });
+    debugLog("selection exists", { value: selectionExists });
+  }, [activeEditorExists, selectionExists, disabled, isColorPickerOpen]);
 
-  const applyAlign = useCallback(
-    (align: "left" | "center" | "right") => {
-      const target = resolveActiveTarget() ?? lastTargetRef.current;
-      if (!target) {
+  useEffect(() => {
+    debugLog("toolbar state changed", {
+      boldClickCount,
+      lastCommand,
+      activeEditorExists,
+      selectionExists,
+    });
+  }, [boldClickCount, lastCommand, activeEditorExists, selectionExists]);
+
+  const commitColor = (next: string | null) => {
+    if (!next || disabled) {
+      return;
+    }
+    debugLog("applyColor called", { color: next, disabled });
+    applyCommand({ type: "color", color: next });
+  };
+
+  useEffect(() => {
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (!isColorPickerOpen) {
         return;
       }
-      if (target.kind === "line") {
-        updateTextLineMarks(
-          target.sectionId,
-          target.itemId,
-          target.lineId,
-          { textAlign: align }
-        );
-      } else {
-        updateTitleItemMarks(target.sectionId, target.itemId, { textAlign: align });
+      const target = event.target;
+      if (colorInputRef.current && target instanceof Node && !colorInputRef.current.contains(target)) {
+        debugLog("outside click detected", {
+          targetTag: target instanceof Element ? target.tagName : "unknown",
+        });
       }
-    },
-    [updateTextLineMarks, updateTitleItemMarks]
-  );
+    };
 
-  const disabled = !canApply;
+    document.addEventListener("pointerdown", handleOutsidePointerDown);
+    return () => document.removeEventListener("pointerdown", handleOutsidePointerDown);
+  }, [isColorPickerOpen]);
 
   return (
-    <div className="border-b border-[var(--ui-border)] bg-[var(--surface)] px-3 py-2">
+    <div
+      className="relative z-30 pointer-events-auto border-b border-[var(--ui-border)] bg-[var(--surface-2)] px-3 py-1.5"
+      onPointerDownCapture={() => {
+        debugLog("toolbar pointerdown capture", {
+          activeEditorExists,
+          selectionExists,
+        });
+      }}
+    >
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className="ui-button ui-button-ghost h-8 w-8 px-0"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyInlineTag("b")}
-            disabled={disabled}
+            className="ui-button ui-button-ghost h-7 w-7 px-0"
+            data-debug-bold-button="true"
+            onMouseDown={() => {
+              debugLog("bold button mousedown", {
+                activeEditorExists,
+                selectionExists,
+                disabled,
+              });
+            }}
+            onClick={() => {
+              debugLog("bold button click", {
+                activeEditorExists,
+                selectionExists,
+                disabled,
+              });
+              debugLog("active editor exists", { value: activeEditorExists });
+              debugLog("selection exists", { value: selectionExists });
+              setBoldClickCount((prev) => prev + 1);
+              setLastCommand("bold");
+              debugLog("command requested", { command: "bold" });
+              const applied = applyCommand({ type: "bold" });
+              debugLog("command result", { command: "bold", applied });
+            }}
             title="太字"
+            aria-pressed={lastCommand === "bold"}
           >
             B
           </button>
           <button
             type="button"
-            className="ui-button ui-button-ghost h-8 w-8 px-0"
+            className="ui-button ui-button-ghost h-7 w-7 px-0"
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyInlineTag("i")}
-            disabled={disabled}
-            title="斜体"
-          >
-            I
-          </button>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost h-8 w-8 px-0"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyInlineTag("u")}
+            onClick={() => applyCommand({ type: "underline" })}
             disabled={disabled}
             title="下線"
           >
             U
           </button>
-          <button
-            type="button"
-            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={applyRedBold}
-            disabled={disabled}
-          >
-            赤太
-          </button>
         </div>
+
         <div className="flex items-center gap-2">
           <input
+            ref={colorInputRef}
             type="color"
-            className="h-8 w-8 cursor-pointer rounded border border-[var(--ui-border)] bg-transparent"
-            value={toolbarColor}
+            className="h-7 w-7 cursor-pointer rounded border border-[var(--ui-border)] bg-transparent"
+            value={color}
+            onMouseDown={(event) => {
+              debugLog("color button mousedown", {
+                disabled,
+                openStateBefore: isColorPickerOpen,
+              });
+              setIsPickingColor(true);
+            }}
+            onClick={() => {
+              debugLog("toolbar color clicked", {
+                disabled,
+                openStateBefore: isColorPickerOpen,
+              });
+              setIsColorPickerOpen(true);
+              debugLog("color picker open state changed", {
+                from: isColorPickerOpen,
+                to: true,
+              });
+            }}
+            onPointerUp={() => {
+              debugLog("close triggered reason", { reason: "pointerup" });
+              setIsPickingColor(false);
+              setIsColorPickerOpen(false);
+              commitColor(pendingColor ?? color);
+              setPendingColor(null);
+            }}
+            onBlur={() => {
+              debugLog("close triggered reason", { reason: "blur" });
+              setIsPickingColor(false);
+              setIsColorPickerOpen(false);
+              commitColor(pendingColor ?? color);
+              setPendingColor(null);
+            }}
+            onInput={(event) => {
+              const next = event.currentTarget.value;
+              debugLog("color picker changed", { color: next, via: "input" });
+              setColor(next);
+              setPendingColor(next);
+            }}
             onChange={(event) => {
               const next = event.target.value;
-              setToolbarColor(next);
-              applyInlineTag("color", next);
+              debugLog("color picker changed", { color: next, via: "change" });
+              setColor(next);
+              setPendingColor(next);
+              commitColor(next);
+              setPendingColor(null);
+            }}
+            onFocus={() => {
+              debugLog("color picker rendered", { openState: true });
             }}
             disabled={disabled}
             title="文字色"
           />
-          <input
-            type="number"
-            className="ui-input h-8 w-16 text-[11px]"
-            value={toolbarSize}
-            min={8}
-            max={72}
-            onChange={(event) => setToolbarSize(Number(event.target.value))}
-            disabled={disabled}
-            title="文字サイズ"
-          />
           <button
             type="button"
-            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyInlineTag("size", String(toolbarSize))}
+            className="ui-button ui-button-ghost h-7 px-2 text-[10px]"
+            data-debug-red-color="true"
+            onMouseDown={() => {
+              debugLog("toolbar color clicked", {
+                color: "#ef4444",
+                disabled,
+              });
+            }}
+            onClick={() => {
+              setColor("#ef4444");
+              commitColor("#ef4444");
+            }}
             disabled={disabled}
+            title="赤を適用"
           >
-            サイズ
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            className="ui-input h-8 w-16 text-[11px]"
-            value={toolbarLineHeight}
-            min={0.8}
-            max={3}
-            step={0.1}
-            onChange={(event) => setToolbarLineHeight(Number(event.target.value))}
-            disabled={disabled}
-            title="行間"
-          />
-          <button
-            type="button"
-            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyInlineTag("lh", String(toolbarLineHeight))}
-            disabled={disabled}
-          >
-            行間
-          </button>
-          <input
-            type="number"
-            className="ui-input h-8 w-16 text-[11px]"
-            value={toolbarLetterSpacing}
-            min={-2}
-            max={10}
-            step={0.1}
-            onChange={(event) => setToolbarLetterSpacing(Number(event.target.value))}
-            disabled={disabled}
-            title="字間"
-          />
-          <button
-            type="button"
-            className="ui-button ui-button-secondary h-8 px-2 text-[11px]"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyInlineTag("ls", String(toolbarLetterSpacing))}
-            disabled={disabled}
-          >
-            字間
-          </button>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="ui-button ui-button-ghost h-8 w-8 px-0"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyAlign("left")}
-            disabled={disabled}
-            title="左揃え"
-          >
-            L
-          </button>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost h-8 w-8 px-0"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyAlign("center")}
-            disabled={disabled}
-            title="中央揃え"
-          >
-            C
-          </button>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost h-8 w-8 px-0"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyAlign("right")}
-            disabled={disabled}
-            title="右揃え"
-          >
-            R
+            赤
           </button>
         </div>
       </div>

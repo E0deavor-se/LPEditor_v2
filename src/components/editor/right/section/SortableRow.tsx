@@ -49,7 +49,7 @@ export default function SortableRow({
       ref={setNodeRef}
       style={style}
       className={
-        "group relative flex min-w-0 items-center gap-2 rounded-md border px-2 text-left text-[12px] transition-colors duration-150 ease-out " +
+        "group relative flex min-w-0 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] transition-colors duration-150 ease-out " +
         (wrap ? "h-auto flex-wrap py-1" : "h-8") +
         (selected
           ? " border-[var(--ui-ring)] bg-[var(--surface)]"
@@ -65,7 +65,7 @@ export default function SortableRow({
       ) : null}
       <button
         type="button"
-        className="ui-button ui-button-ghost h-8 w-8 shrink-0 px-0"
+        className="ui-button ui-button-ghost h-7 w-7 shrink-0 px-0"
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}

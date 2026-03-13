@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Monitor, Smartphone, Columns2, Grid3X3, Magnet,
+  Columns2, Grid3X3, Magnet,
   ZoomIn, ZoomOut, Undo2, Redo2, Type, ImageIcon, Square, MousePointer2,
   Wand2, Eye, EyeOff, Ruler, LayoutTemplate, Maximize, ALargeSmall,
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
@@ -34,11 +34,7 @@ const BTN = "h-7 px-2 rounded text-[11px] font-medium flex items-center gap-1 tr
 const BTN_ACTIVE = "bg-[var(--ui-text)] text-[var(--ui-bg)]";
 const BTN_GHOST = "hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)] text-[var(--ui-text)]";
 
-type CanvasEditorPageProps = {
-  canvasPageId?: string | null;
-};
-
-export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps = {}) {
+export default function CanvasEditorPage() {
   const device = useCanvasEditorStore((s) => s.device);
   const viewMode = useCanvasEditorStore((s) => s.viewMode);
   const canvasMode = useCanvasEditorStore((s) => s.document.mode ?? "free");
@@ -59,8 +55,9 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const undo = useCanvasEditorStore((s) => s.undo);
   const redo = useCanvasEditorStore((s) => s.redo);
   const addLayer = useCanvasEditorStore((s) => s.addLayer);
-  const removeLayer = useCanvasEditorStore((s) => s.removeLayer);
+  const removeLayers = useCanvasEditorStore((s) => s.removeLayers);
   const duplicateLayer = useCanvasEditorStore((s) => s.duplicateLayer);
+  const duplicateLayers = useCanvasEditorStore((s) => s.duplicateLayers);
   const selection = useCanvasEditorStore((s) => s.selection);
   const moveSelectedLayers = useCanvasEditorStore((s) => s.moveSelectedLayers);
   const pushSnapshot = useCanvasEditorStore((s) => s.pushSnapshot);
@@ -81,12 +78,16 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   const applyFitTextToAll = useCanvasEditorStore((s) => s.applyFitTextToAll);
   const bringForward = useCanvasEditorStore((s) => s.bringForward);
   const sendBackward = useCanvasEditorStore((s) => s.sendBackward);
+  const bringToFront = useCanvasEditorStore((s) => s.bringToFront);
+  const sendToBack = useCanvasEditorStore((s) => s.sendToBack);
   const clearSelection = useCanvasEditorStore((s) => s.clearSelection);
   const groupSelectedLayers = useCanvasEditorStore((s) => s.groupSelectedLayers);
   const ungroupSelectedLayers = useCanvasEditorStore((s) => s.ungroupSelectedLayers);
 
   const [autoLayoutOpen, setAutoLayoutOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const autoLayoutMenuRef = useRef<HTMLDivElement>(null);
+  const templateMenuRef = useRef<HTMLDivElement>(null);
   const renderableLayers = getRenderableLayers(device).filter((l) => !l.id.startsWith("section-bg:"));
 
   // Fit Text: 選択レイヤーに text/button が含まれるか判定
@@ -99,11 +100,16 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
     return layer?.content.kind === "group";
   });
 
-  const updateCanvasPage = useEditorStore((s) => s.updateCanvasPage);
+  const updateCanvasDocument = useEditorStore((s) => s.updateCanvasDocument);
   const addAsset = useEditorStore((s) => s.addAsset);
-  const project = useEditorStore((s) => s.project);
+  const activeDevice = useEditorStore((s) => s.activeDevice);
+  const projectCanvasDocument = useEditorStore(
+    (s) => s.project.editorDocuments?.canvasDocument
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const copiedLayerIdsRef = useRef<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const primaryLayerId = selection.primaryId;
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -111,7 +117,7 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   }, []);
 
   /* ---- Sync: load from project ---- */
-  const loadedPageIdRef = useRef<string | null>(null);
+  const hasLoadedInitialDocRef = useRef(false);
   const canvasModeRef = useRef(canvasMode);
 
   useEffect(() => {
@@ -119,20 +125,24 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
   }, [canvasMode]);
 
   useEffect(() => {
-    if (!canvasPageId) return;
-    if (loadedPageIdRef.current === canvasPageId) return;
-    const page = (project.canvasPages ?? []).find((p) => p.id === canvasPageId);
-    if (page) {
-      setDocument(page.canvas);
-      loadedPageIdRef.current = canvasPageId;
-    }
-  }, [canvasPageId, project.canvasPages, setDocument]);
+    if (hasLoadedInitialDocRef.current) return;
+    if (!projectCanvasDocument) return;
+    setDocument(projectCanvasDocument);
+    hasLoadedInitialDocRef.current = true;
+  }, [projectCanvasDocument, setDocument]);
 
   /* ---- Sync: save back to project on change ---- */
   useEffect(() => {
-    if (!canvasPageId || !dirty) return;
-    updateCanvasPage(canvasPageId, canvasDoc);
-  }, [canvasPageId, dirty, canvasDoc, updateCanvasPage]);
+    if (!dirty) return;
+    updateCanvasDocument(canvasDoc);
+  }, [dirty, canvasDoc, updateCanvasDocument]);
+
+  /* ---- Sync: global device (TopBar) -> canvas device ---- */
+  useEffect(() => {
+    if (device !== activeDevice) {
+      setDevice(activeDevice);
+    }
+  }, [activeDevice, device, setDevice]);
 
   /* ---- Keyboard shortcuts ---- */
   useEffect(() => {
@@ -159,6 +169,24 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
         return;
       }
 
+      // Copy / Paste
+      if (ctrl && e.key.toLowerCase() === "c") {
+        if (selection.ids.length > 0) {
+          e.preventDefault();
+          copiedLayerIdsRef.current = [...selection.ids];
+          showToast(`${selection.ids.length} レイヤーをコピー`);
+        }
+        return;
+      }
+      if (ctrl && e.key.toLowerCase() === "v") {
+        if (copiedLayerIdsRef.current.length > 0) {
+          e.preventDefault();
+          duplicateLayers(copiedLayerIdsRef.current);
+          showToast(`${copiedLayerIdsRef.current.length} レイヤーを貼り付け`);
+        }
+        return;
+      }
+
       // Group / Ungroup
       if (ctrl && e.key.toLowerCase() === "g" && !e.shiftKey) {
         e.preventDefault();
@@ -178,16 +206,28 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
           return;
         }
         e.preventDefault();
-        if (selection.primaryId) removeLayer(selection.primaryId);
+        if (selection.ids.length > 0) removeLayers(selection.ids);
         return;
       }
 
       // Z-order: Ctrl+] / Ctrl+[
       if (ctrl && e.key === "]" && selection.primaryId) {
-        e.preventDefault(); bringForward(selection.primaryId); return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          bringToFront(selection.primaryId);
+        } else {
+          bringForward(selection.primaryId);
+        }
+        return;
       }
       if (ctrl && e.key === "[" && selection.primaryId) {
-        e.preventDefault(); sendBackward(selection.primaryId); return;
+        e.preventDefault();
+        if (e.shiftKey) {
+          sendToBack(selection.primaryId);
+        } else {
+          sendBackward(selection.primaryId);
+        }
+        return;
       }
 
       // Arrow keys: move layers
@@ -206,7 +246,32 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, selection.primaryId, duplicateLayer, removeLayer, moveSelectedLayers, pushSnapshot, clearSelection, bringForward, sendBackward, groupSelectedLayers, ungroupSelectedLayers]);
+  }, [undo, redo, selection.primaryId, selection.ids, duplicateLayer, duplicateLayers, removeLayers, moveSelectedLayers, pushSnapshot, clearSelection, bringForward, sendBackward, bringToFront, sendToBack, groupSelectedLayers, ungroupSelectedLayers, showToast]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (autoLayoutMenuRef.current && !autoLayoutMenuRef.current.contains(target)) {
+        setAutoLayoutOpen(false);
+      }
+      if (templateMenuRef.current && !templateMenuRef.current.contains(target)) {
+        setTemplateMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setAutoLayoutOpen(false);
+      setTemplateMenuOpen(false);
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
 
   /* ---- Add layer helpers ---- */
   const handleAddText = () => addLayer(createTextLayer("テキスト"));
@@ -301,16 +366,6 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
           accept="image/png,image/jpeg,image/webp,image/svg+xml,.png,.jpg,.jpeg,.webp,.svg"
           onChange={handleImageFileChange}
         />
-        {/* Device switch */}
-        <div className="flex items-center gap-0.5 rounded-md border border-[var(--ui-border)] p-0.5">
-          <button type="button" className={`${BTN} ${device === "pc" ? BTN_ACTIVE : BTN_GHOST}`} onClick={() => setDevice("pc")}>
-            <Monitor size={14} /> PC
-          </button>
-          <button type="button" className={`${BTN} ${device === "sp" ? BTN_ACTIVE : BTN_GHOST}`} onClick={() => setDevice("sp")}>
-            <Smartphone size={14} /> SP
-          </button>
-        </div>
-
         {/* Mode switch */}
         <div className="flex items-center gap-0.5 rounded-md border border-[var(--ui-border)] p-0.5">
           <button type="button" className={`${BTN} ${canvasMode === "free" ? BTN_ACTIVE : BTN_GHOST}`} onClick={() => setCanvasMode("free")}>
@@ -463,17 +518,20 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
 
         <div className="mx-1 h-5 w-px bg-[var(--ui-border)]" />
 
-        {/* PC→SP */}
-        <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={generateSpFromPc} title="PC→SP自動生成">
-          <Wand2 size={14} /> PC→SP
+        {/* Desktop -> Mobile */}
+        <button type="button" className={`${BTN} ${BTN_GHOST}`} onClick={generateSpFromPc} title="デスクトップ→モバイル自動生成">
+          <Wand2 size={14} /> デスクトップ→モバイル
         </button>
 
         {/* Auto Layout */}
-        <div className="relative">
+        <div className="relative" ref={autoLayoutMenuRef}>
           <button
             type="button"
             className={`${BTN} ${BTN_GHOST}`}
-            onClick={() => setAutoLayoutOpen((v) => !v)}
+            onClick={() => {
+              setTemplateMenuOpen(false);
+              setAutoLayoutOpen((v) => !v);
+            }}
             title="自動レイアウト"
           >
             <LayoutTemplate size={14} /> 自動レイアウト
@@ -499,11 +557,14 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
         </div>
 
         {/* テンプレート */}
-        <div className="relative">
+        <div className="relative" ref={templateMenuRef}>
           <button
             type="button"
             className={`${BTN} ${BTN_GHOST}`}
-            onClick={() => setTemplateMenuOpen((v) => !v)}
+            onClick={() => {
+              setAutoLayoutOpen(false);
+              setTemplateMenuOpen((v) => !v);
+            }}
             title="LPテンプレート"
           >
             <Maximize size={14} /> テンプレ
@@ -534,6 +595,28 @@ export default function CanvasEditorPage({ canvasPageId }: CanvasEditorPageProps
             </div>
           )}
         </div>
+
+        {primaryLayerId ? (
+          <>
+            <div className="mx-1 h-5 w-px bg-[var(--ui-border)]" />
+            <button
+              type="button"
+              className={`${BTN} ${BTN_GHOST}`}
+              onClick={() => sendToBack(primaryLayerId)}
+              title="最背面へ (Ctrl/Cmd+Shift+[)"
+            >
+              最背面
+            </button>
+            <button
+              type="button"
+              className={`${BTN} ${BTN_GHOST}`}
+              onClick={() => bringToFront(primaryLayerId)}
+              title="最前面へ (Ctrl/Cmd+Shift+])"
+            >
+              最前面
+            </button>
+          </>
+        ) : null}
 
         {/* Undo / Redo */}
         <div className="ml-auto flex items-center gap-1">

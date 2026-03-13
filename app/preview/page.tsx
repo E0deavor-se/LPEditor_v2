@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import PreviewSsr from "@/src/preview/PreviewSsr";
 import type { ProjectState } from "@/src/types/project";
-import type { CanvasPageData } from "@/src/types/canvas";
 import dynamic from "next/dynamic";
+import { getLayoutSections } from "@/src/lib/editorProject";
 
 const CanvasRenderer = dynamic(
   () => import("@/src/components/canvas/CanvasRenderer"),
@@ -16,7 +16,8 @@ const PROJECT_UPDATE = "CLP_PROJECT_UPDATE";
 const SECTION_HOVER = "CLP_SECTION_HOVER";
 const SECTION_SELECT = "CLP_SECTION_SELECT";
 const EDITOR_SELECT_SECTION = "CLP_EDITOR_SELECT_SECTION";
-const PREVIEW_UPDATE_TARGET_STORES_FILTERS = "CLP_PREVIEW_UPDATE_TARGET_STORES_FILTERS";
+const PREVIEW_INSERT_SECTION_AFTER = "CLP_PREVIEW_INSERT_SECTION_AFTER";
+const PREVIEW_SECTION_ACTION = "CLP_PREVIEW_SECTION_ACTION";
 const SCREENSHOT_REQUEST = "CLP_SCREENSHOT_REQUEST";
 const SCREENSHOT_RESULT = "CLP_SCREENSHOT_RESULT";
 const TRANSPARENT_PIXEL =
@@ -24,6 +25,7 @@ const TRANSPARENT_PIXEL =
 
 type PreviewPayload = {
   ui?: {
+    editorMode?: "layout" | "canvas";
     previewMode?: string;
     previewAspect?: string;
     isPreviewBusy?: boolean;
@@ -53,6 +55,11 @@ export default function PreviewPage() {
     {}
   );
   const sectionSignatureRef = useRef<Record<string, string>>({});
+  const ui = useMemo(() => uiState ?? undefined, [uiState]);
+  const layoutSections = useMemo(
+    () => (project ? getLayoutSections(project) : []),
+    [project]
+  );
 
   const waitForFonts = async (doc: Document) => {
     const fontFaceSet = (doc as Document & { fonts?: FontFaceSet }).fonts;
@@ -188,11 +195,11 @@ export default function PreviewPage() {
   }, []);
 
   useEffect(() => {
-    if (!project?.sections?.length) {
+    if (layoutSections.length === 0) {
       return;
     }
     const nextSignature: Record<string, string> = {};
-    project.sections.forEach((section) => {
+    layoutSections.forEach((section) => {
       const signature = JSON.stringify({
         data: section.data,
         style: section.style,
@@ -213,7 +220,7 @@ export default function PreviewPage() {
       }
     });
     sectionSignatureRef.current = nextSignature;
-  }, [project?.sections]);
+  }, [layoutSections]);
 
   useEffect(() => {
     if (!selectedSectionId) {
@@ -238,7 +245,7 @@ export default function PreviewPage() {
       window.cancelAnimationFrame(raf);
       window.clearTimeout(retry);
     };
-  }, [selectedSectionId, project?.sections?.length]);
+  }, [selectedSectionId, layoutSections.length]);
 
   useEffect(() => {
     if (!rootRef.current) {
@@ -257,7 +264,7 @@ export default function PreviewPage() {
     selectedSectionId,
     flashIds,
     pulseIds,
-    project?.sections?.length,
+    layoutSections.length,
   ]);
 
   useEffect(() => {
@@ -289,6 +296,63 @@ export default function PreviewPage() {
   };
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    const sectionAction = (event.target as HTMLElement | null)?.closest(
+      "[data-section-action][data-section-target-id]"
+    );
+    if (sectionAction instanceof HTMLElement) {
+      const sectionId =
+        sectionAction.getAttribute("data-section-target-id") ?? "";
+      const action = sectionAction.getAttribute("data-section-action") ?? "";
+      if (sectionId && (action === "duplicate" || action === "delete")) {
+        window.parent.postMessage(
+          {
+            type: PREVIEW_SECTION_ACTION,
+            actionPayload: {
+              sectionId,
+              action,
+            },
+          },
+          window.location.origin
+        );
+      }
+      return;
+    }
+
+    const addAction = (event.target as HTMLElement | null)?.closest(
+      "[data-add-after-id][data-add-type]"
+    );
+    if (addAction instanceof HTMLElement) {
+      const afterId = addAction.getAttribute("data-add-after-id") ?? "";
+      const type = addAction.getAttribute("data-add-type") ?? "";
+      if (type) {
+        window.parent.postMessage(
+          {
+            type: PREVIEW_INSERT_SECTION_AFTER,
+            insert: {
+              afterId,
+              type,
+            },
+          },
+          window.location.origin
+        );
+      }
+      return;
+    }
+
+    const couponFlowArea = (event.target as HTMLElement | null)?.closest(
+      '[data-coupon-slideshow="true"]'
+    );
+    if (couponFlowArea) {
+      return;
+    }
+
+    const interactiveTarget = (event.target as HTMLElement | null)?.closest(
+      "button, a, input, select, textarea, label, [role='button'], [data-coupon-nav], [data-coupon-dot]"
+    );
+    if (interactiveTarget) {
+      return;
+    }
+
     const target = (event.target as HTMLElement | null)?.closest("[data-section-id]");
     const nextId = target?.getAttribute("data-section-id") ?? null;
     if (!nextId) {
@@ -311,12 +375,15 @@ export default function PreviewPage() {
     );
   };
 
-  const ui = useMemo(() => uiState ?? undefined, [uiState]);
+  const activeMode = uiState?.editorMode ?? "layout";
+  const activeCanvasDocument =
+    project?.editorDocuments?.canvasDocument ?? project?.canvasPages?.[0]?.canvas;
 
   return (
     <div
       ref={rootRef}
       className="relative min-h-screen"
+      data-testid="preview-root"
       data-preview-guides={uiState?.showGuides ? "true" : "false"}
       data-preview-safe-area={uiState?.showSafeArea ? "true" : "false"}
       data-preview-bounds={uiState?.showSectionBounds ? "true" : "false"}
@@ -329,13 +396,32 @@ export default function PreviewPage() {
       <style
         dangerouslySetInnerHTML={{
           __html: `
+            [data-section-id] {
+              position: relative;
+            }
             [data-preview-hovered="true"] {
-              outline: 1px solid rgba(100, 116, 139, 0.5);
-              background-color: color-mix(in oklab, var(--lp-surface) 70%, transparent);
+              outline: 2px solid color-mix(in oklab, var(--lp-accent, #2563eb) 45%, transparent);
+              outline-offset: -1px;
+              box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+              background-color: color-mix(in oklab, var(--lp-accent, #2563eb) 10%, transparent);
+            }
+            [data-preview-hovered="true"]::after {
+              content: "";
+              position: absolute;
+              left: 8px;
+              right: 8px;
+              bottom: -2px;
+              height: 2px;
+              border-radius: 999px;
+              background: color-mix(in oklab, var(--lp-accent, #2563eb) 70%, #dbeafe);
+              opacity: 0.45;
+              pointer-events: none;
             }
             [data-preview-selected="true"] {
-              outline: 2px solid var(--lp-accent, #2563eb);
-              background-color: color-mix(in oklab, var(--lp-surface) 80%, transparent);
+              outline: 3px solid color-mix(in oklab, var(--lp-accent, #2563eb) 92%, #dbeafe);
+              outline-offset: -1px;
+              box-shadow: 0 0 0 2px rgba(219, 234, 254, 0.95), 0 14px 28px rgba(37, 99, 235, 0.24);
+              background-color: color-mix(in oklab, var(--lp-accent, #2563eb) 16%, transparent);
             }
             [data-preview-pulse="true"] {
               animation: lpPreviewPulse 180ms ease-out;
@@ -352,6 +438,116 @@ export default function PreviewPage() {
             }
             [data-preview-snap="true"] [data-section-id] {
               scroll-snap-align: start;
+            }
+            .lp-preview-insert-slot {
+              position: relative;
+              height: 0;
+              margin: 0;
+              z-index: 12;
+            }
+            .lp-preview-insert-separator {
+              position: absolute;
+              left: 12px;
+              right: 12px;
+              top: 0;
+              height: 1px;
+              background: linear-gradient(
+                90deg,
+                transparent,
+                color-mix(in oklab, var(--lp-accent, #2563eb) 30%, #cbd5e1) 40%,
+                color-mix(in oklab, var(--lp-accent, #2563eb) 30%, #cbd5e1) 60%,
+                transparent
+              );
+              opacity: 0;
+              transition: opacity 140ms ease;
+            }
+            .lp-preview-insert-slot:hover .lp-preview-insert-separator,
+            [data-preview-hovered="true"] + .lp-preview-insert-slot .lp-preview-insert-separator {
+              opacity: 0.75;
+            }
+            .lp-preview-insert-actions {
+              position: absolute;
+              left: 50%;
+              top: 0;
+              transform: translate(-50%, -50%);
+              display: flex;
+              flex-wrap: wrap;
+              gap: 6px;
+              opacity: 0;
+              pointer-events: none;
+              transition: opacity 140ms ease, transform 140ms ease;
+            }
+            .lp-preview-insert-slot:hover .lp-preview-insert-actions,
+            [data-preview-hovered="true"] + .lp-preview-insert-slot .lp-preview-insert-actions {
+              opacity: 1;
+              pointer-events: auto;
+              transform: translate(-50%, -52%);
+            }
+            .lp-preview-insert-btn {
+              border: 1px solid color-mix(in oklab, var(--lp-accent, #2563eb) 45%, #bfdbfe);
+              background: color-mix(in oklab, white 86%, var(--lp-accent, #2563eb) 14%);
+              color: color-mix(in oklab, #1e3a8a 78%, var(--lp-accent, #2563eb));
+              border-radius: 999px;
+              height: 27px;
+              padding: 0 11px;
+              font-size: 11px;
+              font-weight: 700;
+              line-height: 1;
+              cursor: pointer;
+              white-space: nowrap;
+              box-shadow: 0 4px 12px rgba(30, 58, 138, 0.16);
+              transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+            }
+            .lp-preview-insert-btn:hover {
+              transform: translateY(-1px) scale(1.01);
+              box-shadow: 0 8px 16px rgba(30, 58, 138, 0.2);
+              background: color-mix(in oklab, white 80%, var(--lp-accent, #2563eb) 20%);
+            }
+            .lp-preview-section-actions {
+              position: absolute;
+              right: 8px;
+              top: 8px;
+              z-index: 20;
+              display: flex;
+              gap: 8px;
+              opacity: 0;
+              pointer-events: none;
+              transform: translateY(-3px);
+              transition: opacity 130ms ease, transform 130ms ease;
+            }
+            [data-preview-hovered="true"] .lp-preview-section-actions,
+            [data-preview-selected="true"] .lp-preview-section-actions {
+              opacity: 1;
+              pointer-events: auto;
+              transform: translateY(0);
+            }
+            .lp-preview-section-action-btn {
+              height: 28px;
+              width: 28px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              border-radius: 8px;
+              border: 1px solid color-mix(in oklab, var(--lp-accent, #2563eb) 35%, #cbd5e1);
+              background: color-mix(in oklab, #ffffff 92%, var(--lp-accent, #2563eb) 8%);
+              color: #1e3a8a;
+              padding: 0;
+              cursor: pointer;
+              box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+              transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+            }
+            .lp-preview-section-action-btn:hover {
+              background: color-mix(in oklab, #ffffff 84%, var(--lp-accent, #2563eb) 16%);
+              box-shadow: 0 6px 14px rgba(15, 23, 42, 0.16);
+              transform: translateY(-1px);
+            }
+            .lp-preview-section-action-btn--danger {
+              border-color: color-mix(in oklab, #ef4444 45%, #fecaca);
+              color: #b91c1c;
+              background: color-mix(in oklab, #ffffff 92%, #ef4444 8%);
+            }
+            .lp-preview-section-action-btn--danger:hover {
+              background: color-mix(in oklab, #ffffff 86%, #ef4444 14%);
             }
             .lp-preview-guides {
               position: fixed;
@@ -408,44 +604,19 @@ export default function PreviewPage() {
       <div className="lp-preview-safearea" aria-hidden="true" />
       {project ? (
         <>
-          <PreviewSsr
-            project={project}
-            ui={ui}
-            onUpdateTargetStoresFilters={(
-              sectionId: string,
-              filters: Record<string, boolean>
-            ) => {
-              window.parent.postMessage(
-                {
-                  type: PREVIEW_UPDATE_TARGET_STORES_FILTERS,
-                  sectionId,
-                  payload: { storeFilters: filters },
-                },
-                window.location.origin
-              );
-            }}
-          />
-          {/* Canvas pages */}
-          {(project.canvasPages ?? []).map((cp: CanvasPageData) => {
-            const previewDevice = (ui?.previewMode === "mobile" ? "sp" : "pc") as "pc" | "sp";
-            const resolveAsset = (assetId: string) => {
-              const assets = project.assets ?? {};
-              return assets[assetId]?.data ?? assetId;
-            };
-            return (
-              <div key={cp.id} style={{ marginTop: 32 }}>
-                <div style={{ fontSize: 11, color: "#94a3b8", padding: "4px 8px", borderBottom: "1px solid #e2e8f0" }}>
-                  Canvas: {cp.name}
-                </div>
-                <CanvasRenderer
-                  document={cp.canvas}
-                  device={previewDevice}
-                  resolveAsset={resolveAsset}
-                  interactive={false}
-                />
-              </div>
-            );
-          })}
+          {activeMode === "canvas" && activeCanvasDocument ? (
+            <CanvasRenderer
+              document={activeCanvasDocument}
+              device={(ui?.previewMode === "mobile" ? "sp" : "pc") as "pc" | "sp"}
+              resolveAsset={(assetId: string) => {
+                const assets = project.assets ?? {};
+                return assets[assetId]?.data ?? assetId;
+              }}
+              interactive={false}
+            />
+          ) : (
+            <PreviewSsr project={project} ui={ui} />
+          )}
         </>
       ) : (
         <div className="min-h-screen bg-white px-6 py-8 text-sm text-slate-500">

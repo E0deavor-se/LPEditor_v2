@@ -1,5 +1,7 @@
 "use client";
 
+import InspectorInput from "@/src/components/inspector/InspectorInput";
+
 type NumberFieldProps = {
   value: number;
   onChange: (value: number) => void;
@@ -19,9 +21,9 @@ export default function NumberField({
 }: NumberFieldProps) {
   const safeValue = Number.isFinite(value) ? value : 0;
   return (
-    <input
+    <InspectorInput
       type="number"
-      className="ui-input h-7 w-full text-[12px]"
+      className="text-[11px]"
       value={safeValue}
       min={min}
       max={max}

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type Ref } from "react";
 import { useEditorStore } from "@/src/store/editorStore";
+import { isTemplateDebugEnabled } from "@/src/lib/debugFlags";
+import { getLayoutSections } from "@/src/lib/editorProject";
 
 const busyReasonLabel = {
   render: "プレビューを描画中",
@@ -17,6 +19,8 @@ const PROJECT_UPDATE = "CLP_PROJECT_UPDATE";
 const SECTION_HOVER = "CLP_SECTION_HOVER";
 const SECTION_SELECT = "CLP_SECTION_SELECT";
 const EDITOR_SELECT_SECTION = "CLP_EDITOR_SELECT_SECTION";
+const PREVIEW_INSERT_SECTION_AFTER = "CLP_PREVIEW_INSERT_SECTION_AFTER";
+const PREVIEW_SECTION_ACTION = "CLP_PREVIEW_SECTION_ACTION";
 const PREVIEW_UPDATE_TARGET_STORES_FILTERS =
   "CLP_PREVIEW_UPDATE_TARGET_STORES_FILTERS";
 
@@ -24,13 +28,40 @@ type PreviewTargetStoresFiltersUpdate = {
   storeFilters?: Record<string, boolean>;
 };
 
+type PreviewInsertSectionAfterPayload = {
+  afterId?: string;
+  type?: string;
+};
+
+type PreviewSectionActionPayload = {
+  sectionId?: string;
+  action?: "duplicate" | "delete";
+};
+
+const assignIframeRef = (
+  targetRef: Ref<HTMLIFrameElement> | undefined,
+  el: HTMLIFrameElement | null
+) => {
+  if (!targetRef) {
+    return;
+  }
+  if (typeof targetRef === "function") {
+    targetRef(el);
+    return;
+  }
+  (targetRef as MutableRefObject<HTMLIFrameElement | null>).current = el;
+};
+
 type PreviewPaneProps = {
   /** 外部からiframeRefを渡すことでスクリーンショット等に利用できる */
-  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
+  iframeRef?: Ref<HTMLIFrameElement>;
 };
 
 export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPaneProps) {
   const previewMode = useEditorStore((state) => state.previewMode);
+  const editorMode = useEditorStore(
+    (state) => state.project.editorDocuments?.mode ?? "layout"
+  );
   const previewAspect = useEditorStore((state) => state.previewAspect);
   const previewDesktopWidth = useEditorStore(
     (state) => state.previewDesktopWidth
@@ -61,9 +92,24 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
   const setSelectedSection = useEditorStore((state) => state.setSelectedSection);
   const setHoveredSection = useEditorStore((state) => state.setHoveredSection);
   const setStickyTopPx = useEditorStore((state) => state.setStickyTopPx);
+  const insertSectionAfter = useEditorStore((state) => state.insertSectionAfter);
+  const duplicateSection = useEditorStore((state) => state.duplicateSection);
+  const deleteSection = useEditorStore((state) => state.deleteSection);
   const updateTargetStoresContent = useEditorStore(
     (state) => state.updateTargetStoresContent
   );
+
+  useEffect(() => {
+    if (isTemplateDebugEnabled()) {
+      const layoutSections = getLayoutSections(project);
+      console.log("[TemplateDebug] 8.stage selector", {
+        editorMode,
+        projectSectionsLength: layoutSections.length,
+        projectSectionTypes: layoutSections.map((section) => section.type),
+        layoutDocSectionsLength: project.editorDocuments?.layoutDocument?.sections?.length,
+      });
+    }
+  }, [editorMode, project]);
 
   const [showBusy, setShowBusy] = useState(false);
   const [isPreviewReady, setIsPreviewReady] = useState(false);
@@ -72,15 +118,17 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const frameContainerRef = useRef<HTMLDivElement | null>(null);
   const previewScrollRef = useRef<HTMLElement | null>(null);
+  const lastPreviewActionRef = useRef<{ key: string; at: number }>({
+    key: "",
+    at: 0,
+  });
   const stickyTopRef = useRef(0);
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
 
   // 外部 iframeRef と内部 iframeRef を同期
   const setIframeRef = (el: HTMLIFrameElement | null) => {
     iframeRef.current = el;
-    if (externalIframeRef) {
-      (externalIframeRef as React.MutableRefObject<HTMLIFrameElement | null>).current = el;
-    }
+    assignIframeRef(externalIframeRef, el);
   };
 
   useEffect(() => {
@@ -113,6 +161,8 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
         id?: string | null;
         sectionId?: string;
         payload?: PreviewTargetStoresFiltersUpdate;
+        insert?: PreviewInsertSectionAfterPayload;
+        actionPayload?: PreviewSectionActionPayload;
       };
       if (data?.type === PREVIEW_READY) {
         setIsPreviewReady(true);
@@ -130,11 +180,57 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
           });
         }
       }
+      if (data?.type === PREVIEW_INSERT_SECTION_AFTER) {
+        const afterId = data.insert?.afterId;
+        const sectionType = data.insert?.type;
+        if (typeof sectionType === "string" && sectionType.length > 0) {
+          const key = `insert:${afterId ?? ""}:${sectionType}`;
+          const now = Date.now();
+          if (
+            lastPreviewActionRef.current.key === key &&
+            now - lastPreviewActionRef.current.at < 250
+          ) {
+            return;
+          }
+          lastPreviewActionRef.current = { key, at: now };
+          insertSectionAfter(afterId, sectionType);
+        }
+      }
+      if (data?.type === PREVIEW_SECTION_ACTION) {
+        const sectionId = data.actionPayload?.sectionId;
+        const action = data.actionPayload?.action;
+        if (!sectionId) {
+          return;
+        }
+        const key = `action:${sectionId}:${action ?? ""}`;
+        const now = Date.now();
+        if (
+          lastPreviewActionRef.current.key === key &&
+          now - lastPreviewActionRef.current.at < 250
+        ) {
+          return;
+        }
+        lastPreviewActionRef.current = { key, at: now };
+        if (action === "duplicate") {
+          duplicateSection(sectionId);
+          return;
+        }
+        if (action === "delete") {
+          deleteSection(sectionId);
+        }
+      }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [setHoveredSection, setSelectedSection, updateTargetStoresContent]);
+  }, [
+    deleteSection,
+    duplicateSection,
+    insertSectionAfter,
+    setHoveredSection,
+    setSelectedSection,
+    updateTargetStoresContent,
+  ]);
 
   useEffect(() => {
     if (!isPreviewReady) {
@@ -154,6 +250,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
           type: PROJECT_UPDATE,
           payload: {
             ui: {
+              editorMode,
               previewMode,
               previewAspect,
               showGuides: previewGuidesEnabled,
@@ -171,6 +268,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
     }, 50);
   }, [
     isPreviewReady,
+    editorMode,
     previewMode,
     previewAspect,
     previewGuidesEnabled,
@@ -441,6 +539,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
                         ref={setIframeRef}
                         onLoad={handleIframeLoad}
                         title="プレビュー"
+                        data-testid="preview-iframe"
                         className={iframeClassName}
                         src="/preview"
                       />
@@ -489,6 +588,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
                       ref={setIframeRef}
                       onLoad={handleIframeLoad}
                       title="プレビュー"
+                      data-testid="preview-iframe"
                       className={iframeClassName}
                       src="/preview"
                     />

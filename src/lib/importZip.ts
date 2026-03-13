@@ -10,6 +10,11 @@ import type {
   StoresTable,
 } from "@/src/types/project";
 import { validateAndNormalizeProject } from "@/src/lib/projectFile";
+import {
+  getCanvasDocument,
+  getLayoutDocument,
+  getLayoutSections,
+} from "@/src/lib/editorProject";
 
 const REQUIRED_SECTION_TYPES = [
   "brandBar",
@@ -180,7 +185,8 @@ const buildDefaultSections = (): SectionBase[] => [
 const ensureRequiredSections = (project: ProjectState): ProjectState => {
   const defaults = buildDefaultSections();
   const byType = new Map<string, SectionBase>();
-  project.sections.forEach((section) => {
+  const sections = getLayoutSections(project);
+  sections.forEach((section) => {
     if (!byType.has(section.type)) {
       byType.set(section.type, section);
     }
@@ -201,13 +207,27 @@ const ensureRequiredSections = (project: ProjectState): ProjectState => {
     };
   });
 
-  const extra = project.sections.filter(
+  const extra = sections.filter(
     (section) => !REQUIRED_SECTION_TYPES.includes(section.type as RequiredSectionType)
   );
 
+  const mergedSections = [...merged, ...extra];
+  const layoutDocument = getLayoutDocument(project);
+  const editorDocuments = project.editorDocuments;
+
   return {
     ...project,
-    sections: [...merged, ...extra],
+    sections: mergedSections,
+    editorDocuments: {
+      mode: editorDocuments?.mode ?? "layout",
+      activeDevice: editorDocuments?.activeDevice,
+      lpDocument: editorDocuments?.lpDocument,
+      canvasDocument: getCanvasDocument(project),
+      layoutDocument: {
+        ...layoutDocument,
+        sections: mergedSections,
+      },
+    },
   };
 };
 

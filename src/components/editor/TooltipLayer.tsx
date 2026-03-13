@@ -45,7 +45,7 @@ const restoreTitle = (el: HTMLElement | null) => {
 };
 
 export default function TooltipLayer() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = typeof document !== "undefined";
   const [tooltip, setTooltip] = useState<TooltipState>({
     text: "",
     visible: false,
@@ -55,10 +55,6 @@ export default function TooltipLayer() {
   });
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const targetRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const hideTooltip = () => {
     restoreTitle(targetRef.current);

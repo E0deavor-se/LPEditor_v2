@@ -137,6 +137,36 @@ const getRenderableLayersForState = (
   return getRenderableLayersForDocument(state.document, device, designWidth);
 };
 
+const sanitizeSelectionForDoc = (
+  doc: CanvasDocument,
+  selection: CanvasSelection
+): CanvasSelection => {
+  const existingIds = new Set(getEditableLayers(doc).map((layer) => layer.id));
+  const ids = selection.ids.filter((id) => existingIds.has(id));
+  const primaryId =
+    selection.primaryId && ids.includes(selection.primaryId)
+      ? selection.primaryId
+      : ids[0];
+  return { ids, primaryId };
+};
+
+const sanitizeSelectedSectionIdForDoc = (
+  doc: CanvasDocument,
+  selectedSectionId?: string
+): string | undefined => {
+  if (getDocumentMode(doc) !== "sections") {
+    return undefined;
+  }
+  const sections = doc.sections?.sections ?? [];
+  if (sections.length === 0) {
+    return undefined;
+  }
+  if (selectedSectionId && sections.some((section) => section.id === selectedSectionId)) {
+    return selectedSectionId;
+  }
+  return sections[0]?.id;
+};
+
 /* -------- Types -------- */
 
 export type CanvasViewMode = "single" | "split";
@@ -214,7 +244,9 @@ export type CanvasEditorActions = {
   /* Layer CRUD */
   addLayer: (layer: CanvasLayer) => void;
   removeLayer: (id: string) => void;
+  removeLayers: (ids: string[]) => void;
   duplicateLayer: (id: string) => void;
+  duplicateLayers: (ids: string[]) => void;
   reorderLayers: (activeId: string, overId: string) => void;
   reorderSectionLayers: (sectionId: string, activeId: string, overId: string) => void;
 
@@ -280,10 +312,13 @@ const commit = (
   nextDoc: CanvasDocument
 ): Partial<CanvasEditorState> => {
   const normalizedDoc = normalizeDocModel(nextDoc);
+  const normalizedSelection = sanitizeSelectionForDoc(normalizedDoc, state.selection);
   const past = [...state.past, cloneDoc(state.document)];
   if (past.length > MAX_HISTORY) past.splice(0, past.length - MAX_HISTORY);
   return {
     document: normalizedDoc,
+    selection: normalizedSelection,
+    selectedSectionId: sanitizeSelectedSectionIdForDoc(normalizedDoc, state.selectedSectionId),
     past,
     future: [],
     canUndo: true,
@@ -352,8 +387,9 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   /* ===== Selection ===== */
   select: (ids, primaryId) =>
     set((state) => {
-      const expanded = new Set<string>(ids);
       const editable = getEditableLayers(state.document);
+      const editableIdSet = new Set(editable.map((layer) => layer.id));
+      const expanded = new Set<string>(ids.filter((id) => editableIdSet.has(id)));
       for (const id of ids) {
         const layer = editable.find((l) => l.id === id);
         if (layer?.content.kind === "group") {
@@ -707,9 +743,15 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const doc = cloneDoc(state.document);
     const editableLayers = getEditableLayers(doc);
     const target = editableLayers.find((l) => l.id === id);
-    const next = target?.content.kind === "group"
-      ? editableLayers.filter((l) => l.id !== id && l.groupId !== id)
-      : editableLayers.filter((l) => l.id !== id);
+    const removable = new Set<string>([id]);
+    if (target?.content.kind === "group") {
+      for (const layer of editableLayers) {
+        if (layer.groupId === id) {
+          removable.add(layer.id);
+        }
+      }
+    }
+    const next = editableLayers.filter((l) => !removable.has(l.id));
     if (getDocumentMode(doc) === "sections") {
       for (const section of doc.sections?.sections ?? []) {
         section.layers = section.layers.filter((l) => next.some((n) => n.id === l.id));
@@ -718,7 +760,45 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       doc.free = { layers: next };
       doc.layers = next;
     }
-    const sel = state.selection.ids.filter((sid) => sid !== id);
+    const sel = state.selection.ids.filter((sid) => !removable.has(sid));
+    set({
+      ...commit(state, doc),
+      selection: { ids: sel, primaryId: sel[0] },
+    });
+  },
+
+  removeLayers: (ids) => {
+    const state = get();
+    const normalizedIds = Array.from(new Set(ids));
+    if (normalizedIds.length === 0) return;
+
+    const doc = cloneDoc(state.document);
+    const editableLayers = getEditableLayers(doc);
+    const removable = new Set<string>(normalizedIds);
+
+    for (const id of normalizedIds) {
+      const layer = editableLayers.find((l) => l.id === id);
+      if (!layer) continue;
+      if (layer.content.kind === "group") {
+        for (const child of editableLayers) {
+          if (child.groupId === id) {
+            removable.add(child.id);
+          }
+        }
+      }
+    }
+
+    const next = editableLayers.filter((l) => !removable.has(l.id));
+    if (getDocumentMode(doc) === "sections") {
+      for (const section of doc.sections?.sections ?? []) {
+        section.layers = section.layers.filter((l) => next.some((n) => n.id === l.id));
+      }
+    } else {
+      doc.free = { layers: next };
+      doc.layers = next;
+    }
+
+    const sel = state.selection.ids.filter((sid) => !removable.has(sid));
     set({
       ...commit(state, doc),
       selection: { ids: sel, primaryId: sel[0] },
@@ -756,6 +836,68 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     set({
       ...commit(state, doc),
       selection: { ids: [dup.id], primaryId: dup.id },
+    });
+  },
+
+  duplicateLayers: (ids) => {
+    const state = get();
+    const sourceIds = Array.from(new Set(ids));
+    if (sourceIds.length === 0) return;
+
+    const doc = cloneDoc(state.document);
+    const editableLayers = getEditableLayers(doc);
+    const sources = sourceIds
+      .map((id) => editableLayers.find((l) => l.id === id))
+      .filter(Boolean) as CanvasLayer[];
+    if (sources.length === 0) return;
+
+    const idMap = new Map<string, string>();
+    for (const src of sources) {
+      idMap.set(src.id, generateLayerId());
+    }
+
+    const maxZ = editableLayers.reduce((m, l) => Math.max(m, l.variants.pc.z, l.variants.sp.z), 0);
+    const newIds: string[] = [];
+    const duplicates = sources.map((src, index) => {
+      const dup: CanvasLayer = {
+        ...JSON.parse(JSON.stringify(src)),
+        id: idMap.get(src.id) ?? generateLayerId(),
+        name: `${src.name} (コピー)`,
+      };
+
+      dup.variants.pc.x += 20;
+      dup.variants.pc.y += 20;
+      dup.variants.sp.x += 20;
+      dup.variants.sp.y += 20;
+      dup.variants.pc.z = maxZ + index + 1;
+      dup.variants.sp.z = maxZ + index + 1;
+
+      if (dup.groupId) {
+        dup.groupId = idMap.get(dup.groupId);
+      }
+
+      newIds.push(dup.id);
+      return dup;
+    });
+
+    if (getDocumentMode(doc) === "sections") {
+      const sections = doc.sections?.sections ?? [];
+      for (let i = 0; i < sources.length; i += 1) {
+        const found = findLayerRef(doc, sources[i].id);
+        if (found?.sectionIndex != null) {
+          sections[found.sectionIndex].layers.push(duplicates[i]);
+        }
+      }
+      doc.sections = { sections: sections.map((s) => normalizeSectionModel(s)) };
+    } else {
+      editableLayers.push(...duplicates);
+      doc.free = { layers: editableLayers };
+      doc.layers = editableLayers;
+    }
+
+    set({
+      ...commit(state, doc),
+      selection: { ids: newIds, primaryId: newIds[0] },
     });
   },
 
@@ -843,7 +985,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       layout.w = Math.max(1, canvasW - marginLeft - marginRight);
     }
 
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   /* ===== Update Style ===== */
@@ -853,7 +1000,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     Object.assign(layer.style, patch);
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   updateLayerConstraints: (id, patch) => {
@@ -878,7 +1030,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       layout.w = Math.max(1, canvasW - marginLeft - marginRight);
     }
 
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   updateImageLayerSettings: (id, patch) => {
@@ -899,7 +1056,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
         ...(patch.focalPoint ?? {}),
       },
     };
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   /* ===== Update Content ===== */
@@ -909,7 +1071,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     Object.assign(layer.content, patch);
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   /* ===== Rename ===== */
@@ -919,7 +1086,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const layer = findLayerRef(doc, id)?.layer;
     if (!layer) return;
     layer.name = name;
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   /* ===== Z-Order ===== */
@@ -1019,10 +1191,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   undo: () => {
     const state = get();
     if (state.past.length === 0) return;
-    const prev = state.past[state.past.length - 1];
+    const prev = normalizeDocModel(state.past[state.past.length - 1]);
     const newPast = state.past.slice(0, -1);
     set({
       document: prev,
+      selection: sanitizeSelectionForDoc(prev, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(prev, state.selectedSectionId),
       past: newPast,
       future: [cloneDoc(state.document), ...state.future].slice(0, MAX_HISTORY),
       canUndo: newPast.length > 0,
@@ -1034,10 +1208,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   redo: () => {
     const state = get();
     if (state.future.length === 0) return;
-    const next = state.future[0];
+    const next = normalizeDocModel(state.future[0]);
     const newFuture = state.future.slice(1);
     set({
       document: next,
+      selection: sanitizeSelectionForDoc(next, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(next, state.selectedSectionId),
       past: [...state.past, cloneDoc(state.document)].slice(-MAX_HISTORY),
       future: newFuture,
       canUndo: true,
@@ -1255,7 +1431,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
         }
       }
 
-      // LP向け中央寄せ補正: ヒーロー画像（最大面積）/見出しテキスト
+      // ページ向け中央寄せ補正: ヒーロー画像（最大面積）/見出しテキスト
       const isHeroImage =
         layer.content.kind === "image" &&
         largestImage?.id === layer.id &&
@@ -1314,7 +1490,12 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
         layout.y += dy;
       }
     }
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 
   /* ===== Align / Distribute ===== */
@@ -1387,6 +1568,11 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
     const doc = cloneDoc(state.document);
     const guide = (doc.guides ?? []).find((g) => g.id === id);
     if (guide) guide.position = position;
-    set({ document: doc, dirty: true });
+    set({
+      document: doc,
+      selection: sanitizeSelectionForDoc(doc, state.selection),
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(doc, state.selectedSectionId),
+      dirty: true,
+    });
   },
 }));

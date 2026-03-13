@@ -2,6 +2,11 @@ import JSZip from "jszip";
 import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
 import { resolveBackgroundPreset } from "@/src/lib/backgroundPresets";
 import { FOOTER_DEFAULT_ASSET_PATHS } from "@/src/lib/footerTemplate";
+import { getSectionFrameData } from "@/src/lib/sections/sectionFrame";
+import { normalizeLayoutExportProject } from "@/src/lib/export/normalizeLayoutExportProject";
+import { getLayoutSections } from "@/src/lib/editorProject";
+import { renderLayoutSection } from "@/src/lib/renderers/layout/renderLayoutSection";
+import { renderUnhandledLayoutSectionFallback } from "@/src/lib/renderers/layout/renderUnhandledLayoutSectionFallback";
 import type {
   AssetMeta,
   AssetRecord,
@@ -16,6 +21,8 @@ type ExportUiState = {
   previewMode?: "desktop" | "mobile";
   previewAspect?: "free" | "16:9" | "4:3" | "1:1";
 };
+
+type ExportPreviewMode = "desktop" | "mobile";
 
 type ExportWarning = {
   type: "asset" | "dist" | "other";
@@ -46,12 +53,21 @@ export type ExportResult = {
 
 /**
  * 書き出し範囲:
- * - project: プロジェクト全体 (LP + Canvas pages) ← 従来動作
- * - canvas:  指定 Canvas ページのみ独立 LP として書き出し
+ * - project: プロジェクト全体
+ * - canvas:  Canvas モードの単一ドキュメントを独立 LP として書き出し
  */
 export type ExportScope =
   | { kind: "project" }
   | { kind: "canvas"; pageId: string };
+
+const resolveCanvasDocumentFromProject = (project: ProjectState) =>
+  project.editorDocuments?.canvasDocument ?? project.canvasPages?.[0]?.canvas;
+
+const resolveCanvasNameFromProject = (project: ProjectState) =>
+  project.canvasPages?.[0]?.name || project.meta.projectName || "Canvas LP";
+
+const resolveLayoutSectionsFromProject = (project: ProjectState) =>
+  getLayoutSections(project);
 
 const str = (value: unknown) =>
   typeof value === "string" ? value : value == null ? "" : String(value);
@@ -79,7 +95,7 @@ const ensureTitleSuffix = (value: string, enabled: boolean) => {
 };
 
 const resolveCampaignPeriod = (project: ProjectState) => {
-  const section = project.sections.find(
+  const section = resolveLayoutSectionsFromProject(project).find(
     (entry) => entry.type === "campaignPeriodBar"
   );
   const start = formatDate(str(section?.data?.startDate));
@@ -90,8 +106,13 @@ const resolveCampaignPeriod = (project: ProjectState) => {
   return start || end || "";
 };
 
-const resolveHeroImageUrl = (project: ProjectState) => {
-  const hero = project.sections.find((entry) => entry.type === "heroImage");
+const resolveHeroImageUrl = (
+  project: ProjectState,
+  previewMode: ExportPreviewMode = "desktop"
+) => {
+  const hero = resolveLayoutSectionsFromProject(project).find(
+    (entry) => entry.type === "heroImage"
+  );
   if (!hero) {
     return "";
   }
@@ -103,7 +124,10 @@ const resolveHeroImageUrl = (project: ProjectState) => {
   const slidesSp = Array.isArray(data.heroSlidesSp)
     ? data.heroSlidesSp
     : [];
-  const slide = slidesPc[0] ?? slidesSp[0];
+  const isMobile = previewMode === "mobile";
+  const primarySlides = isMobile ? slidesSp : slidesPc;
+  const fallbackSlides = isMobile ? slidesPc : slidesSp;
+  const slide = primarySlides[0] ?? fallbackSlides[0];
   if (slide && typeof slide === "object") {
     const slideEntry = slide as { assetId?: string; src?: string };
     const slideAsset = slideEntry.assetId
@@ -111,18 +135,33 @@ const resolveHeroImageUrl = (project: ProjectState) => {
       : "";
     return slideAsset || str(slideEntry.src || "");
   }
-  const assetId =
-    typeof data.imageAssetIdPc === "string"
-      ? data.imageAssetIdPc
-      : typeof data.imageAssetId === "string"
-      ? data.imageAssetId
-      : typeof data.imageAssetIdSp === "string"
+  const primaryAssetId = isMobile
+    ? typeof data.imageAssetIdSp === "string"
       ? data.imageAssetIdSp
-      : "";
+      : ""
+    : typeof data.imageAssetIdPc === "string"
+    ? data.imageAssetIdPc
+    : "";
+  const fallbackAssetId = isMobile
+    ? typeof data.imageAssetIdPc === "string"
+      ? data.imageAssetIdPc
+      : ""
+    : typeof data.imageAssetIdSp === "string"
+    ? data.imageAssetIdSp
+    : "";
+  const commonAssetId = typeof data.imageAssetId === "string" ? data.imageAssetId : "";
+  const assetId = primaryAssetId || commonAssetId || fallbackAssetId;
+
+  const primaryUrl = isMobile
+    ? str(data.imageUrlSp || "")
+    : str(data.imageUrl || "");
+  const fallbackUrl = isMobile
+    ? str(data.imageUrl || "")
+    : str(data.imageUrlSp || "");
   return (
     (assetId ? assets[assetId]?.data : "") ||
-    str(data.imageUrl || "") ||
-    str(data.imageUrlSp || "")
+    primaryUrl ||
+    fallbackUrl
   );
 };
 
@@ -136,7 +175,10 @@ const resolveMvBackgroundImageUrl = (project: ProjectState) => {
   return (assetId ? assets[assetId]?.data : "") || "";
 };
 
-const resolvePageMeta = (project: ProjectState) => {
+const resolvePageMeta = (
+  project: ProjectState,
+  previewMode: ExportPreviewMode = "desktop"
+) => {
   const pageMeta = (project.settings?.pageMeta ?? {}) as {
     title?: string;
     description?: string;
@@ -188,7 +230,9 @@ const resolvePageMeta = (project: ProjectState) => {
     (pageMeta.ogpImageAssetId
       ? assets[pageMeta.ogpImageAssetId]?.data
       : "");
-  const mvImage = resolveHeroImageUrl(project) || resolveMvBackgroundImageUrl(project);
+  const mvImage =
+    resolveHeroImageUrl(project, previewMode) ||
+    resolveMvBackgroundImageUrl(project);
   const ogpImageUrl = presets.ogpFromMv && mvImage ? mvImage : manualOgp;
   return {
     title,
@@ -200,8 +244,11 @@ const resolvePageMeta = (project: ProjectState) => {
   };
 };
 
-const buildMetaHeadTags = (project: ProjectState) => {
-  const meta = resolvePageMeta(project);
+const buildMetaHeadTags = (
+  project: ProjectState,
+  previewMode: ExportPreviewMode = "desktop"
+) => {
+  const meta = resolvePageMeta(project, previewMode);
   const tags = [
     meta.description
       ? `<meta name="description" content="${escapeHtml(meta.description)}" />`
@@ -612,7 +659,7 @@ const escapeCsvCell = (value: string) => {
 };
 
 const buildStoresCsv = (project: ProjectState) => {
-  const storesSection = project.sections.find(
+  const storesSection = resolveLayoutSectionsFromProject(project).find(
     (section) => section.type === "targetStores"
   );
   const storeCsv = storesSection?.content?.storeCsv;
@@ -635,7 +682,7 @@ const buildStoresNormalizedJson = (project: ProjectState) => {
   if (project.stores) {
     return JSON.stringify(project.stores, null, 2);
   }
-  const storesSection = project.sections.find(
+  const storesSection = resolveLayoutSectionsFromProject(project).find(
     (section) => section.type === "targetStores"
   );
   const storeCsv = storesSection?.content?.storeCsv;
@@ -927,7 +974,7 @@ const applyBackgroundLayerToElement = (
   if (!spec) {
     return;
   }
-  const background = buildBackgroundStyle(spec as any, {
+  const background = buildBackgroundStyle(spec, {
     resolveAssetUrl: (assetId) => resolveBackgroundAssetUrl(assetMetaById, assetId),
     resolvePreset: resolveBackgroundPreset,
     fallbackColor: "transparent",
@@ -1137,16 +1184,17 @@ const injectInlineCss = (html: string, cssText: string) => {
 const buildExportHtmlDocument = (
   project: ProjectState,
   bodyHtml: string,
-  cssText: string
+  cssText: string,
+  previewMode: ExportPreviewMode = "desktop"
 ) => {
-  const title = escapeHtml(resolvePageMeta(project).title);
+  const title = escapeHtml(resolvePageMeta(project, previewMode).title);
   return `<!doctype html>
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
-    ${buildMetaHeadTags(project)}
+    ${buildMetaHeadTags(project, previewMode)}
     <style id="__export_css__">${cssText}</style>
   </head>
   <body>
@@ -1170,17 +1218,18 @@ const getPreviewFrameDocument = (): Document | null => {
 const buildExportHtmlFromPreviewDom = (
   project: ProjectState,
   cssText: string,
-  previewDoc: Document | null
+  previewDoc: Document | null,
+  previewMode: ExportPreviewMode = "desktop"
 ): string | null => {
   const root = previewDoc?.querySelector("#__lp_root__");
   if (!root) {
     return null;
   }
-  return buildExportHtmlDocument(project, root.outerHTML, cssText);
+  return buildExportHtmlDocument(project, root.outerHTML, cssText, previewMode);
 };
 
 const buildStoresEmbed = (project: ProjectState) => {
-  const storesSection = project.sections.find(
+  const storesSection = resolveLayoutSectionsFromProject(project).find(
     (section) => section.type === "targetStores"
   );
   const storeCsv = storesSection?.content?.storeCsv;
@@ -1192,7 +1241,7 @@ const buildStoresEmbed = (project: ProjectState) => {
   if (!stores) {
     return null;
   }
-  const sections = project.sections
+  const sections = resolveLayoutSectionsFromProject(project)
     .filter((section) => section.type === "targetStores")
     .map((section) => ({
       id: section.id,
@@ -1756,759 +1805,52 @@ const renderExcludedBrandsList = (
   return `<div class="tenpo-container">${blocks}</div>`;
 };
 
+const applySectionFrameAttrs = (
+  markup: string,
+  section: ProjectState["sections"][number],
+  index: number
+) => {
+  const frameData = getSectionFrameData(section, index);
+  const attrs =
+    ` data-section-id="${escapeHtml(frameData.sectionId)}"` +
+    ` data-section-type="${escapeHtml(frameData.sectionType)}"` +
+    ` data-section-frame="${escapeHtml(frameData.sectionFrame)}"` +
+    ` data-full-width-background="${escapeHtml(frameData.fullWidthBackground)}"` +
+    ` data-lp-metrics="${escapeHtml(frameData.lpMetrics)}"`;
+  if (markup.includes("<section ")) {
+    return markup.replace("<section ", `<section${attrs} `);
+  }
+  if (markup.includes("<footer ")) {
+    return markup.replace("<footer ", `<footer${attrs} `);
+  }
+  return markup;
+};
+
 export const renderProjectToHtml = (
   project: ProjectState,
-  cssHref = "styles.css"
+  cssHref = "styles.css",
+  previewMode: ExportPreviewMode = "desktop"
 ): string => {
   const stores = resolveStores(project);
-  const sections = project.sections.filter((section) => section.visible);
+  const sections = resolveLayoutSectionsFromProject(project).filter(
+    (section) => section.visible
+  );
 
   const sectionHtml = sections
-    .map((section) => {
-      switch (section.type) {
-        case "brandBar":
-          return `
-            <section class="brand">
-              <div class="container">${escapeHtml(
-                str(section.data.logoText)
-              )}</div>
-            </section>
-          `;
-        case "heroImage":
-          return `
-            <section class="hero container">
-              ${
-                section.data.imageUrl
-                  ? `<img src="${escapeHtml(
-                      str(section.data.imageUrl)
-                    )}" alt="${escapeHtml(str(section.data.alt))}" />`
-                  : `<div class="hero-placeholder">ヒーロー画像</div>`
-              }
-            </section>
-          `;
-        case "campaignPeriodBar": {
-          const startDate =
-            typeof section.data.startDate === "string"
-              ? section.data.startDate
-              : undefined;
-          const endDate =
-            typeof section.data.endDate === "string" ? section.data.endDate : undefined;
-          return `
-            <section class="period">
-              <div class="container">${escapeHtml(
-                `${formatDate(startDate)} - ${formatDate(endDate)}`
-              )}</div>
-            </section>
-          `;
+    .map((section, index) => {
+      const markup = (() => {
+        const sharedRendered = renderLayoutSection(
+          section,
+          project.assets ?? {},
+          previewMode,
+          { allSections: sections, stores }
+        );
+        if (sharedRendered) {
+          return sharedRendered;
         }
-        case "campaignOverview":
-          return `
-            <section class="container">
-              <h2>${escapeHtml(str(section.data.title || "キャンペーン概要"))}</h2>
-              <p>${escapeHtml(str(section.data.body))}</p>
-            </section>
-          `;
-        case "paymentHistoryGuide": {
-          const data = section.data ?? {};
-          const title = escapeHtml(str(data.title || "決済履歴の確認方法"));
-          const body = escapeHtml(str(data.body || ""));
-          const linkText = escapeHtml(str(data.linkText || ""));
-          const linkUrl = escapeHtml(str(data.linkUrl || ""));
-          const linkTargetKind =
-            data.linkTargetKind === "section" ? "section" : "url";
-          const linkSectionId = str(data.linkSectionId || "");
-          const resolvedLinkUrl =
-            linkTargetKind === "section" && linkSectionId
-              ? `#sec-${linkSectionId}`
-              : linkUrl;
-          const linkSuffix = escapeHtml(str(data.linkSuffix || ""));
-          const alert = escapeHtml(str(data.alert || ""));
-          const imageUrl = str(data.imageUrl || "");
-          const imageAlt = escapeHtml(str(data.imageAlt || ""));
-          const imageAssetId = str(data.imageAssetId || "");
-          const resolvedImage =
-            imageAssetId && project.assets?.[imageAssetId]?.data
-              ? project.assets[imageAssetId].data
-              : imageUrl;
-          const bodyHtml = body.replace(/\n/g, "<br />");
-          const alertHtml = alert.replace(/\n/g, "<br />");
-          const linkHtml = linkText && resolvedLinkUrl
-            ? ` <a class="payment-guide__link" href="${resolvedLinkUrl}">${linkText}</a>${linkSuffix}`
-            : "";
-          return `
-            <section class="container payment-guide">
-              <h2>${title}</h2>
-              ${bodyHtml ? `<p class="payment-guide__body">${bodyHtml}${linkHtml}</p>` : ""}
-              ${alertHtml ? `<p class="payment-guide__alert">${alertHtml}</p>` : ""}
-              ${
-                resolvedImage
-                  ? `<div class="payment-guide__image"><img src="${escapeHtml(
-                      str(resolvedImage)
-                    )}" alt="${imageAlt}" /></div>`
-                  : `<div class="payment-guide__image payment-guide__image--placeholder">画像を追加してください</div>`
-              }
-            </section>
-          `;
-        }
-        case "tabbedNotes": {
-          const data = section.data ?? {};
-          const rawTabs = Array.isArray(data.tabs) ? data.tabs : [];
-          const tabs = rawTabs.map((tab, index) => {
-            const entry = tab && typeof tab === "object"
-              ? (tab as Record<string, unknown>)
-              : {};
-            const rawItems = Array.isArray(entry.items) ? entry.items : [];
-            const items = rawItems.map((item, itemIndex) => {
-              const itemEntry = item && typeof item === "object"
-                ? (item as Record<string, unknown>)
-                : {};
-              const subItems = Array.isArray(itemEntry.subItems)
-                ? itemEntry.subItems.map((value) => str(value))
-                : [];
-              return {
-                id:
-                  typeof itemEntry.id === "string" && itemEntry.id.trim()
-                    ? itemEntry.id
-                    : `tab_item_${index + 1}_${itemIndex + 1}`,
-                text: str(itemEntry.text ?? ""),
-                bullet: itemEntry.bullet === "none" ? "none" : "disc",
-                tone: itemEntry.tone === "accent" ? "accent" : "normal",
-                bold: Boolean(itemEntry.bold),
-                subItems,
-              };
-            });
-            const ctaTargetKind =
-              entry.ctaTargetKind === "section" ? "section" : "url";
-            const ctaSectionId = str(entry.ctaSectionId ?? "");
-            const ctaLinkUrl = str(entry.ctaLinkUrl ?? "");
-            const resolvedCtaUrl =
-              ctaTargetKind === "section" && ctaSectionId
-                ? `#sec-${ctaSectionId}`
-                : ctaLinkUrl;
-            const ctaImageUrl = str(entry.ctaImageUrl ?? "");
-            const ctaImageAlt = escapeHtml(str(entry.ctaImageAlt ?? ""));
-            const ctaImageAssetId = str(entry.ctaImageAssetId ?? "");
-            const resolvedCtaImage =
-              ctaImageAssetId && project.assets?.[ctaImageAssetId]?.data
-                ? project.assets[ctaImageAssetId].data
-                : ctaImageUrl;
-            const buttonTargetKind =
-              entry.buttonTargetKind === "section" ? "section" : "url";
-            const buttonSectionId = str(entry.buttonSectionId ?? "");
-            const buttonUrl = str(entry.buttonUrl ?? "");
-            const resolvedButtonUrl =
-              buttonTargetKind === "section" && buttonSectionId
-                ? `#sec-${buttonSectionId}`
-                : buttonUrl;
-            return {
-              id:
-                typeof entry.id === "string" && entry.id.trim()
-                  ? entry.id
-                  : `tab_${index + 1}`,
-              labelTop: escapeHtml(str(entry.labelTop ?? "")),
-              labelBottom: escapeHtml(str(entry.labelBottom ?? "注意事項")),
-              intro: escapeHtml(str(entry.intro ?? "")),
-              items,
-              footnote: escapeHtml(str(entry.footnote ?? "")),
-              ctaText: escapeHtml(str(entry.ctaText ?? "")),
-              ctaLinkText: escapeHtml(str(entry.ctaLinkText ?? "")),
-              resolvedCtaUrl,
-              resolvedCtaImage,
-              ctaImageAlt,
-              buttonText: escapeHtml(str(entry.buttonText ?? "")),
-              resolvedButtonUrl,
-            };
-          });
-          const rawStyle = data.tabStyle && typeof data.tabStyle === "object"
-            ? (data.tabStyle as Record<string, unknown>)
-            : {};
-          const rawVariant = typeof rawStyle.variant === "string"
-            ? rawStyle.variant
-            : "simple";
-          const variant =
-            rawVariant === "sticky" ||
-            rawVariant === "underline" ||
-            rawVariant === "popout"
-              ? rawVariant
-              : "simple";
-          const tabStyle = {
-            variant,
-            inactiveBg: typeof rawStyle.inactiveBg === "string" ? rawStyle.inactiveBg : "#DDDDDD",
-            inactiveText:
-              typeof rawStyle.inactiveText === "string" ? rawStyle.inactiveText : "#000000",
-            activeBg: typeof rawStyle.activeBg === "string" ? rawStyle.activeBg : "#000000",
-            activeText:
-              typeof rawStyle.activeText === "string" ? rawStyle.activeText : "#FFFFFF",
-            border: typeof rawStyle.border === "string" ? rawStyle.border : "#000000",
-            contentBg:
-              typeof rawStyle.contentBg === "string" ? rawStyle.contentBg : "#FFFFFF",
-            contentBorder:
-              typeof rawStyle.contentBorder === "string"
-                ? rawStyle.contentBorder
-                : "#000000",
-            accent: typeof rawStyle.accent === "string" ? rawStyle.accent : "#EB5505",
-          };
-          const styleVars = [
-            `--tab-inactive-bg:${escapeHtml(str(tabStyle.inactiveBg))}`,
-            `--tab-inactive-text:${escapeHtml(str(tabStyle.inactiveText))}`,
-            `--tab-active-bg:${escapeHtml(str(tabStyle.activeBg))}`,
-            `--tab-active-text:${escapeHtml(str(tabStyle.activeText))}`,
-            `--tab-border:${escapeHtml(str(tabStyle.border))}`,
-            `--tab-content-bg:${escapeHtml(str(tabStyle.contentBg))}`,
-            `--tab-content-border:${escapeHtml(str(tabStyle.contentBorder))}`,
-            `--tab-accent:${escapeHtml(str(tabStyle.accent))}`,
-          ].join(";");
-          const tabName = `tab-${section.id}`;
-          const tabHtml = tabs
-            .map((tab, index) => {
-              const tabId = `${tabName}-${index + 1}`;
-              const itemsHtml = tab.items
-                .map((item) => {
-                  const itemClass = [
-                    "tabbed-notes__item",
-                    item.bullet === "disc" ? "is-disc" : "",
-                    item.tone === "accent" ? "is-accent" : "",
-                    item.bold ? "is-bold" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
-                  const subList = item.subItems.length > 0
-                    ? `<ul class=\"tabbed-notes__sublist\">${item.subItems
-                        .map((sub) => `<li>${escapeHtml(sub)}</li>`)
-                        .join("")}</ul>`
-                    : "";
-                  return `<li class=\"${itemClass}\">${escapeHtml(item.text)}${subList}</li>`;
-                })
-                .join("");
-              const ctaHtml =
-                tab.ctaText || tab.ctaLinkText || tab.resolvedCtaImage
-                  ? `
-                    <div class=\"tabbed-notes__cta\">
-                      ${tab.ctaText ? `<p class=\"tabbed-notes__cta-text\">${tab.ctaText}</p>` : ""}
-                      ${tab.ctaLinkText && tab.resolvedCtaUrl ? `<a class=\"tabbed-notes__cta-link\" href=\"${tab.resolvedCtaUrl}\">${tab.ctaLinkText}</a>` : ""}
-                      ${tab.resolvedCtaImage ? `<a class=\"tabbed-notes__cta-image\" href=\"${tab.resolvedCtaUrl || "#"}\"><img src=\"${escapeHtml(str(tab.resolvedCtaImage))}\" alt=\"${tab.ctaImageAlt}\" /></a>` : ""}
-                    </div>
-                  `
-                  : "";
-              const buttonHtml =
-                tab.buttonText && tab.resolvedButtonUrl
-                  ? `
-                    <div class=\"tabbed-notes__button\">
-                      <a class=\"tabbed-notes__button-link\" href=\"${tab.resolvedButtonUrl}\">${tab.buttonText}</a>
-                    </div>
-                  `
-                  : "";
-              return `
-                <input id=\"${tabId}\" type=\"radio\" name=\"${tabName}\" class=\"tabbed-notes__switch\" ${
-                  index === 0 ? "checked=\\\"checked\\\"" : ""
-                }>
-                <label class=\"tabbed-notes__label\" for=\"${tabId}\">
-                  ${tab.labelTop ? `<span class=\"tabbed-notes__label-top\">${tab.labelTop}</span>` : ""}
-                  <span class=\"tabbed-notes__label-bottom\">${tab.labelBottom}</span>
-                </label>
-                <div class=\"tabbed-notes__content\">
-                  <div class=\"tabbed-notes__panel\">
-                    ${tab.intro ? `<p class=\"tabbed-notes__intro\">${tab.intro}</p>` : ""}
-                    <ul class=\"tabbed-notes__list\">${itemsHtml}</ul>
-                    ${tab.footnote ? `<p class=\"tabbed-notes__footnote\">${tab.footnote}</p>` : ""}
-                    ${ctaHtml}
-                    ${buttonHtml}
-                  </div>
-                </div>
-              `;
-            })
-            .join("");
-          return `
-            <section class=\"container tabbed-notes\" style=\"${styleVars}\">
-              <div class=\"tabbed-notes__wrap\">
-                ${tabHtml}
-              </div>
-            </section>
-          `;
-        }
-        case "couponFlow": {
-          const items = Array.isArray(section.content?.items)
-            ? section.content?.items
-            : [];
-          const imageItem = items.find(
-            (item) => item.type === "image"
-          ) as ImageContentItem | undefined;
-          const slides = imageItem?.images ?? [];
-          const current = slides[0];
-          const resolvedSrc = current?.assetId
-            ? project.assets?.[current.assetId]?.data || current.src
-            : current?.src;
-          const title = escapeHtml(str(section.data.title || "クーポン利用の流れ"));
-          const lead = escapeHtml(str(section.data.lead || ""));
-          const note = escapeHtml(str(section.data.note || ""));
-          const buttonLabel = escapeHtml(str(section.data.buttonLabel || ""));
-          const buttonUrl = escapeHtml(str(section.data.buttonUrl || "#"));
-          return `
-            <section class="coupon-flow">
-              <div class="coupon-flow__titlebar">${title}</div>
-              <div class="coupon-flow__body">
-                ${lead ? `<p class="coupon-flow__lead">${lead}</p>` : ""}
-                <div class="coupon-flow__frame">
-                  ${
-                    resolvedSrc
-                      ? `<img src="${escapeHtml(str(resolvedSrc))}" alt="${escapeHtml(str(current?.alt ?? ""))}" />`
-                      : `<div class="coupon-flow__placeholder">画像を追加してください</div>`
-                  }
-                </div>
-                ${note ? `<p class="coupon-flow__note">${note}</p>` : ""}
-                ${
-                  buttonLabel
-                    ? `<a class="coupon-flow__cta" href="${buttonUrl}">${buttonLabel}</a>`
-                    : ""
-                }
-              </div>
-            </section>
-          `;
-        }
-        case "targetStores":
-          return `
-            <section class="container">
-              <h2>${escapeHtml(str(section.data.title || "対象店舗"))}</h2>
-              <p>${escapeHtml(str(section.data.note || ""))}</p>
-              ${renderStoreCards(stores)}
-            </section>
-          `;
-        case "excludedStoresList": {
-          const rawTitleTemplate = str(section.data.title || "対象外店舗一覧");
-          const rawHighlight = str(section.data.highlightLabel || "対象外");
-          const highlight = escapeHtml(rawHighlight);
-          const returnUrl = escapeHtml(str(section.data.returnUrl || "#"));
-          const returnLabel = escapeHtml(
-            str(section.data.returnLabel || "キャンペーンページに戻る")
-          );
-          const footerCopy = escapeHtml(
-            str(
-              section.data.footerCopy ||
-                "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED."
-            )
-          );
-          const footerLinksRaw = Array.isArray(section.data.footerLinks)
-            ? section.data.footerLinks
-            : [];
-          const footerLinks = footerLinksRaw
-            .map((entry) => {
-              if (!entry || typeof entry !== "object") {
-                return null;
-              }
-              const label =
-                "label" in entry && typeof entry.label === "string"
-                  ? entry.label
-                  : "";
-              const url =
-                "url" in entry && typeof entry.url === "string" ? entry.url : "";
-              if (!label || !url) {
-                return null;
-              }
-              return { label, url };
-            })
-            .filter((entry): entry is { label: string; url: string } => entry != null);
-          const resolvedFooterLinks = footerLinks.length
-            ? footerLinks
-            : [
-                { label: "サイトポリシー", url: "#" },
-                { label: "会社概要", url: "#" },
-                { label: "動作環境", url: "#" },
-                { label: "Cookie情報の利用", url: "#" },
-                { label: "広告配信などについて", url: "#" },
-              ];
-          const hasHighlightPlaceholder =
-            highlight && rawTitleTemplate.includes("{highlight}");
-          const titleParts = rawTitleTemplate.split("{highlight}");
-          const titleHtml = hasHighlightPlaceholder
-            ? `
-              <span class="excluded-title__text">${escapeHtml(
-                titleParts[0]
-              )}</span>
-              <span class="excluded-title__badge">${highlight}</span>
-              <span class="excluded-title__text">${escapeHtml(
-                titleParts.slice(1).join("{highlight}")
-              )}</span>
-            `
-            : `
-              <span class="excluded-title__text">${escapeHtml(
-                rawTitleTemplate
-              )}</span>
-              ${highlight ? `<span class="excluded-title__badge">${highlight}</span>` : ""}
-            `;
-          return `
-            <section class="excluded-stores">
-              <div class="excluded-wrap">
-                <h1 class="excluded-title">${titleHtml}</h1>
-                ${renderExcludedStoresNav()}
-                ${renderExcludedStoresList(stores)}
-                <div class="excluded-footer">
-                  <a class="excluded-return" href="${returnUrl}">
-                    <span class="excluded-return__label">${returnLabel}</span>
-                    <span class="excluded-return__arrow" aria-hidden="true"></span>
-                  </a>
-                  <div class="excluded-footer__links">
-                    ${resolvedFooterLinks
-                      .map(
-                        (link) =>
-                          `<a href="${escapeHtml(link.url)}">${escapeHtml(
-                            link.label
-                          )}</a>`
-                      )
-                      .join("")}
-                  </div>
-                  <div class="excluded-footer__copy">${footerCopy}</div>
-                </div>
-              </div>
-            </section>
-          `;
-        }
-        case "excludedBrandsList": {
-          const brandGroups = buildExcludedBrandGroupsFromStores(stores);
-          const rawTitleTemplate = str(section.data.title || "対象外ブランド一覧");
-          const rawHighlight = str(section.data.highlightLabel || "対象外");
-          const highlight = escapeHtml(rawHighlight);
-          const returnUrl = escapeHtml(str(section.data.returnUrl || "#"));
-          const returnLabel = escapeHtml(
-            str(section.data.returnLabel || "キャンペーンページに戻る")
-          );
-          const footerCopy = escapeHtml(
-            str(
-              section.data.footerCopy ||
-                "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED."
-            )
-          );
-          const footerLinksRaw = Array.isArray(section.data.footerLinks)
-            ? section.data.footerLinks
-            : [];
-          const footerLinks = footerLinksRaw
-            .map((entry) => {
-              if (!entry || typeof entry !== "object") {
-                return null;
-              }
-              const label =
-                "label" in entry && typeof entry.label === "string"
-                  ? entry.label
-                  : "";
-              const url =
-                "url" in entry && typeof entry.url === "string" ? entry.url : "";
-              if (!label || !url) {
-                return null;
-              }
-              return { label, url };
-            })
-            .filter((entry): entry is { label: string; url: string } => entry != null);
-          const resolvedFooterLinks = footerLinks.length
-            ? footerLinks
-            : [
-                { label: "サイトポリシー", url: "#" },
-                { label: "会社概要", url: "#" },
-                { label: "動作環境", url: "#" },
-                { label: "Cookie情報の利用", url: "#" },
-                { label: "広告配信などについて", url: "#" },
-              ];
-          const hasHighlightPlaceholder =
-            highlight && rawTitleTemplate.includes("{highlight}");
-          const titleParts = rawTitleTemplate.split("{highlight}");
-          const titleHtml = hasHighlightPlaceholder
-            ? `
-              <span class="excluded-title__text">${escapeHtml(
-                titleParts[0]
-              )}</span>
-              <span class="excluded-title__badge">${highlight}</span>
-              <span class="excluded-title__text">${escapeHtml(
-                titleParts.slice(1).join("{highlight}")
-              )}</span>
-            `
-            : `
-              <span class="excluded-title__text">${escapeHtml(
-                rawTitleTemplate
-              )}</span>
-              ${highlight ? `<span class="excluded-title__badge">${highlight}</span>` : ""}
-            `;
-          return `
-            <section class="excluded-stores">
-              <div class="excluded-wrap">
-                <h1 class="excluded-title">${titleHtml}</h1>
-                ${renderExcludedBrandsNav(brandGroups)}
-                ${renderExcludedBrandsList(brandGroups)}
-                <div class="excluded-footer">
-                  <a class="excluded-return" href="${returnUrl}">
-                    <span class="excluded-return__label">${returnLabel}</span>
-                    <span class="excluded-return__arrow" aria-hidden="true"></span>
-                  </a>
-                  <div class="excluded-footer__links">
-                    ${resolvedFooterLinks
-                      .map(
-                        (link) =>
-                          `<a href="${escapeHtml(link.url)}">${escapeHtml(
-                            link.label
-                          )}</a>`
-                      )
-                      .join("")}
-                  </div>
-                  <div class="excluded-footer__copy">${footerCopy}</div>
-                </div>
-              </div>
-            </section>
-          `;
-        }
-        case "legalNotes": {
-          const defaultBullet = section.data?.bullet === "none" ? "none" : "disc";
-          const rawItems = Array.isArray(section.data.items) ? section.data.items : [];
-          const legalTextItem = Array.isArray(section.content?.items)
-            ? section.content!.items.find((item) => item.type === "text")
-            : undefined;
-          const items = legalTextItem?.lines?.length
-            ? legalTextItem.lines.map((line) => ({
-                text: str(line.text ?? ""),
-                bullet: line.marks?.bullet ?? defaultBullet,
-              }))
-            : rawItems
-                .map((item: unknown) => {
-                  if (typeof item === "string") {
-                    return { text: str(item), bullet: defaultBullet };
-                  }
-                  if (!item || typeof item !== "object") {
-                    return null;
-                  }
-                  const entry = item as Record<string, unknown>;
-                  const text = str(entry.text ?? "");
-                  const bullet =
-                    entry.bullet === "none" || entry.bullet === "disc"
-                      ? entry.bullet
-                      : defaultBullet;
-                  return { text, bullet };
-                })
-                .filter(Boolean);
-          return `
-            <section class="container">
-              <h2>${escapeHtml(str(section.data.title || "注意事項"))}</h2>
-              <ul style="list-style:none;padding-left:0">
-                ${items
-                  .map((item) => {
-                    const entry = item as { text: string; bullet: "none" | "disc" };
-                    return entry.bullet === "disc"
-                      ? `<li style=\"display:flex;align-items:flex-start;gap:0.4em\"><span style=\"flex-shrink:0;margin-top:0.3em;width:0.4em;height:0.4em;border-radius:50%;background:currentColor;display:inline-block\"></span><span>${escapeHtml(
-                          str(entry.text)
-                        )}</span></li>`
-                      : `<li>${escapeHtml(str(entry.text))}</li>`;
-                  })
-                  .join("")}
-              </ul>
-            </section>
-          `;
-        }
-        case "rankingTable": {
-          const data = section.data ?? {};
-          const headers =
-            data && typeof data.headers === "object"
-              ? (data.headers as Record<string, unknown>)
-              : {};
-          const rankLabel = escapeHtml(
-            str(data.rankLabel || headers.rank || "順位")
-          );
-          const rawColumns = data.columns;
-          const columns = Array.isArray(rawColumns) && rawColumns.length > 0
-            ? rawColumns.map((col, index) => {
-                if (typeof col === "string") {
-                  return { key: `col_${index + 1}`, label: col };
-                }
-                const entry = col && typeof col === "object"
-                  ? (col as Record<string, unknown>)
-                  : {};
-                return {
-                  key: typeof entry.key === "string" ? entry.key : `col_${index + 1}`,
-                  label:
-                    typeof entry.label === "string"
-                      ? entry.label
-                      : `列${index + 1}`,
-                };
-              })
-            : [
-                {
-                  key: "label",
-                  label: typeof headers.label === "string" ? headers.label : "項目",
-                },
-                {
-                  key: "value",
-                  label: typeof headers.value === "string" ? headers.value : "決済金額",
-                },
-              ];
-          const columnCount = columns.length;
-          const rows = Array.isArray(data?.rows)
-            ? (data.rows as Array<Record<string, unknown>>)
-            : [];
-          const normalizedRows = rows.map((row, index) => {
-            if (Array.isArray(row)) {
-              const values = row.map((value) => String(value));
-              return {
-                id: `rank_${index + 1}`,
-                values: values
-                  .slice(0, columnCount)
-                  .concat(Array(Math.max(0, columnCount - values.length)).fill("")),
-              };
-            }
-            const entry = row && typeof row === "object"
-              ? (row as Record<string, unknown>)
-              : {};
-            const rawValues = Array.isArray(entry.values)
-              ? entry.values.map((value) => String(value))
-              : [String(entry.label ?? ""), String(entry.value ?? "")];
-            return {
-              id:
-                typeof entry.id === "string" && entry.id.trim()
-                  ? entry.id
-                  : `rank_${index + 1}`,
-              values: rawValues
-                .slice(0, columnCount)
-                .concat(Array(Math.max(0, columnCount - rawValues.length)).fill("")),
-            };
-          });
-          const title = escapeHtml(str(data.title || "ランキング"));
-          const subtitle = escapeHtml(str(data.subtitle || ""));
-          const period = escapeHtml(str(data.period || ""));
-          const dateText = escapeHtml(str(data.date || ""));
-          const notes = Array.isArray(data?.notes)
-            ? data.notes.map((note: string) => escapeHtml(str(note)))
-            : [];
-          const rawStyle = data.tableStyle && typeof data.tableStyle === "object"
-            ? (data.tableStyle as Record<string, unknown>)
-            : {};
-          const tableStyle = {
-            headerBg:
-              typeof rawStyle.headerBg === "string" ? rawStyle.headerBg : "#f8fafc",
-            headerText:
-              typeof rawStyle.headerText === "string" ? rawStyle.headerText : "#0f172a",
-            cellBg: typeof rawStyle.cellBg === "string" ? rawStyle.cellBg : "#ffffff",
-            cellText:
-              typeof rawStyle.cellText === "string" ? rawStyle.cellText : "#0f172a",
-            border: typeof rawStyle.border === "string" ? rawStyle.border : "#e2e8f0",
-            rankBg: typeof rawStyle.rankBg === "string" ? rawStyle.rankBg : "#e2e8f0",
-            rankText:
-              typeof rawStyle.rankText === "string" ? rawStyle.rankText : "#0f172a",
-            top1Bg: typeof rawStyle.top1Bg === "string" ? rawStyle.top1Bg : "#f59e0b",
-            top2Bg: typeof rawStyle.top2Bg === "string" ? rawStyle.top2Bg : "#cbd5f5",
-            top3Bg: typeof rawStyle.top3Bg === "string" ? rawStyle.top3Bg : "#fb923c",
-            periodLabelBg:
-              typeof rawStyle.periodLabelBg === "string"
-                ? rawStyle.periodLabelBg
-                : "#f1f5f9",
-            periodLabelText:
-              typeof rawStyle.periodLabelText === "string"
-                ? rawStyle.periodLabelText
-                : "#0f172a",
-          };
-          const headerHtml = columns
-            .map((column) => `<th>${escapeHtml(str(column.label))}</th>`)
-            .join("");
-          const rowsHtml = normalizedRows
-            .map((row, index) => {
-              const rank = index + 1;
-              const topClass = rank <= 3 ? ` is-top-${rank}` : "";
-              const valueCells = row.values
-                .map((value) => {
-                  const cellText = value.trim() ? value : "-";
-                  return `<td class="ranking-table__cell">${escapeHtml(cellText)}</td>`;
-                })
-                .join("");
-              return `
-                <tr>
-                  <td class="ranking-table__rank">
-                    <span class="ranking-table__rank-badge${topClass}">${rank}</span>
-                  </td>
-                  ${valueCells}
-                </tr>
-              `;
-            })
-            .join("");
-          const notesHtml = notes.length
-            ? `
-              <ul class="ranking-table__notes">
-                ${notes.map((note) => `<li>${note}</li>`).join("")}
-              </ul>
-            `
-            : "";
-          const styleVars = [
-            `--ranking-header-bg:${escapeHtml(str(tableStyle.headerBg))}`,
-            `--ranking-header-text:${escapeHtml(str(tableStyle.headerText))}`,
-            `--ranking-cell-bg:${escapeHtml(str(tableStyle.cellBg))}`,
-            `--ranking-cell-text:${escapeHtml(str(tableStyle.cellText))}`,
-            `--ranking-border:${escapeHtml(str(tableStyle.border))}`,
-            `--ranking-rank-bg:${escapeHtml(str(tableStyle.rankBg))}`,
-            `--ranking-rank-text:${escapeHtml(str(tableStyle.rankText))}`,
-            `--ranking-top1-bg:${escapeHtml(str(tableStyle.top1Bg))}`,
-            `--ranking-top2-bg:${escapeHtml(str(tableStyle.top2Bg))}`,
-            `--ranking-top3-bg:${escapeHtml(str(tableStyle.top3Bg))}`,
-            `--ranking-period-label-bg:${escapeHtml(str(tableStyle.periodLabelBg))}`,
-            `--ranking-period-label-text:${escapeHtml(
-              str(tableStyle.periodLabelText)
-            )}`,
-          ].join(";");
-          return `
-            <section class="container ranking-table">
-              <h2>${title}</h2>
-              ${subtitle ? `<p class="ranking-table__subtitle">${subtitle}</p>` : ""}
-              ${
-                period
-                  ? `<div class="ranking-table__period"><span class="ranking-table__period-label">集計期間</span><span>${period}</span></div>`
-                  : ""
-              }
-              ${dateText ? `<div class="ranking-table__date">${dateText}</div>` : ""}
-              <div class="ranking-table__table-wrap">
-                <table class="ranking-table__table" style="${styleVars}">
-                  <thead>
-                    <tr>
-                      <th>${rankLabel}</th>
-                      ${headerHtml}
-                    </tr>
-                  </thead>
-                  <tbody>${rowsHtml}</tbody>
-                </table>
-              </div>
-              ${notesHtml}
-            </section>
-          `;
-        }
-        case "footerHtml":
-          return `
-            <footer class="footer">
-              <div class="container">${String(section.data.html ?? "")}</div>
-            </footer>
-          `;
-        case "imageOnly": {
-          const imageItem = section.content?.items?.find(
-            (item: { type: string }) => item.type === "image"
-          ) as { images?: Array<{ src?: string; assetId?: string; alt?: string }> } | undefined;
-          const images = imageItem?.images ?? [];
-          const layout = str(section.data.layout ?? "single");
-          const gridStyle =
-            layout === "columns2"
-              ? "display:grid;grid-template-columns:repeat(2,1fr);gap:12px;"
-              : layout === "columns3"
-              ? "display:grid;grid-template-columns:repeat(3,1fr);gap:12px;"
-              : layout === "grid"
-              ? "display:grid;grid-template-columns:repeat(2,1fr);gap:12px;"
-              : "display:flex;flex-direction:column;align-items:center;";
-          const imgsHtml = images
-            .map((img) => {
-              const src = escapeHtml(str(img.src ?? ""));
-              const alt = escapeHtml(str(img.alt ?? ""));
-              const assetId = escapeHtml(str(img.assetId ?? ""));
-              return src
-                ? `<img src="${src}" alt="${alt}" data-asset-id="${assetId}" style="width:100%;height:auto;display:block;border-radius:8px;" />`
-                : "";
-            })
-            .filter(Boolean)
-            .join("\n");
-          return `
-            <section class="container image-only">
-              <div style="${gridStyle}">${imgsHtml || '<div style="height:80px;border:1px dashed #ccc;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#999;font-size:13px;">画像なし</div>'}</div>
-            </section>
-          `;
-        }
-        default:
-          return "";
-      }
+        return renderUnhandledLayoutSectionFallback(section);
+      })();
+      return markup ? applySectionFrameAttrs(markup, section, index) : "";
     })
     .join("");
 
@@ -2517,8 +1859,8 @@ export const renderProjectToHtml = (
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(resolvePageMeta(project).title)}</title>
-    ${buildMetaHeadTags(project)}
+    <title>${escapeHtml(resolvePageMeta(project, previewMode).title)}</title>
+    ${buildMetaHeadTags(project, previewMode)}
     <link rel="stylesheet" href="${cssHref}" />
   </head>
   <body>
@@ -2564,34 +1906,112 @@ body {
   color: #94a3b8;
   background: #f1f5f9;
 }
-.period {
-  background: #fff7ed;
-  padding: 10px 0;
-  font-size: 13px;
-  color: #92400e;
+.lp-periodbar {
+  width: 100%;
+  margin: 0;
+  padding: calc(12px + var(--lp-periodbar-pad-y, 0px)) 0;
+  min-height: 52px;
+  border-radius: 0;
+  background: linear-gradient(
+    180deg,
+    var(--lp-periodbar-bg-top, #ff6a1a) 0%,
+    var(--lp-periodbar-bg-bottom, #eb5505) 100%
+  );
+  color: var(--lp-periodbar-text, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  box-shadow: var(--lp-periodbar-shadow, 0 2px 6px rgba(0, 0, 0, 0.08));
+}
+.lp-periodbar__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0 var(--lp-periodbar-pad-x, 18px);
+  gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  min-width: 0;
+}
+.lp-periodbar__label {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--lp-periodbar-label, var(--lp-periodbar-text, #ffffff));
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.lp-periodbar__date {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 18px;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lp-periodbar__pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  line-height: 1;
+}
+.lp-periodbar__num {
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+.lp-periodbar__unit {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.92;
+  margin-right: 2px;
+  line-height: 1;
+}
+.lp-periodbar__sep {
+  font-size: 15px;
+  opacity: 0.85;
+  margin: 0 8px;
+}
+.lp-periodbar__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  height: auto;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--lp-periodbar-text, #ffffff);
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 6px;
+  margin-left: 2px;
+}
+.lp-periodbar--nowrap .lp-periodbar__center {
+  flex-direction: row;
+  white-space: nowrap;
+}
+.lp-periodbar--nowrap .lp-periodbar__date {
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
 .coupon-flow {
   background: transparent;
   padding: 0;
   border-radius: 0;
-  margin: 24px 0;
   box-shadow: none;
-}
-.coupon-flow__titlebar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #ea5504;
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 15px;
-  padding: 6px 18px;
-  border-radius: 999px;
-  letter-spacing: 0.04em;
-  margin: 0 auto 8px;
-}
-.coupon-flow__body {
-  padding: 0;
 }
 .coupon-flow__lead {
   margin: 0 0 12px;
@@ -2641,6 +2061,228 @@ body {
     0 2px 6px rgba(0, 0, 0, 0.18);
   min-width: 240px;
 }
+.lp-couponflow {
+  width: 100%;
+}
+.lp-couponflow__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lp-couponflow__titlebar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ea5504;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 15px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  margin: 0 auto 8px;
+}
+.lp-couponflow__lead {
+  margin: 0;
+  color: #d7262b;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+}
+.lp-couponflow__slider {
+  position: relative;
+  margin: 0;
+}
+.lp-couponflow__frame {
+  background: #f8efe6;
+  border: 2px solid #f2d8c0;
+  border-radius: 14px;
+  padding: clamp(12px, 2.4vw, 18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+}
+.lp-couponflow__slide {
+  display: none;
+  width: 100%;
+}
+.lp-couponflow__slide.is-active {
+  display: block;
+}
+.lp-couponflow__image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+.lp-couponflow__placeholder {
+  width: 100%;
+  min-height: 220px;
+  border-radius: 10px;
+  border: 1px dashed #f0c1a2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a15b2c;
+  font-size: 12px;
+  background: #fff8f1;
+}
+.lp-couponflow__nav {
+  position: absolute;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+}
+.lp-couponflow__nav::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  display: inline-block;
+}
+.lp-couponflow__nav--prev::before {
+  transform: rotate(135deg);
+}
+.lp-couponflow__nav--next::before {
+  transform: rotate(-45deg);
+}
+.lp-couponflow__nav--prev {
+  left: 10px;
+}
+.lp-couponflow__nav--next {
+  right: 10px;
+}
+.lp-couponflow__nav:disabled {
+  opacity: 0.4;
+}
+.lp-couponflow__dots {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.lp-couponflow__dot {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+.lp-couponflow__dot.is-active {
+  background: #0f172a;
+}
+.lp-couponflow__note {
+  margin: 0;
+  color: #6b7280;
+  font-size: 12px;
+  text-align: center;
+}
+.lp-couponflow__cta {
+  margin: 14px auto 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 26px;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.18);
+  min-width: 240px;
+}
+.coupon-flow__steps--cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.coupon-flow__step-card {
+  border: 1px solid var(--coupon-card-border, #d1d5db);
+  background: var(--coupon-card-bg, #ffffff);
+  color: var(--coupon-card-text, #0f172a);
+  border-radius: var(--coupon-card-radius, 12px);
+  padding: 12px;
+}
+.coupon-flow__step-head {
+  margin-bottom: 8px;
+}
+.coupon-flow__step-no {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--coupon-step-number-color, #ffffff);
+  background: var(--coupon-step-number-bg, #eb5505);
+}
+.coupon-flow__step-image {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.coupon-flow__step-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.coupon-flow__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.coupon-flow__timeline-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.coupon-flow__timeline-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--coupon-step-number-color, #ffffff);
+  background: var(--coupon-step-number-bg, #eb5505);
+}
+.coupon-flow__simple-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.coupon-flow__simple-item {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.coupon-flow__simple-no {
+  font-weight: 700;
+}
 h2 {
   font-size: 20px;
   margin: 24px 0 12px;
@@ -2674,6 +2316,9 @@ ul {
   .hero-placeholder {
     height: 220px;
     border-radius: 12px;
+  }
+  .lp-couponflow__frame {
+    min-height: 220px;
   }
 }
 @media (max-width: 480px) {
@@ -2988,15 +2633,6 @@ ul {
   margin-top: 8px;
   text-align: center;
   font-size: 14px;
-  .tabbed-notes__label {
-    font-size: 14px;
-  }
-  .tabbed-notes__panel {
-    padding: 0 20px 24px;
-  }
-  .tabbed-notes__cta-image {
-    max-width: 100%;
-  }
   line-height: 1.7;
   font-weight: 600;
 }
@@ -3230,6 +2866,26 @@ ul {
   font-size: 14px;
 }
 @media (max-width: 640px) {
+  .lp-periodbar {
+    min-height: 48px;
+    padding: calc(10px + var(--lp-periodbar-pad-y, 0px)) 0;
+  }
+  .lp-periodbar__label {
+    font-size: 13px;
+  }
+  .lp-periodbar__date {
+    font-size: 16px;
+  }
+  .lp-periodbar__num {
+    font-size: 16px;
+  }
+  .lp-periodbar__unit {
+    font-size: 12px;
+  }
+  .lp-periodbar__badge {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
   .ranking-table__date {
     font-size: 16px;
   }
@@ -3243,6 +2899,54 @@ ul {
   }
   .excluded-wrap {
     font-size: 0.9em;
+  }
+}
+@media (max-width: 480px) {
+  .lp-periodbar {
+    min-height: 52px;
+    padding: calc(8px + var(--lp-periodbar-pad-y, 0px)) 0;
+  }
+  .lp-periodbar__center {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    white-space: normal;
+  }
+  .lp-periodbar__label {
+    order: 1;
+  }
+  .lp-periodbar__date {
+    order: 2;
+    justify-content: center;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .lp-periodbar__num {
+    font-size: 14px;
+  }
+  .lp-periodbar__unit {
+    font-size: 11px;
+  }
+  .lp-periodbar__badge {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+  .lp-periodbar__sep {
+    margin: 0 6px;
+  }
+  .lp-periodbar--nowrap .lp-periodbar__center {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .lp-periodbar--nowrap .lp-periodbar__label {
+    order: 0;
+  }
+  .lp-periodbar--nowrap .lp-periodbar__date {
+    order: 0;
   }
 }
 .note {
@@ -3264,10 +2968,14 @@ ul {
 }
 `;
 
-export const exportProjectToZip = async (
+export const exportLayoutZip = async (
   project: ProjectState,
   ui?: ExportUiState
 ): Promise<ExportResult> => {
+  // Layout export must be generated strictly from LayoutDocument.
+  const layoutProject = normalizeLayoutExportProject(project);
+  const effectivePreviewMode: ExportPreviewMode =
+    ui?.previewMode === "mobile" ? "mobile" : "desktop";
   const zip = new JSZip();
   const startedAt = performance.now();
   const logStep = (label: string, payload?: Record<string, unknown>) => {
@@ -3280,17 +2988,17 @@ export const exportProjectToZip = async (
   };
   const warnings: ExportWarning[] = [];
   logStep("assets collect start");
-  const assetMeta = await buildAssetMetaList(project, zip, warnings);
+  const assetMeta = await buildAssetMetaList(layoutProject, zip, warnings);
   const footerDefaultUrlMap = await collectFooterDefaultAssets(zip, warnings);
   logStep("assets collect done", { count: assetMeta.length });
-  const projectFile = buildProjectFile(project, assetMeta);
+  const projectFile = buildProjectFile(layoutProject, assetMeta);
   const manifest = await buildManifest(projectFile);
   const projectJson = JSON.stringify(projectFile, null, 2);
   const manifestJson = JSON.stringify(manifest, null, 2);
-  const storesCsv = buildStoresCsv(project);
-  const storesNormalized = buildStoresNormalizedJson(project);
-  const storesEmbed = buildStoresEmbed(project);
-  const { urlMap, filenameMap } = buildAssetReplacementMaps(project, assetMeta);
+  const storesCsv = buildStoresCsv(layoutProject);
+  const storesNormalized = buildStoresNormalizedJson(layoutProject);
+  const storesEmbed = buildStoresEmbed(layoutProject);
+  const { urlMap, filenameMap } = buildAssetReplacementMaps(layoutProject, assetMeta);
   const imageMeta = assetMeta.filter((entry) => entry.kind === "image");
 
   let exportHtml = "";
@@ -3312,15 +3020,16 @@ export const exportProjectToZip = async (
     exportCss = composedCss;
     exportJs = storesEmbed ? buildStoresAppJs() : "(() => {})();";
     const htmlFromPreview = buildExportHtmlFromPreviewDom(
-      project,
+      layoutProject,
       composedCss,
-      previewDoc
+      previewDoc,
+      effectivePreviewMode
     );
     let htmlWithCss = "";
     if (htmlFromPreview) {
       htmlWithCss = htmlFromPreview;
     } else {
-      const htmlFromApi = await fetchExportHtmlFromApi(project, ui);
+      const htmlFromApi = await fetchExportHtmlFromApi(layoutProject, ui);
       htmlWithCss = injectInlineCss(htmlFromApi, composedCss);
     }
     htmlWithCss = rewriteAssetUrlsInHtml(
@@ -3347,41 +3056,7 @@ export const exportProjectToZip = async (
         `<script defer src="./assets/app.js"></script>`;
       htmlWithCss = htmlWithCss.replace("</body>", `${storesScript}</body>`);
     }
-    exportHtml = applyBackgroundLayersToHtml(htmlWithCss, project, assetMeta);
-
-    /* ---- Canvas pages injection ---- */
-    const canvasPages = project.canvasPages ?? [];
-    if (canvasPages.length > 0) {
-      try {
-        const { exportCanvasHtml } = await import("@/src/lib/canvas/exportCanvasHtml");
-        const canvasAssetResolve = (assetId: string) => {
-          const meta = assetMeta.find((m) => m.id === assetId);
-          return meta ? meta.path : assetId;
-        };
-        let canvasHtmlAll = "";
-        let canvasCssAll = "";
-        for (const cp of canvasPages) {
-          const { html, css } = exportCanvasHtml(cp.canvas, { resolveAsset: canvasAssetResolve });
-          canvasHtmlAll += `\n<!-- Canvas: ${escapeHtml(cp.name)} -->\n${html}\n`;
-          canvasCssAll += css + "\n";
-        }
-        // Inject canvas HTML before </body>
-        exportHtml = exportHtml.replace("</body>", `${canvasHtmlAll}</body>`);
-        // Inject canvas CSS
-        if (canvasCssAll.trim()) {
-          const canvasStyle = `<style>${canvasCssAll}</style>`;
-          exportHtml = exportHtml.replace("</head>", `${canvasStyle}</head>`);
-        }
-        logStep("canvas pages injected", { count: canvasPages.length });
-      } catch (canvasErr) {
-        console.warn("[export] canvas injection failed", canvasErr);
-        warnings.push({
-          type: "other",
-          message: "canvas pages injection failed",
-          detail: canvasErr instanceof Error ? canvasErr.message : String(canvasErr),
-        });
-      }
-    }
+    exportHtml = applyBackgroundLayersToHtml(htmlWithCss, layoutProject, assetMeta);
 
     if (/\/_next\//.test(exportHtml) || /src="\//.test(exportHtml)) {
       console.warn("[export] html still contains absolute paths", {
@@ -3409,7 +3084,7 @@ export const exportProjectToZip = async (
     });
     console.warn("[export] dist generation failed", error);
     logStep("dist generate failed", { error: distError });
-    exportHtml = buildDistPlaceholderHtml(project, distError);
+    exportHtml = buildDistPlaceholderHtml(layoutProject, distError);
   }
 
   zip.file("project.json", projectJson);
@@ -3424,7 +3099,7 @@ export const exportProjectToZip = async (
   }
 
   if (!exportHtml) {
-    exportHtml = buildDistPlaceholderHtml(project, distError);
+    exportHtml = buildDistPlaceholderHtml(layoutProject, distError);
   }
 
   zip.file("dist/index.html", exportHtml);
@@ -3502,6 +3177,8 @@ export const exportProjectToZip = async (
   return { blob, report };
 };
 
+export const exportProjectToZip = exportLayoutZip;
+
 /* ─────────────────────────────────────────────────────
    Canvas Only Export
    指定 Canvas ページだけを独立 LP として ZIP 出力
@@ -3524,19 +3201,23 @@ export const exportCanvasOnlyToZip = async (
   const warnings: ExportWarning[] = [];
 
   /* ---- Canvasページ検索 ---- */
-  const canvasPages = project.canvasPages ?? [];
-  const page = canvasPages.find((p) => p.id === pageId);
-  if (!page) {
-    throw new Error(`Canvas page not found: ${pageId}`);
+  const canvasDocument =
+    project.canvasPages?.find((p) => p.id === pageId)?.canvas ??
+    resolveCanvasDocumentFromProject(project);
+  if (!canvasDocument) {
+    throw new Error(`Canvas document not found: ${pageId}`);
   }
+  const pageName =
+    project.canvasPages?.find((p) => p.id === pageId)?.name ??
+    resolveCanvasNameFromProject(project);
 
-  logStep("canvas only export start", { pageId, pageName: page.name });
+  logStep("canvas only export start", { pageId, pageName });
 
   /* ---- Canvasが参照するアセットだけ収集 ---- */
-  const { collectCanvasPageAssetIds, renderCanvasStandaloneHtml } = await import(
+  const { collectCanvasAssetIds, renderCanvasStandaloneHtml } = await import(
     "@/src/lib/canvas/exportCanvasHtml"
   );
-  const canvasAssetIds = collectCanvasPageAssetIds(page);
+  const canvasAssetIds = collectCanvasAssetIds(canvasDocument);
   const assets = project.assets ?? {};
   const assetMeta: AssetMeta[] = [];
 
@@ -3604,8 +3285,8 @@ export const exportCanvasOnlyToZip = async (
     title?: string;
     description?: string;
   };
-  const title = page.name || pageMeta.title || project.meta.projectName || "Canvas LP";
-  const exportHtml = renderCanvasStandaloneHtml(page.canvas, {
+  const title = pageName || pageMeta.title || project.meta.projectName || "Canvas LP";
+  const exportHtml = renderCanvasStandaloneHtml(canvasDocument, {
     resolveAsset,
     title,
     description: pageMeta.description,
@@ -3651,6 +3332,12 @@ export const exportCanvasOnlyToZip = async (
   };
 
   return { blob, report };
+};
+
+export const exportCanvasDocumentToZip = async (
+  project: ProjectState
+): Promise<ExportResult> => {
+  return exportCanvasOnlyToZip(project, "__active_canvas__");
 };
 
 export const triggerZipDownload = (blob: Blob, projectName: string) => {

@@ -1,3 +1,5 @@
+import type { ProjectAiAssets } from "@/src/features/ai-assets/types";
+
 export type SectionTextAlign = "left" | "center" | "right";
 
 export type SectionTypography = {
@@ -350,6 +352,40 @@ export type StoreLabels = Record<string, StoreLabelConfig>;
 export type StoreFilters = Record<string, boolean>;
 export type StoreFilterOperator = "AND" | "OR";
 
+export type SectionHeaderStyle = "band" | "ribbon" | "plain";
+
+export type SectionAppearance = {
+  headerBackgroundColor?: string;
+  titleTextColor?: string;
+  accentColor?: string;
+  borderColor?: string;
+  headerStyle?: SectionHeaderStyle;
+  showHeaderBand?: boolean;
+};
+
+export type SectionDecoration = SectionAppearance;
+
+export type SectionExtensionButton = {
+  id: string;
+  label: string;
+  href: string;
+  variant?: "primary" | "secondary" | "link";
+};
+
+export type SectionExtensionImage = {
+  id: string;
+  imageUrl: string;
+  alt?: string;
+  caption?: string;
+  width?: number;
+  align?: "left" | "center" | "right";
+};
+
+export type SectionExtensions = {
+  buttons?: SectionExtensionButton[];
+  images?: SectionExtensionImage[];
+};
+
 export type SectionContent = {
   title?: string;
   items?: ContentItem[];
@@ -357,6 +393,20 @@ export type SectionContent = {
   primaryLines?: PrimaryLine[];
   image?: { src: string; alt?: string };
   button?: { label: string; href: string; variant?: "primary" | "secondary" };
+  buttons?: Array<{
+    id: string;
+    label: string;
+    href: string;
+    variant?: "primary" | "secondary";
+  }>;
+  media?: Array<{
+    id: string;
+    imageUrl: string;
+    alt?: string;
+    caption?: string;
+    width?: number;
+    align?: "left" | "center" | "right";
+  }>;
   storeCsv?: StoreCsvData;
   storeLabels?: StoreLabels;
   storeFilters?: StoreFilters;
@@ -434,6 +484,42 @@ export type ProjectSettings = {
   [key: string]: unknown;
 };
 
+export type AssetRecord = {
+  id: string;
+  filename: string;
+  data: string;
+};
+
+export type EditorMode = "layout" | "canvas";
+
+export type LPDocument = {
+  settings: ProjectSettings;
+  sections: SectionBase[];
+  pageBaseStyle?: PageBaseStyle;
+  stores?: StoresTable;
+  assets?: Record<string, AssetRecord>;
+  aiAssets?: ProjectAiAssets;
+  schemaVersion?: string;
+  appVersion?: string;
+  globalSettings?: GlobalSettings;
+  assetMeta?: AssetMeta[];
+  storeListSpec?: StoreListSpec;
+  themeSpec?: ThemeSpec;
+  animationRegistry?: AnimationSpec[];
+};
+
+export type EditorDocumentState = {
+  mode: EditorMode;
+  activeDevice?: "pc" | "sp";
+  layoutDocument: LPDocument | null;
+  /**
+   * @deprecated Legacy field name kept for read compatibility only.
+   * Do not write new data to this field; use layoutDocument.
+   */
+  lpDocument?: LPDocument | null;
+  canvasDocument: import("./canvas").CanvasDocument | null;
+};
+
 export type ProjectState = {
   meta: {
     projectName: string;
@@ -447,6 +533,7 @@ export type ProjectState = {
   pageBaseStyle?: PageBaseStyle;
   stores?: StoresTable;
   assets?: Record<string, AssetRecord>;
+  aiAssets?: ProjectAiAssets;
   schemaVersion?: string;
   appVersion?: string;
   globalSettings?: GlobalSettings;
@@ -454,14 +541,10 @@ export type ProjectState = {
   storeListSpec?: StoreListSpec;
   themeSpec?: ThemeSpec;
   animationRegistry?: AnimationSpec[];
-  /** Canvas ページ一覧（LP モードと共存） */
+  /** 新しいモード分離ドキュメント状態 */
+  editorDocuments?: EditorDocumentState;
+  /** @deprecated Legacy multi-canvas structure. Kept for migration compatibility. */
   canvasPages?: import("./canvas").CanvasPageData[];
-};
-
-export type AssetRecord = {
-  id: string;
-  filename: string;
-  data: string;
 };
 
 export type AssetKind = "image" | "video" | "font" | "data" | "other";
@@ -523,6 +606,7 @@ export type ProjectFile = {
   pageBaseStyle?: PageBaseStyle;
   sections: SectionBase[];
   assets: AssetMeta[];
+  aiAssets?: ProjectAiAssets;
   storeListSpec?: StoreListSpec;
   themeSpec?: ThemeSpec;
   animationRegistry?: AnimationSpec[];

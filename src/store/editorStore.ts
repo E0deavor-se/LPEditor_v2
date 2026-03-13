@@ -1,6 +1,8 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { arrayMove } from "@dnd-kit/sortable";
 import type {
+  EditorMode,
+  LPDocument,
   BackgroundSpec,
   ButtonContentItem,
   ButtonTarget,
@@ -26,12 +28,25 @@ import type {
 } from "@/src/types/project";
 import type { CsvImportPreview } from "@/src/lib/csv/importSummary";
 import { createDefaultCanvasDocument } from "@/src/types/canvas";
+import type { CanvasDocument, CanvasLayer } from "@/src/types/canvas";
 import {
   DEFAULT_SECTION_CARD_STYLE,
   extractLegacyPresetId,
   getSectionCardPreset,
   normalizeSectionCardStyle,
 } from "@/src/lib/sections/sectionCardPresets";
+import { isTemplateDebugEnabled } from "@/src/lib/debugFlags";
+import {
+  getLayoutDocument,
+  getLayoutSections,
+  normalizeProjectDocuments,
+  warnLegacyProjectState,
+} from "@/src/lib/editorProject";
+import { mergeSectionPresetData } from "@/src/lib/sections/sectionArchitecture/SectionPresetMap";
+import {
+  createEmptyProjectAiAssets,
+  type ProjectAiAssets,
+} from "@/src/features/ai-assets/types";
 
 export type EditorSaveStatus = "saved" | "dirty" | "saving" | "error" | "offline";
 
@@ -564,9 +579,6 @@ const createRankingRowId = () =>
 
 const createTabId = () =>
   `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-
-const createTabItemId = () =>
-  `tab_item_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 const TARGET_STORES_NOTICE_LINES = [
   "ご注意ください！",
@@ -1376,7 +1388,8 @@ const normalizeSection = (section: SectionBase): SectionBase => {
     type LegalNoteLine = { text: string; bullet: "none" | "disc" };
     const trimmedDefaults = DEFAULT_LEGAL_NOTES_LINES.map((line) => line.trim())
       .filter((line) => line.length > 0);
-    const defaultBullet = section.data?.bullet === "none" ? "none" : "disc";
+    const bulletEnabled = !(section.data?.bullet === false || section.data?.bullet === "none");
+    const defaultBullet: "none" | "disc" = bulletEnabled ? "disc" : "none";
     const normalizeBullet = (value: unknown, fallback: "none" | "disc") =>
       value === "none" || value === "disc" ? value : fallback;
     const rawItems = Array.isArray(section.data?.items) ? section.data.items : [];
@@ -1422,6 +1435,7 @@ const normalizeSection = (section: SectionBase): SectionBase => {
         ...section,
         data: {
           ...(section.data ?? {}),
+          bullet: bulletEnabled,
           items: sourceItems,
         },
       };
@@ -1537,11 +1551,105 @@ const normalizeSection = (section: SectionBase): SectionBase => {
 const normalizeSections = (sections: SectionBase[]): SectionBase[] =>
   sections.map((section) => normalizeSection(section));
 
+// Legacy root sections are read for compatibility/migration/debug comparison only.
+// Operational section logic must use editorDocuments.layoutDocument.sections via getLayoutSections.
+const getLegacySections = (project: ProjectState): SectionBase[] =>
+  project?.sections ?? [];
+
+const getCanonicalLayoutSections = (project: ProjectState): SectionBase[] =>
+  getLayoutSections(project);
+
+const withLayoutSections = (
+  project: ProjectState,
+  sections: SectionBase[]
+): ProjectState => {
+  const layoutDocument = getLayoutDocument(project);
+  const nextLayoutDocument: LPDocument = {
+    ...layoutDocument,
+    settings: project.settings,
+    sections,
+    pageBaseStyle: project.pageBaseStyle,
+    stores: project.stores,
+    assets: project.assets,
+    aiAssets: project.aiAssets,
+    schemaVersion: project.schemaVersion,
+    appVersion: project.appVersion,
+    globalSettings: project.globalSettings,
+    assetMeta: project.assetMeta,
+    storeListSpec: project.storeListSpec,
+    themeSpec: project.themeSpec,
+    animationRegistry: project.animationRegistry,
+  };
+  return normalizeProjectDocuments({
+    ...project,
+    sections,
+    editorDocuments: {
+      ...(project.editorDocuments ?? {
+        mode: "layout",
+        activeDevice: "pc",
+        layoutDocument,
+        canvasDocument: createEmptyCanvasDocument(),
+      }),
+      layoutDocument: nextLayoutDocument,
+    },
+  });
+};
+
+
+export const createEmptyCanvasDocument = (): CanvasDocument =>
+  createDefaultCanvasDocument();
+
+export const createEmptyLPDocument = (): LPDocument => {
+  return {
+    settings: normalizeProjectSettings(DEFAULT_PROJECT_SETTINGS),
+    sections: [],
+    pageBaseStyle: DEFAULT_PAGE_BASE_STYLE,
+    aiAssets: createEmptyProjectAiAssets(),
+    schemaVersion: "2.0.0",
+    appVersion: "2.0.0",
+    globalSettings: {
+      ui: { previewMode: "desktop", previewAspect: "free" },
+      i18n: { locale: "ja" },
+    },
+    assetMeta: [],
+    storeListSpec: {
+      filterMode: "AND",
+      filters: {},
+      labelColors: {},
+      visibleColumns: [],
+      sortState: {},
+      uiState: {
+        pageSize: 10,
+        collapsed: false,
+      },
+    },
+    themeSpec: { mode: "light", accent: "aupay-orange" },
+    animationRegistry: [],
+  };
+};
+
+const normalizeEditorDocuments = (project: ProjectState): ProjectState => {
+  const nowIso = new Date().toISOString();
+  const withLp = normalizeProjectDocuments(project);
+  if (isTemplateDebugEnabled()) {
+    warnLegacyProjectState(withLp, "normalizeEditorDocuments");
+  }
+  return {
+    ...withLp,
+    meta: {
+      ...withLp.meta,
+      updatedAt: withLp.meta?.updatedAt ?? nowIso,
+    },
+  };
+};
+
 type LeftTab = "settings" | "sections" | "design";
 
 type UiMode = "simple" | "advanced";
 
 type PreviewMode = "desktop" | "mobile";
+
+type ActiveDevice = "pc" | "sp";
 
 type PreviewAspect = "free" | "16:9" | "4:3" | "1:1";
 
@@ -1578,6 +1686,7 @@ export type EditorUIState = {
   previewKey: number;
   leftTab: LeftTab;
   uiMode: UiMode;
+  activeDevice: ActiveDevice;
   previewMode: PreviewMode;
   previewAspect: PreviewAspect;
   previewDesktopWidth: number;
@@ -1598,6 +1707,9 @@ export type EditorUIState = {
   saveStatusMessage?: string;
   isPreviewBusy: boolean;
   previewBusyReason?: PreviewBusyReason;
+  /** Feature flag: 新しい Layout V2 UI を使用する */
+  useNewLayoutUI: boolean;
+  setUseNewLayoutUI: (enabled: boolean) => void;
   brandPresets: BrandPreset[];
   csvImportDraft: {
     sectionId: string;
@@ -1764,6 +1876,13 @@ export type EditorUIState = {
     cardStyle: SectionCardStyle,
     options?: { excludeTypes?: string[] }
   ) => void;
+  replaceLayoutSections: (sections: SectionBase[]) => void;
+  updateLayoutSection: (
+    sectionId: string,
+    updater: (section: SectionBase) => SectionBase
+  ) => void;
+  removeLayoutSection: (sectionId: string) => void;
+  selectLayoutSection: (sectionId?: string) => void;
   insertSectionAfter: (afterId: string | undefined, type: string) => void;
   insertSectionFromTemplate: (
     section: SectionBase,
@@ -1822,6 +1941,7 @@ export type EditorUIState = {
   bumpPreviewKey: () => void;
   setLeftTab: (tab: LeftTab) => void;
   setUiMode: (mode: UiMode) => void;
+  setActiveDevice: (device: ActiveDevice) => void;
   setPreviewMode: (mode: PreviewMode) => void;
   setPreviewAspect: (aspect: PreviewAspect) => void;
   setPreviewDesktopWidth: (width: number) => void;
@@ -1840,14 +1960,27 @@ export type EditorUIState = {
   setAiTargetSectionTypes: (values: string[]) => void;
   setSaveStatus: (status: EditorSaveStatus, message?: string) => void;
   setPreviewBusy: (isBusy: boolean, reason?: PreviewBusyReason) => void;
+  updateProjectAiAssets: (
+    updater: (current: ProjectAiAssets | undefined) => ProjectAiAssets | undefined
+  ) => void;
   getProject: () => ProjectState;
   replaceProject: (project: ProjectState) => void;
+  setEditorMode: (mode: EditorMode) => void;
+  updateCanvasDocument: (canvas: CanvasDocument) => void;
+  replaceCanvasNodes: (nodes: CanvasLayer[]) => void;
+  updateCanvasNode: (
+    nodeId: string,
+    updater: (node: CanvasLayer) => CanvasLayer
+  ) => void;
+  removeCanvasNode: (nodeId: string) => void;
+  selectCanvasNodes: (nodeIds: string[]) => void;
+  getActiveDocument: () => LPDocument | CanvasDocument;
+  getActiveLayoutDocument: () => LPDocument;
+  /** @deprecated Use getActiveLayoutDocument */
+  getActiveLPDocument: () => LPDocument;
+  getActiveCanvasDocument: () => CanvasDocument;
   markDirty: () => void;
   addAsset: (asset: { id?: string; filename: string; data: string }) => string;
-  /* ---- Canvas Pages ---- */
-  addCanvasPage: (name?: string) => string;
-  removeCanvasPage: (id: string) => void;
-  updateCanvasPage: (id: string, canvas: import("@/src/types/canvas").CanvasDocument) => void;
 };
 
 const createDefaultProjectState = (): ProjectState => {
@@ -1877,7 +2010,26 @@ const createDefaultProjectState = (): ProjectState => {
       type: "campaignPeriodBar",
       visible: true,
       locked: false,
-      data: { startDate: "2026-03-01", endDate: "2026-03-31" },
+      data: {
+        periodLabel: "キャンペーン期間",
+        periodBarText: "",
+        startDate: "2026-03-01",
+        endDate: "2026-03-31",
+        showWeekday: true,
+        allowWrap: true,
+        fullWidth: true,
+        periodBarStyle: {
+          bold: true,
+          color: "#FFFFFF",
+          background: "#EB5505",
+          labelColor: "#FFFFFF",
+          size: 14,
+          paddingX: 18,
+          paddingY: 0,
+          shadow: "none",
+          advancedStyleText: "",
+        },
+      },
       content: normalizeSectionContent(),
       style: normalizeSectionStyle({
         layout: { ...DEFAULT_SECTION_STYLE.layout, fullWidth: true },
@@ -1979,6 +2131,32 @@ const createDefaultProjectState = (): ProjectState => {
   ]);
 
   const nowIso = new Date().toISOString();
+  const settings = normalizeProjectSettings(DEFAULT_PROJECT_SETTINGS);
+  const pageBaseStyle = DEFAULT_PAGE_BASE_STYLE;
+  const lpDocument: LPDocument = {
+    settings,
+    sections,
+    pageBaseStyle,
+    aiAssets: createEmptyProjectAiAssets(),
+    schemaVersion: "2.0.0",
+    appVersion: "2.0.0",
+    globalSettings: {
+      ui: { previewMode: "desktop", previewAspect: "free" },
+      i18n: { locale: "ja" },
+    },
+    assetMeta: [],
+    storeListSpec: {
+      filterMode: "AND",
+      filters: {},
+      labelColors: {},
+      visibleColumns: [],
+      sortState: {},
+      uiState: { pageSize: 10, collapsed: false },
+    },
+    themeSpec: { mode: "light", accent: "aupay-orange" },
+    animationRegistry: [],
+  };
+
   return {
     meta: {
       projectName: "キャンペーンLP",
@@ -1987,9 +2165,16 @@ const createDefaultProjectState = (): ProjectState => {
       createdAt: nowIso,
       updatedAt: nowIso,
     },
-    settings: normalizeProjectSettings(DEFAULT_PROJECT_SETTINGS),
+    settings,
     sections,
-    pageBaseStyle: DEFAULT_PAGE_BASE_STYLE,
+    pageBaseStyle,
+    aiAssets: createEmptyProjectAiAssets(),
+    editorDocuments: {
+      mode: "layout",
+      activeDevice: "pc",
+      layoutDocument: lpDocument,
+      canvasDocument: createEmptyCanvasDocument(),
+    },
   };
 };
 
@@ -2022,6 +2207,21 @@ export const createProjectFromTemplate = (
     });
     return ordered;
   })();
+
+  const currentEditorDocuments = base.editorDocuments ?? {
+    mode: "layout" as const,
+    activeDevice: "pc" as const,
+    layoutDocument: createEmptyLPDocument(),
+    canvasDocument: createEmptyCanvasDocument(),
+  };
+
+  const nextLayoutDocument: LPDocument = {
+    ...currentEditorDocuments.layoutDocument,
+    settings: base.settings,
+    sections: orderedSections,
+    pageBaseStyle: base.pageBaseStyle,
+  };
+
   return {
     ...base,
     meta: {
@@ -2032,6 +2232,11 @@ export const createProjectFromTemplate = (
       updatedAt: nowIso,
     },
     sections: orderedSections,
+    editorDocuments: {
+      ...currentEditorDocuments,
+      mode: "layout",
+      layoutDocument: nextLayoutDocument,
+    },
   };
 };
 
@@ -2101,7 +2306,26 @@ const createSection = (type: string): SectionBase => {
         type,
         visible: true,
         locked: false,
-        data: { startDate: "2026-03-01", endDate: "2026-03-31" },
+        data: {
+          periodLabel: "キャンペーン期間",
+          periodBarText: "",
+          startDate: "2026-03-01",
+          endDate: "2026-03-31",
+          showWeekday: true,
+          allowWrap: true,
+          fullWidth: true,
+          periodBarStyle: {
+            bold: true,
+            color: "#FFFFFF",
+            background: "#EB5505",
+            labelColor: "#FFFFFF",
+            size: 14,
+            paddingX: 18,
+            paddingY: 0,
+            shadow: "none",
+            advancedStyleText: "",
+          },
+        },
         content: normalizeSectionContent(),
         style: normalizeSectionStyle({
           layout: { ...DEFAULT_SECTION_STYLE.layout, fullWidth: true },
@@ -2162,6 +2386,20 @@ const createSection = (type: string): SectionBase => {
           alt: `スライド${index + 1}`,
         })
       );
+      const couponFlowDefaultSteps = couponFlowDefaultSlides.map((slide, index) => ({
+        id: createItemId(),
+        stepNo: String(index + 1),
+        title: `ステップ${index + 1}`,
+        description: "",
+        supplement: "",
+        imageUrl: slide.src,
+        imageAlt: slide.alt,
+        imageAssetId: "",
+        iconUrl: "",
+        iconAssetId: "",
+        buttonText: "クーポンを獲得する",
+        buttonUrl: "",
+      }));
       section = {
         id,
         type,
@@ -2172,8 +2410,36 @@ const createSection = (type: string): SectionBase => {
           lead:
             "＊必ずクーポンを獲得してからau PAY（コード支払い）でお支払いください。",
           note: "※画面はイメージです。",
+          variant: "slideshow",
+          steps: couponFlowDefaultSteps,
+          ctaEnabled: true,
           buttonLabel: "クーポンを獲得する",
           buttonUrl: "",
+          buttonPreset: "couponFlow",
+          buttonVariant: "primary",
+          buttonBg: "#eb5505",
+          buttonTextColor: "#ffffff",
+          buttonBorderColor: "#eb5505",
+          buttonRadius: 999,
+          buttonShadow: "0 6px 14px rgba(0, 0, 0, 0.18)",
+          slideshow: {
+            autoplay: true,
+            intervalMs: 3500,
+            loop: true,
+            showArrows: true,
+            showDots: true,
+            allowSwipe: true,
+          },
+          design: {
+            stepNumberColor: "#ffffff",
+            stepNumberBg: "#eb5505",
+            cardBg: "#ffffff",
+            cardText: "#0f172a",
+            borderColor: "#d1d5db",
+            radius: 12,
+            shadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
+            gap: 16,
+          },
         },
         content: normalizeSectionContent({
           items: [
@@ -2274,15 +2540,14 @@ const createSection = (type: string): SectionBase => {
             "※同一順位の場合は期間中の決済回数が多い方が上位となります。",
             "※決済合計額と決済回数の両方が同一の場合初回決済時間が早い方が上位となります。",
           ],
-          rankLabel: "順位",
           columns: [
             { key: "amount", label: "決済金額" },
             { key: "count", label: "品数" },
           ],
           rows: [
-            { id: createRankingRowId(), values: ["368,330円", "940品以上"] },
-            { id: createRankingRowId(), values: ["308,000円", "790品以上"] },
-            { id: createRankingRowId(), values: ["246,940円", "630品以上"] },
+            { id: createRankingRowId(), rank: "1", values: ["368,330円", "940品以上"] },
+            { id: createRankingRowId(), rank: "2", values: ["308,000円", "790品以上"] },
+            { id: createRankingRowId(), rank: "3", values: ["246,940円", "630品以上"] },
           ],
         },
         content: normalizeSectionContent(),
@@ -2321,115 +2586,40 @@ const createSection = (type: string): SectionBase => {
         locked: false,
         data: {
           title: "注意事項",
+          initialTabIndex: 0,
           tabs: [
             {
               id: createTabId(),
-              labelTop: "事前獲得クーポン",
-              labelBottom: "注意事項",
-              intro: "",
-              items: [
-                {
-                  id: createTabItemId(),
-                  text:
-                    "＊レジで表示されているお買上げ金額は割引表示されません。割引後の金額はau PAY アプリの「履歴」をご確認ください。",
-                  bullet: "none",
-                  tone: "accent",
-                  bold: false,
-                  subItems: [],
-                },
-                {
-                  id: createTabItemId(),
-                  text:
-                    "クーポンは1回20,000円（税込）以上のお支払いにご利用いただけます。",
-                  bullet: "disc",
-                  tone: "normal",
-                  bold: false,
-                  subItems: [],
-                },
-                {
-                  id: createTabItemId(),
-                  text:
-                    "キャンペーン期間中でも、クーポンの割引総額が所定の金額に達した場合、配布終了となり獲得済みクーポンのご利用は不可となります。",
-                  bullet: "disc",
-                  tone: "accent",
-                  bold: true,
-                  subItems: [],
-                },
+              label: "事前獲得クーポン",
+              contentTitle: "",
+              notes: [
+                "＊レジで表示されているお買上げ金額は割引表示されません。割引後の金額はau PAY アプリの「履歴」をご確認ください。",
+                "クーポンは1回20,000円（税込）以上のお支払いにご利用いただけます。",
+                "キャンペーン期間中でも、クーポンの割引総額が所定の金額に達した場合、配布終了となり獲得済みクーポンのご利用は不可となります。",
+                "※2026年2月6日時点の情報です。",
               ],
-              footnote: "※2026年2月6日時点の情報です。",
-              ctaText: "",
-              ctaLinkText: "",
-              ctaLinkUrl: "",
-              ctaTargetKind: "url",
-              ctaSectionId: "",
-              ctaImageUrl: "",
-              ctaImageAlt: "",
-              ctaImageAssetId: "",
-              buttonText: "",
-              buttonTargetKind: "url",
-              buttonUrl: "",
-              buttonSectionId: "",
             },
             {
               id: createTabId(),
-              labelTop: "クイックチャンス",
-              labelBottom: "注意事項",
-              intro: "",
-              items: [
-                {
-                  id: createTabItemId(),
-                  text: "クーポンの利用方法は以下の通りとなります。",
-                  bullet: "disc",
-                  tone: "normal",
-                  bold: false,
-                  subItems: [
-                    "①クーポン画面を表示します。",
-                    "②クーポン利用の旨をお申し出いただき、クーポン画面を提示します。",
-                    "③「利用する」ボタンを押下してください。",
-                  ],
-                },
-                {
-                  id: createTabItemId(),
-                  text:
-                    "クーポンの利用期限前であっても、予告なく終了する場合があります。",
-                  bullet: "disc",
-                  tone: "normal",
-                  bold: false,
-                  subItems: [],
-                },
-                {
-                  id: createTabItemId(),
-                  text: "本キャンペーンは予告なく変更・終了する場合があります。",
-                  bullet: "disc",
-                  tone: "accent",
-                  bold: true,
-                  subItems: [],
-                },
+              label: "クイックチャンス",
+              contentTitle: "",
+              notes: [
+                "クーポンの利用方法は以下の通りとなります。",
+                "①クーポン画面を表示します。",
+                "②クーポン利用の旨をお申し出いただき、クーポン画面を提示します。",
+                "③「利用する」ボタンを押下してください。",
+                "クーポンの利用期限前であっても、予告なく終了する場合があります。",
+                "本キャンペーンは予告なく変更・終了する場合があります。",
+                "※2026年2月6日時点の情報です。",
               ],
-              footnote: "※2026年2月6日時点の情報です。",
-              ctaText: "",
-              ctaLinkText: "",
-              ctaLinkUrl: "",
-              ctaTargetKind: "url",
-              ctaSectionId: "",
-              ctaImageUrl: "",
-              ctaImageAlt: "",
-              ctaImageAssetId: "",
-              buttonText: "",
-              buttonTargetKind: "url",
-              buttonUrl: "",
-              buttonSectionId: "",
             },
           ],
           tabStyle: {
+            variant: "simple",
+            showBorder: true,
             inactiveBg: "#DDDDDD",
-            inactiveText: "#000000",
             activeBg: "#000000",
-            activeText: "#FFFFFF",
-            border: "#000000",
             contentBg: "#FFFFFF",
-            contentBorder: "#000000",
-            accent: "#EB5505",
           },
         },
         content: normalizeSectionContent(),
@@ -2446,7 +2636,7 @@ const createSection = (type: string): SectionBase => {
           title: "注意事項",
           items: [...DEFAULT_LEGAL_NOTES_LINES],
           text: "",
-          bullet: "disc",
+          bullet: true,
           noteWidthPct: 100,
         },
         content: normalizeSectionContent(),
@@ -2466,6 +2656,96 @@ const createSection = (type: string): SectionBase => {
         }),
       };
       break;
+    case "image":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          imageUrl: "",
+          alt: "",
+          caption: "",
+          alignment: "center",
+          width: 720,
+          borderRadius: 12,
+          backgroundColor: "#ffffff",
+          textColor: "#111111",
+          paddingTop: 24,
+          paddingBottom: 24,
+        },
+        content: normalizeSectionContent(),
+        style: normalizeSectionStyle(),
+      };
+      break;
+    case "stickyNote":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          title: "",
+          body: "",
+          themeColor: "#f59e0b",
+          presetColor: "#fef3c7",
+          icon: "",
+          borderRadius: 14,
+          shadow: "soft",
+          backgroundColor: "#fff7d6",
+          textColor: "#3f2f10",
+          paddingTop: 20,
+          paddingBottom: 20,
+        },
+        content: normalizeSectionContent(),
+        style: normalizeSectionStyle(),
+      };
+      break;
+    case "contact":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          title: "本キャンペーンに関するお問い合わせ先",
+          description: "チャット形式でかんたんにお問い合わせいただけます。",
+          buttonLabel: "お問い合わせ先はこちら",
+          buttonUrl: "https://www.au.com/support/inquiry/message/",
+          note: "受付時間 : 24時間（年中無休）\n回答時間 : AI : 24時間（コミュニケーター : 9〜20時）",
+          textAlign: "center",
+          backgroundColor: "#000000",
+          buttonColor: "#fa5902",
+          textColor: "#ffffff",
+          paddingTop: 45,
+          paddingBottom: 50,
+        },
+        content: normalizeSectionContent(),
+        style: normalizeSectionStyle(),
+      };
+      break;
+    case "footer":
+      section = {
+        id,
+        type,
+        visible: true,
+        locked: false,
+        data: {
+          companyName: "",
+          copyrightText: "",
+          linksText: "",
+          subText: "",
+          backgroundColor: "#111827",
+          textColor: "#f9fafb",
+          paddingTop: 20,
+          paddingBottom: 20,
+        },
+        content: normalizeSectionContent(),
+        style: normalizeSectionStyle({
+          layout: { ...DEFAULT_SECTION_STYLE.layout, fullWidth: true },
+        }),
+      };
+      break;
     default:
       section = {
         id,
@@ -2478,6 +2758,7 @@ const createSection = (type: string): SectionBase => {
       };
       break;
   }
+  section.data = mergeSectionPresetData(section.type, section.data);
   return normalizeSection(section);
 };
 
@@ -2492,6 +2773,122 @@ const createUntitledSection = (): SectionBase =>
     content: normalizeSectionContent({ items: [] }),
     style: normalizeSectionStyle(),
   });
+
+  const cloneSectionWithFreshDeepIds = (source: SectionBase): SectionBase => {
+    const cloned = JSON.parse(JSON.stringify(source)) as SectionBase;
+    if (Array.isArray(cloned.content?.items)) {
+      cloned.content.items = cloned.content.items.map((item) => {
+        if (!item || typeof item !== "object") {
+          return item;
+        }
+        if (item.type === "text") {
+          return {
+            ...item,
+            id: createItemId(),
+            lines: Array.isArray(item.lines)
+              ? item.lines.map((line) => ({ ...line, id: createLineId() }))
+              : [],
+          };
+        }
+        if (item.type === "title") {
+          return { ...item, id: createItemId() };
+        }
+        if (item.type === "image") {
+          return {
+            ...item,
+            id: createItemId(),
+            images: Array.isArray(item.images)
+              ? item.images.map((image) => ({ ...image, id: createImageId() }))
+              : [],
+          };
+        }
+        if (item.type === "button") {
+          return { ...item, id: createItemId() };
+        }
+        return item;
+      });
+    }
+
+    if (Array.isArray(cloned.content?.buttons)) {
+      cloned.content.buttons = cloned.content.buttons.map((button) => ({
+        ...button,
+        id: createItemId(),
+      }));
+    }
+
+    if (Array.isArray(cloned.content?.media)) {
+      cloned.content.media = cloned.content.media.map((media) => ({
+        ...media,
+        id: createImageId(),
+      }));
+    }
+
+    const data = cloned.data as Record<string, unknown>;
+    if (cloned.type === "tabbedNotes" && Array.isArray(data.tabs)) {
+      data.tabs = (data.tabs as Array<Record<string, unknown>>).map((tab) => ({
+        ...tab,
+        id: createTabId(),
+      }));
+    }
+    if (cloned.type === "rankingTable" && Array.isArray(data.rows)) {
+      data.rows = (data.rows as Array<Record<string, unknown>>).map((row) => ({
+        ...row,
+        id: createRankingRowId(),
+      }));
+    }
+    if (cloned.type === "couponFlow" && Array.isArray(data.steps)) {
+      data.steps = (data.steps as Array<Record<string, unknown>>).map((step) => ({
+        ...step,
+        id: createItemId(),
+      }));
+    }
+
+    const reidExtensionButtons = (value: unknown) =>
+      Array.isArray(value)
+        ? value.map((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return entry;
+            }
+            return {
+              ...(entry as Record<string, unknown>),
+              id: createItemId(),
+            };
+          })
+        : value;
+
+    const reidExtensionImages = (value: unknown) =>
+      Array.isArray(value)
+        ? value.map((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return entry;
+            }
+            return {
+              ...(entry as Record<string, unknown>),
+              id: createImageId(),
+            };
+          })
+        : value;
+
+    if (data.extra && typeof data.extra === "object") {
+      const extra = data.extra as Record<string, unknown>;
+      data.extra = {
+        ...extra,
+        buttons: reidExtensionButtons(extra.buttons),
+        images: reidExtensionImages(extra.images),
+      };
+    }
+
+    if (data.extensions && typeof data.extensions === "object") {
+      const extensions = data.extensions as Record<string, unknown>;
+      data.extensions = {
+        ...extensions,
+        buttons: reidExtensionButtons(extensions.buttons),
+        images: reidExtensionImages(extensions.images),
+      };
+    }
+
+    return cloned;
+  };
 
 export const useEditorStore = create<EditorUIState>((set, get) => ({
   project: createDefaultProjectState(),
@@ -2511,6 +2908,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   previewKey: 0,
   leftTab: "sections",
   uiMode: "advanced",
+  activeDevice: "pc",
   previewMode: "desktop",
   previewAspect: "free",
   previewDesktopWidth: 1100,
@@ -2531,19 +2929,53 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   saveStatusMessage: undefined,
   isPreviewBusy: false,
   previewBusyReason: undefined,
+  useNewLayoutUI: true,
+  setUseNewLayoutUI: (enabled) => set({ useNewLayoutUI: enabled }),
   brandPresets: [],
   csvImportDraft: null,
   isCsvImportModalOpen: false,
   setCsvImportDraft: (draft) => set({ csvImportDraft: draft }),
   setCsvImportModalOpen: (open) => set({ isCsvImportModalOpen: open }),
   setProject: (project) =>
-    set({
-      project: {
-        ...project,
-        sections: normalizeSections(project.sections),
-        pageBaseStyle: normalizePageBaseStyle(project.pageBaseStyle),
-        settings: normalizeProjectSettings(project.settings),
-      },
+    set(() => {
+      const legacyInputSections = getLegacySections(project);
+      const layoutInputSections = getLayoutSections(project);
+      if (isTemplateDebugEnabled()) {
+        console.log("[TemplateDebug] 6.5 setProject input", {
+          // Legacy root sections are logged only for drift comparison.
+          inputLegacySectionsLength: legacyInputSections.length,
+          inputLegacySectionTypes: legacyInputSections.map((section) => section.type),
+          // Canonical operational source of truth.
+          inputLayoutSectionsLength: layoutInputSections.length,
+          inputLayoutSectionTypes: layoutInputSections.map((section) => section.type),
+          inputLayoutDocSectionsLength:
+            project.editorDocuments?.layoutDocument?.sections?.length,
+        });
+      }
+      const normalizedProject = normalizeEditorDocuments(project);
+      const normalizedLegacySections = getLegacySections(normalizedProject);
+      const normalizedLayoutSections = getLayoutSections(normalizedProject);
+      const activeDevice = normalizedProject.editorDocuments?.activeDevice ?? "pc";
+      if (isTemplateDebugEnabled()) {
+        console.log("[TemplateDebug] 7.5 setProject normalized", {
+          // Legacy root sections are logged only for drift comparison.
+          normalizedLegacySectionsLength: normalizedLegacySections.length,
+          normalizedLegacySectionTypes: normalizedLegacySections.map((section) => section.type),
+          // Canonical operational source of truth.
+          normalizedLayoutSectionsLength: normalizedLayoutSections.length,
+          normalizedLayoutSectionTypes: normalizedLayoutSections.map((section) => section.type),
+          normalizedLayoutDocSectionsLength:
+            normalizedProject.editorDocuments?.layoutDocument?.sections?.length,
+          normalizedLayoutDocSectionTypes:
+            normalizedProject.editorDocuments?.layoutDocument?.sections?.map(
+              (section) => section.type
+            ),
+        });
+      }
+      return {
+      project: normalizedProject,
+      activeDevice,
+      previewMode: activeDevice === "sp" ? "mobile" : "desktop",
       hasUserEdits: false,
       saveStatus: "saved",
       saveStatusMessage: undefined,
@@ -2556,6 +2988,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       selectedItemId: undefined,
       selectedLineId: undefined,
       selectedImageIds: [],
+      };
     }),
   resetProjectToDefaultFixedBlocks: () =>
     set({
@@ -2575,7 +3008,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateSectionData: (id, partialData, options) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === id
       );
       if (!targetSection) {
@@ -2588,13 +3022,15 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           saveStatusMessage: "ロック中のため編集できません。",
         };
       }
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === id
             ? {
                 ...section,
@@ -2604,8 +3040,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
                 },
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -2640,7 +3076,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateSectionContent: (sectionId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -2686,21 +3123,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
             : []
           : [];
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: pinnedContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -2728,7 +3167,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   addContentItem: (sectionId, type) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -2789,21 +3229,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -2831,7 +3273,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   removeContentItem: (sectionId, itemId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -2862,21 +3305,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -2914,7 +3359,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   reorderContentItems: (sectionId, fromIndex, toIndex) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -2950,21 +3396,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -2985,7 +3433,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   reorderTextLines: (sectionId, itemId, fromIndex, toIndex) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3033,21 +3481,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3072,7 +3522,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   addTextLine: (sectionId, itemId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3104,21 +3554,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -3142,7 +3594,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   removeTextLine: (sectionId, itemId, lineId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3186,21 +3638,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3235,7 +3689,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateTextLineText: (sectionId, itemId, lineId, text) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3266,21 +3720,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3305,7 +3761,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateTextLineMarks: (sectionId, itemId, lineId, patchMarks) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3347,21 +3803,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3386,7 +3844,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateContentItemText: (sectionId, itemId, text) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3411,21 +3869,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3452,7 +3912,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     get().updateContentItemText(sectionId, itemId, text),
   updateTitleItemMarks: (sectionId, itemId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3479,21 +3939,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3518,7 +3980,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateTextLineAnimation: (sectionId, itemId, lineId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3569,21 +4031,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3608,7 +4072,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   applyLineMarksToAllLines: (sectionId, itemId, sourceLineId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3645,21 +4109,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -3685,7 +4151,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         return state;
       }
       const sectionId = selected.id;
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3752,21 +4218,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -3791,7 +4259,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   promoteLineMarksToSectionTypography: (sectionId, itemId, sourceLineId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3842,13 +4310,15 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
@@ -3859,8 +4329,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -3881,7 +4351,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   addImageToItem: (sectionId, itemId, image) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -3927,21 +4397,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -3962,7 +4434,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   removeImageFromItem: (sectionId, itemId, imageId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection || targetSection.locked) return state;
@@ -3974,15 +4446,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         if (item.id !== itemId || item.type !== "image") return item;
         return { ...item, images: item.images.filter((img) => img.id !== imageId) };
       });
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
-        sections: state.project.sections.map((section) =>
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+        },
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? { ...section, content: { ...existingContent2, items: pinTitleFirst(nextItems) } }
             : section
-        ),
-      };
+        )
+      );
       return {
         ...state,
         project: nextProject,
@@ -3992,7 +4466,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateImageInItem: (sectionId, itemId, imageId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection || targetSection.locked) return state;
@@ -4009,15 +4483,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           ),
         };
       });
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
-        sections: state.project.sections.map((section) =>
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
+        },
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? { ...section, content: { ...existingContent3, items: pinTitleFirst(nextItems) } }
             : section
-        ),
-      };
+        )
+      );
       return {
         ...state,
         project: nextProject,
@@ -4027,7 +4503,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   setImageItemLayout: (sectionId, itemId, layout) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -4056,21 +4532,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4095,7 +4573,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateImageAnimation: (sectionId, itemId, imageIds, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -4146,21 +4624,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4185,7 +4665,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateButtonItem: (sectionId, itemId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -4217,21 +4697,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: pinTitleFirst(nextItems),
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4256,7 +4738,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateContentItemAnimation: (sectionId, itemId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -4297,21 +4779,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         items: nextItems,
       };
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: nextContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4336,7 +4820,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateSectionStyle: (sectionId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -4353,21 +4838,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       const baseStyle = normalizeSectionStyle(targetSection.style);
       const mergedStyle = mergeSectionStyle(baseStyle, patch);
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 style: mergedStyle,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4392,7 +4879,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateSectionCardStyle: (sectionId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const targetSection = sections.find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -4413,21 +4901,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         mergeSectionCardStyle(baseStyle, patch)
       );
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 sectionCardStyle: mergedStyle,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4455,7 +4945,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       const excludeTypes = new Set(options?.excludeTypes ?? []);
       const nextStyle = normalizeSectionStyle(style);
       const nextCardStyle = normalizeSectionCardStyle(cardStyle);
-      const sections = state.project.sections.map((section) => {
+      const sections = getCanonicalLayoutSections(state.project).map((section) => {
         if (excludeTypes.has(section.type) || section.locked) {
           return section;
         }
@@ -4466,14 +4956,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         };
       });
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections,
-      };
+        sections
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4496,10 +4988,147 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         hasUserEdits: true,
       };
     }),
+  replaceLayoutSections: (sections) =>
+    set((state) => {
+      const normalizedSections = normalizeSections(sections);
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        normalizedSections
+      );
+      const nextUndoStack = pushStack(
+        state.undoStack,
+        cloneProject(state.project)
+      );
+      return {
+        ...state,
+        project: nextProject,
+        undoStack: nextUndoStack,
+        redoStack: [],
+        canUndo: nextUndoStack.length > 0,
+        canRedo: false,
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
+      };
+    }),
+  updateLayoutSection: (sectionId, updater) =>
+    set((state) => {
+      const sections = getCanonicalLayoutSections(state.project);
+      const index = sections.findIndex((section) => section.id === sectionId);
+      if (index < 0) {
+        return state;
+      }
+      const current = sections[index];
+      if (!current || current.locked) {
+        return state;
+      }
+      const nextSections = [...sections];
+      nextSections[index] = normalizeSection(updater(current));
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        nextSections
+      );
+      const nextUndoStack = pushStack(
+        state.undoStack,
+        cloneProject(state.project)
+      );
+      return {
+        ...state,
+        project: nextProject,
+        undoStack: nextUndoStack,
+        redoStack: [],
+        canUndo: nextUndoStack.length > 0,
+        canRedo: false,
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  removeLayoutSection: (sectionId) =>
+    set((state) => {
+      const sections = getCanonicalLayoutSections(state.project);
+      const target = sections.find((section) => section.id === sectionId);
+      if (!target || target.locked) {
+        return state;
+      }
+      const nextSections = sections.filter((section) => section.id !== sectionId);
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        nextSections
+      );
+      const nextUndoStack = pushStack(
+        state.undoStack,
+        cloneProject(state.project)
+      );
+      return {
+        ...state,
+        project: nextProject,
+        undoStack: nextUndoStack,
+        redoStack: [],
+        canUndo: nextUndoStack.length > 0,
+        canRedo: false,
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
+      };
+    }),
+  selectLayoutSection: (sectionId) =>
+    set((state) => {
+      if (!sectionId) {
+        return {
+          selectedSectionId: undefined,
+          selected: { kind: "page" },
+          selectedItemId: undefined,
+          selectedLineId: undefined,
+          selectedImageIds: [],
+        };
+      }
+      const target = getCanonicalLayoutSections(state.project).find(
+        (section) => section.id === sectionId
+      );
+      if (!target) {
+        return state;
+      }
+      const content = normalizeSectionContent(target.content);
+      const firstItem = content.items?.[0];
+      const firstLineId =
+        firstItem?.type === "text" ? firstItem.lines[0]?.id : undefined;
+      const firstImageIds =
+        firstItem?.type === "image" && firstItem.images[0]
+          ? [firstItem.images[0].id]
+          : [];
+      return {
+        selectedSectionId: sectionId,
+        selected: { kind: "section", id: sectionId },
+        selectedItemId: firstItem?.id,
+        selectedLineId: firstLineId,
+        selectedImageIds: firstImageIds,
+      };
+    }),
   insertSectionAfter: (afterId, type) =>
     set((state) => {
       const newSection = createSection(type);
-      const sections = [...state.project.sections];
+      const sections = [...getCanonicalLayoutSections(state.project)];
       const insertIndex = afterId
         ? sections.findIndex((section) => section.id === afterId)
         : -1;
@@ -4509,14 +5138,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         sections.push(newSection);
       }
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections,
-      };
+        sections
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -4547,6 +5178,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: newSection.id,
         selected: { kind: "section", id: newSection.id },
         selectedItemId: firstItem?.id,
@@ -4556,8 +5188,12 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   insertSectionFromTemplate: (section, afterId) =>
     set((state) => {
-      const normalizedSection = normalizeSection(section);
-      const sections = [...state.project.sections];
+      const cloned = cloneSectionWithFreshDeepIds(section);
+      const normalizedSection = normalizeSection({
+        ...cloned,
+        id: `sec_${section.type}_${Math.random().toString(36).slice(2, 8)}`,
+      });
+      const sections = [...getCanonicalLayoutSections(state.project)];
       const footerIndex = sections.findIndex(
         (entry) => entry.type === "footerHtml"
       );
@@ -4573,14 +5209,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
 
       sections.splice(insertIndex, 0, normalizedSection);
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections,
-      };
+        sections
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -4597,6 +5235,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: normalizedSection.id,
         selected: { kind: "section", id: normalizedSection.id },
       };
@@ -4604,14 +5243,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   addSection: () =>
     set((state) => {
       const newSection = createUntitledSection();
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: [...state.project.sections, newSection],
-      };
+        [...getCanonicalLayoutSections(state.project), newSection]
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -4628,6 +5269,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: newSection.id,
         selected: { kind: "section", id: newSection.id },
         selectedItemId:
@@ -4655,7 +5297,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   selectSection: (sectionId) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const target = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       const content = normalizeSectionContent(target?.content);
@@ -4678,23 +5320,26 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   renameSection: (sectionId, name) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const target = sections.find(
         (section) => section.id === sectionId
       );
       if (!target || target.locked) {
         return state;
       }
       const nextName = name.trim().length > 0 ? name.trim() : "無題";
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId ? { ...section, name: nextName } : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4719,24 +5364,27 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   toggleSectionVisible: (sectionId) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const target = sections.find(
         (section) => section.id === sectionId
       );
       if (!target) {
         return state;
       }
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? { ...section, visible: !section.visible }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4761,7 +5409,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   reorderSections: (activeId, overId) =>
     set((state) => {
-      const sections = [...state.project.sections];
+      const sections = [...getCanonicalLayoutSections(state.project)];
       const activeIndex = sections.findIndex(
         (section) => section.id === activeId
       );
@@ -4779,14 +5427,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
 
       const nextSections = arrayMove(sections, activeIndex, overIndex);
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: nextSections,
-      };
+        nextSections
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4807,29 +5457,34 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: moving.id,
+        selected: { kind: "section", id: moving.id },
       };
     }),
   toggleSectionLocked: (sectionId) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const target = sections.find(
         (section) => section.id === sectionId
       );
       if (!target) {
         return state;
       }
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        sections.map((section) =>
           section.id === sectionId
             ? { ...section, locked: !section.locked }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4854,23 +5509,25 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateSectionLocked: (sectionId, locked) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const target = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!target) {
         return state;
       }
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId ? { ...section, locked } : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4895,17 +5552,19 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   setAllSectionsLocked: (locked) =>
     set((state) => {
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) => ({
+        getCanonicalLayoutSections(state.project).map((section) => ({
           ...section,
           locked,
-        })),
-      };
+        }))
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -4930,14 +5589,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   duplicateSection: (sectionId) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const sourceIndex = sections.findIndex((section) => section.id === sectionId);
+      const target = sections.find(
         (section) => section.id === sectionId
       );
-      if (!target || target.locked) {
+      if (!target || sourceIndex < 0 || target.locked) {
         return state;
       }
 
-      const cloned = JSON.parse(JSON.stringify(target)) as SectionBase;
+      const cloned = cloneSectionWithFreshDeepIds(target);
       const idSuffix = Math.random().toString(36).slice(2, 8);
       const baseName = (target.name ?? "無題").trim() || "無題";
       const nextSection: SectionBase = {
@@ -4947,15 +5608,18 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         locked: Boolean(target.locked),
       };
 
-      const nextSections = [...state.project.sections, nextSection];
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextSections = [...sections];
+      nextSections.splice(sourceIndex + 1, 0, nextSection);
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: nextSections,
-      };
+        nextSections
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -4972,47 +5636,64 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: nextSection.id,
         selected: { kind: "section", id: nextSection.id },
-        selectedItemId: nextSection.content?.items?.[0]?.id,
-        selectedLineId:
-          nextSection.content?.items?.[0]?.type === "text"
-            ? nextSection.content.items[0].lines[0]?.id
-            : undefined,
-        selectedImageIds:
-          nextSection.content?.items?.[0]?.type === "image" &&
-          nextSection.content.items[0].images[0]
-            ? [nextSection.content.items[0].images[0].id]
-            : [],
+        selectedItemId:
+          nextSection.content?.items?.find((item) => item.type === "text")?.id ??
+          nextSection.content?.items?.[0]?.id,
+        selectedLineId: (() => {
+          const firstText = nextSection.content?.items?.find(
+            (item) => item.type === "text"
+          );
+          if (firstText?.type === "text") {
+            return firstText.lines[0]?.id;
+          }
+          return undefined;
+        })(),
+        selectedImageIds: (() => {
+          const firstImage = nextSection.content?.items?.find(
+            (item) => item.type === "image"
+          );
+          if (firstImage?.type === "image" && firstImage.images[0]) {
+            return [firstImage.images[0].id];
+          }
+          return [];
+        })(),
       };
     }),
   deleteSection: (sectionId) =>
     set((state) => {
-      const target = state.project.sections.find(
+      const sections = getCanonicalLayoutSections(state.project);
+      const target = sections.find(
         (section) => section.id === sectionId
       );
       if (!target || target.locked) {
         return state;
       }
 
-      const nextSections = state.project.sections.filter(
+      const nextSections = sections.filter(
         (section) => section.id !== sectionId
       );
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: nextSections,
-      };
+        nextSections
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
         cloneProject(state.project)
       );
 
-      const nextSelected = nextSections[0]?.id;
+      const removedIndex = sections.findIndex((entry) => entry.id === sectionId);
+      const fallbackIndex = Math.max(0, Math.min(removedIndex, nextSections.length - 1));
+      const nextSelected = nextSections[fallbackIndex]?.id;
       const nextSelectedSection = nextSelected
         ? nextSections.find((section) => section.id === nextSelected)
         : undefined;
@@ -5034,6 +5715,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: nextSelected,
         selected: nextSelected
           ? { kind: "section", id: nextSelected }
@@ -5045,7 +5727,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   moveSection: (sectionId, direction) =>
     set((state) => {
-      const sections = [...state.project.sections];
+      const sections = [...getCanonicalLayoutSections(state.project)];
       const index = sections.findIndex((section) => section.id === sectionId);
       if (index < 0) {
         return state;
@@ -5060,14 +5742,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       }
       const nextSections = arrayMove(sections, index, nextIndex);
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: nextSections,
-      };
+        nextSections
+      );
 
       const nextUndoStack = pushStack(
         state.undoStack,
@@ -5084,6 +5768,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
         selectedSectionId: sectionId,
         selected: { kind: "section", id: sectionId },
       };
@@ -5095,14 +5780,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ...base,
         typography: { ...base.typography, ...patch },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          pageBaseStyle: nextStyle,
         },
-        pageBaseStyle: nextStyle,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5132,14 +5820,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ...base,
         colors: { ...base.colors, ...patch },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          pageBaseStyle: nextStyle,
         },
-        pageBaseStyle: nextStyle,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5176,14 +5867,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           },
         },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          pageBaseStyle: nextStyle,
         },
-        pageBaseStyle: nextStyle,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5213,14 +5907,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ...base,
         sectionAnimation: { ...base.sectionAnimation, ...patch },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          pageBaseStyle: nextStyle,
         },
-        pageBaseStyle: nextStyle,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5250,14 +5947,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ...base,
         layout: { ...base.layout, ...patch },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          pageBaseStyle: nextStyle,
         },
-        pageBaseStyle: nextStyle,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5290,14 +5990,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           page: spec,
         },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          settings: nextSettings,
         },
-        settings: nextSettings,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5330,14 +6033,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           mv: spec,
         },
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          settings: nextSettings,
         },
-        settings: nextSettings,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5376,14 +6082,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ...settings,
         pageMeta: nextMeta,
       };
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          settings: nextSettings,
         },
-        settings: nextSettings,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5408,16 +6117,18 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateSectionVisibility: (id, visible) =>
     set((state) => {
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === id ? { ...section, visible } : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5442,14 +6153,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateProjectStores: (stores) =>
     set((state) => {
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          stores,
         },
-        stores,
-      };
+        getCanonicalLayoutSections(state.project)
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5475,14 +6189,16 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
   updateStoresData: (sectionId, stores, config) =>
     set((state) => {
       const normalizedConfig = normalizeTargetStoresConfig(config);
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          stores,
         },
-        stores,
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
@@ -5492,8 +6208,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
                 },
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5518,7 +6234,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateTargetStoresContent: (sectionId, patch) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -5546,22 +6262,24 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ? buildStoresFromStoreCsv(nextContent.storeCsv)
         : state.project.stores;
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
+          stores: nextStores,
         },
-        stores: nextStores,
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 content: pinnedContent,
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5586,7 +6304,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   updateTargetStoresConfig: (sectionId, partialConfig) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       if (!targetSection) {
@@ -5604,13 +6322,15 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         ...partialConfig,
       });
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
@@ -5620,8 +6340,8 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
                 },
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5664,7 +6384,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     }),
   applyBrandPreset: (sectionId, presetId) =>
     set((state) => {
-      const targetSection = state.project.sections.find(
+      const targetSection = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === sectionId
       );
       const preset = state.brandPresets.find((item) => item.id === presetId);
@@ -5679,21 +6399,23 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
         };
       }
 
-      const nextProject: ProjectState = {
-        ...state.project,
-        meta: {
-          ...state.project.meta,
-          updatedAt: new Date().toISOString(),
+      const nextProject = withLayoutSections(
+        {
+          ...state.project,
+          meta: {
+            ...state.project.meta,
+            updatedAt: new Date().toISOString(),
+          },
         },
-        sections: state.project.sections.map((section) =>
+        getCanonicalLayoutSections(state.project).map((section) =>
           section.id === sectionId
             ? {
                 ...section,
                 style: normalizeSectionStyle(preset.style),
               }
             : section
-        ),
-      };
+        )
+      );
 
       if (projectsEqual(state.project, nextProject)) {
         return state;
@@ -5805,7 +6527,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           selectedImageIds: [],
         };
       }
-      const target = state.project.sections.find(
+      const target = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === id
       );
       if (!target) {
@@ -5851,7 +6573,7 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           selectedImageIds: [],
         };
       }
-      const target = state.project.sections.find(
+      const target = getCanonicalLayoutSections(state.project).find(
         (section) => section.id === selectedSectionId
       );
       const content = normalizeSectionContent(target?.content);
@@ -5880,16 +6602,70 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     set((state) => ({ previewKey: state.previewKey + 1 })),
   setLeftTab: (tab) => set({ leftTab: tab }),
   setUiMode: (mode) => set({ uiMode: mode }),
+  setActiveDevice: (device) => {
+    set((state) => {
+      if (state.activeDevice === device) {
+        return state;
+      }
+      const nextPreviewMode: PreviewMode = device === "pc" ? "desktop" : "mobile";
+      const current = normalizeEditorDocuments(state.project);
+      return {
+        project: {
+          ...current,
+          editorDocuments: {
+            ...(current.editorDocuments ?? {
+              mode: "layout",
+              layoutDocument: getLayoutDocument(current),
+              canvasDocument: createEmptyCanvasDocument(),
+            }),
+            activeDevice: device,
+          },
+        },
+        activeDevice: device,
+        previewMode: nextPreviewMode,
+        previewKey: state.previewKey + 1,
+        isPreviewBusy: true,
+        previewBusyReason: "responsive",
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    });
+    if (typeof window !== "undefined") {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          set({ isPreviewBusy: false, previewBusyReason: undefined });
+        });
+      });
+    }
+  },
   setPreviewMode: (mode) => {
     set((state) => {
       if (state.previewMode === mode) {
         return state;
       }
+      const nextActiveDevice: ActiveDevice = mode === "desktop" ? "pc" : "sp";
+      const current = normalizeEditorDocuments(state.project);
       return {
+        project: {
+          ...current,
+          editorDocuments: {
+            ...(current.editorDocuments ?? {
+              mode: "layout",
+              layoutDocument: getLayoutDocument(current),
+              canvasDocument: createEmptyCanvasDocument(),
+            }),
+            activeDevice: nextActiveDevice,
+          },
+        },
+        activeDevice: nextActiveDevice,
         previewMode: mode,
         previewKey: state.previewKey + 1,
         isPreviewBusy: true,
         previewBusyReason: "responsive",
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
       };
     });
     if (typeof window !== "undefined") {
@@ -5932,15 +6708,39 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       isPreviewBusy: isBusy,
       previewBusyReason: isBusy ? reason : undefined,
     }),
+  updateProjectAiAssets: (updater) =>
+    set((state) => {
+      const nextAiAssets = updater(state.project.aiAssets);
+      if (nextAiAssets === state.project.aiAssets) {
+        return state;
+      }
+      return {
+        ...state,
+        project: withLayoutSections(
+          {
+            ...state.project,
+            meta: {
+              ...state.project.meta,
+              updatedAt: new Date().toISOString(),
+            },
+            aiAssets: nextAiAssets,
+          },
+          getCanonicalLayoutSections(state.project)
+        ),
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
   getProject: () => get().project,
   replaceProject: (project) =>
-    set({
-      project: {
-        ...project,
-        sections: normalizeSections(project.sections),
-        pageBaseStyle: normalizePageBaseStyle(project.pageBaseStyle),
-        settings: normalizeProjectSettings(project.settings),
-      },
+    set(() => {
+      const normalizedProject = normalizeEditorDocuments(project);
+      const activeDevice = normalizedProject.editorDocuments?.activeDevice ?? "pc";
+      return {
+      project: normalizedProject,
+      activeDevice,
+      previewMode: activeDevice === "sp" ? "mobile" : "desktop",
       hasUserEdits: false,
       saveStatus: "saved",
       saveStatusMessage: undefined,
@@ -5953,7 +6753,212 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       selectedItemId: undefined,
       selectedLineId: undefined,
       selectedImageIds: [],
+      };
     }),
+  setEditorMode: (mode) =>
+    set((state) => {
+      const current = normalizeEditorDocuments(state.project);
+      const lpDocument = getLayoutDocument(current);
+      const canvasDocument =
+        current.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument();
+      const normalizedMode: EditorMode = mode === "canvas" ? "canvas" : "layout";
+      return {
+        ...state,
+        project: {
+          ...current,
+          editorDocuments: {
+            mode: normalizedMode,
+            activeDevice: current.editorDocuments?.activeDevice ?? state.activeDevice,
+            layoutDocument: lpDocument,
+            canvasDocument,
+          },
+          meta: {
+            ...current.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  updateCanvasDocument: (canvas) =>
+    set((state) => {
+      const current = normalizeEditorDocuments(state.project);
+      const lpDocument = getLayoutDocument(current);
+      return {
+        ...state,
+        project: {
+          ...current,
+          editorDocuments: {
+            mode: current.editorDocuments?.mode ?? "layout",
+            activeDevice: current.editorDocuments?.activeDevice ?? state.activeDevice,
+            layoutDocument: lpDocument,
+            canvasDocument: canvas,
+          },
+          meta: {
+            ...current.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  replaceCanvasNodes: (nodes) =>
+    set((state) => {
+      const current = normalizeEditorDocuments(state.project);
+      const canvas = current.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument();
+      const normalizedNodes = nodes.map((node) => ({ ...node }));
+      const nextCanvas: CanvasDocument = {
+        ...canvas,
+        layers: normalizedNodes,
+        free: {
+          ...(canvas.free ?? { layers: [] }),
+          layers: normalizedNodes,
+        },
+      };
+      return {
+        ...state,
+        project: {
+          ...current,
+          editorDocuments: {
+            ...(current.editorDocuments ?? {
+              mode: "layout",
+              layoutDocument: getLayoutDocument(current),
+              canvasDocument: createEmptyCanvasDocument(),
+            }),
+            canvasDocument: nextCanvas,
+          },
+          meta: {
+            ...current.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
+      };
+    }),
+  updateCanvasNode: (nodeId, updater) =>
+    set((state) => {
+      const current = normalizeEditorDocuments(state.project);
+      const canvas = current.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument();
+      const currentNodes = canvas.layers ?? [];
+      const index = currentNodes.findIndex((node) => node.id === nodeId);
+      if (index < 0) {
+        return state;
+      }
+      const nextNodes = [...currentNodes];
+      nextNodes[index] = updater(nextNodes[index]);
+      const nextCanvas: CanvasDocument = {
+        ...canvas,
+        layers: nextNodes,
+        free: {
+          ...(canvas.free ?? { layers: [] }),
+          layers: nextNodes,
+        },
+      };
+      return {
+        ...state,
+        project: {
+          ...current,
+          editorDocuments: {
+            ...(current.editorDocuments ?? {
+              mode: "layout",
+              layoutDocument: getLayoutDocument(current),
+              canvasDocument: createEmptyCanvasDocument(),
+            }),
+            canvasDocument: nextCanvas,
+          },
+          meta: {
+            ...current.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  removeCanvasNode: (nodeId) =>
+    set((state) => {
+      const current = normalizeEditorDocuments(state.project);
+      const canvas = current.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument();
+      const currentNodes = canvas.layers ?? [];
+      if (!currentNodes.some((node) => node.id === nodeId)) {
+        return state;
+      }
+      const nextNodes = currentNodes.filter((node) => node.id !== nodeId);
+      const nextCanvas: CanvasDocument = {
+        ...canvas,
+        layers: nextNodes,
+        selectedNodeIds: (canvas.selectedNodeIds ?? []).filter((id) => id !== nodeId),
+        free: {
+          ...(canvas.free ?? { layers: [] }),
+          layers: nextNodes,
+        },
+      };
+      return {
+        ...state,
+        project: {
+          ...current,
+          editorDocuments: {
+            ...(current.editorDocuments ?? {
+              mode: "layout",
+              layoutDocument: getLayoutDocument(current),
+              canvasDocument: createEmptyCanvasDocument(),
+            }),
+            canvasDocument: nextCanvas,
+          },
+          meta: {
+            ...current.meta,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+        manualSaveTick: state.manualSaveTick + 1,
+      };
+    }),
+  selectCanvasNodes: (nodeIds) =>
+    set((state) => {
+      const current = normalizeEditorDocuments(state.project);
+      const canvas = current.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument();
+      const nextCanvas: CanvasDocument = {
+        ...canvas,
+        selectedNodeIds: [...nodeIds],
+      };
+      return {
+        ...state,
+        project: {
+          ...current,
+          editorDocuments: {
+            ...(current.editorDocuments ?? {
+              mode: "layout",
+              layoutDocument: getLayoutDocument(current),
+              canvasDocument: createEmptyCanvasDocument(),
+            }),
+            canvasDocument: nextCanvas,
+          },
+        },
+      };
+    }),
+  getActiveDocument: () => {
+    const state = get();
+    const mode = state.project.editorDocuments?.mode ?? "layout";
+    if (mode === "canvas") {
+      return state.project.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument();
+    }
+    return getLayoutDocument(state.project);
+  },
+  getActiveLayoutDocument: () => getLayoutDocument(get().project),
+  getActiveLPDocument: () => getLayoutDocument(get().project),
+  getActiveCanvasDocument: () =>
+    get().project.editorDocuments?.canvasDocument ?? createEmptyCanvasDocument(),
   markDirty: () =>
     set({
       saveStatus: "dirty",
@@ -5975,14 +6980,17 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       };
       return {
         ...state,
-        project: {
-          ...state.project,
-          meta: {
-            ...state.project.meta,
-            updatedAt: new Date().toISOString(),
+        project: withLayoutSections(
+          {
+            ...state.project,
+            meta: {
+              ...state.project.meta,
+              updatedAt: new Date().toISOString(),
+            },
+            assets: nextAssets,
           },
-          assets: nextAssets,
-        },
+          getCanonicalLayoutSections(state.project)
+        ),
         saveStatus: "dirty",
         saveStatusMessage: undefined,
         hasUserEdits: true,
@@ -5991,63 +6999,6 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
     return id;
   },
 
-  /* ---- Canvas Pages ---- */
-  addCanvasPage: (name) => {
-    const id = `canvas_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const pageName = name || `Canvas ${((get().project.canvasPages ?? []).length) + 1}`;
-    set((state) => {
-      const pages = [...(state.project.canvasPages ?? [])];
-      pages.push({
-        type: "canvas",
-        id,
-        name: pageName,
-        canvas: createDefaultCanvasDocument(),
-      });
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
-          canvasPages: pages,
-        },
-        saveStatus: "dirty" as const,
-        hasUserEdits: true,
-      };
-    });
-    return id;
-  },
-
-  removeCanvasPage: (id) => {
-    set((state) => {
-      const pages = (state.project.canvasPages ?? []).filter((p) => p.id !== id);
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
-          canvasPages: pages,
-        },
-        saveStatus: "dirty" as const,
-        hasUserEdits: true,
-      };
-    });
-  },
-
-  updateCanvasPage: (id, canvas) => {
-    set((state) => {
-      const pages = (state.project.canvasPages ?? []).map((p) =>
-        p.id === id ? { ...p, canvas } : p
-      );
-      return {
-        ...state,
-        project: {
-          ...state.project,
-          meta: { ...state.project.meta, updatedAt: new Date().toISOString() },
-          canvasPages: pages,
-        },
-        saveStatus: "dirty" as const,
-        hasUserEdits: true,
-      };
-    });
-  },
 }));
+
+

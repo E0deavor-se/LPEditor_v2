@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import InspectorSelect from "@/src/components/inspector/InspectorSelect";
 
 type SelectFieldProps = {
   value: string | number;
@@ -18,14 +19,14 @@ export default function SelectField({
   disabled,
 }: SelectFieldProps) {
   return (
-    <select
-      className="ui-select h-7 w-full text-[12px]"
+    <InspectorSelect
+      className="text-[11px]"
       value={String(value)}
       aria-label={ariaLabel}
       onChange={(event) => onChange(event.target.value)}
       disabled={disabled}
     >
       {children}
-    </select>
+    </InspectorSelect>
   );
 }

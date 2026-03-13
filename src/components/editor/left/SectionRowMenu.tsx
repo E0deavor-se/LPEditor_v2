@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 const menuItemBase =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition";
+  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition";
 
 type SectionRowMenuProps = {
   onRename: () => void;
@@ -101,7 +101,7 @@ export default function SectionRowMenu({
       <button
         ref={buttonRef}
         type="button"
-        className="ui-button ui-button-ghost h-7 w-7 px-0 text-[10px]"
+        className="ui-button ui-button-ghost h-6 w-6 px-0 text-[10px]"
         aria-label="メニュー"
         title="メニュー"
         onClick={(event) => {

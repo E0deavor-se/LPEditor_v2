@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Copy, Trash2 } from "lucide-react";
 import SectionCard from "@/src/components/preview/SectionCard";
-import SharedTargetStoresSection from "../components/targetStores/TargetStoresSection";
 import { buildBackgroundStyle } from "@/src/lib/backgroundSpec";
 import { resolveBackgroundPreset } from "@/src/lib/backgroundPresets";
 import { normalizeSectionCardStyle } from "@/src/lib/sections/sectionCardPresets";
-import { buildFooterHtml } from "@/src/lib/footerTemplate";
+import { getSectionFrameData } from "@/src/lib/sections/sectionFrame";
 import { renderRichText } from "@/src/lib/richText";
-import { getStableLabelColor } from "@/src/lib/stores/labelColors";
+import { renderLayoutSection } from "@/src/lib/renderers/layout/renderLayoutSection";
+import { renderUnhandledLayoutSectionFallback } from "@/src/lib/renderers/layout/renderUnhandledLayoutSectionFallback";
+import { getLayoutSections } from "@/src/lib/editorProject";
 import type {
   ButtonContentItem,
   ContentItem,
@@ -16,13 +18,10 @@ import type {
   ImageItem,
   ImageContentItem,
   LineMarks,
-  TextContentItem,
   ProjectState,
   SectionAnimation,
   SectionBase,
   SectionStyle,
-  StoreCsvData,
-  StoreLabels,
 } from "@/src/types/project";
 
 type PreviewUiState = {
@@ -41,38 +40,19 @@ type PreviewUiState = {
 type PreviewSsrProps = {
   project: ProjectState;
   ui?: PreviewUiState | null;
-  onUpdateTargetStoresFilters?: (
-    sectionId: string,
-    filters: Record<string, boolean>
-  ) => void;
 };
 
-type TargetStoresSectionProps = {
-  section: SectionBase;
-  stores?: ProjectState["stores"];
-  ui?: PreviewUiState | null;
-  assets?: ProjectState["assets"];
-  onUpdateTargetStoresFilters?: (
-    sectionId: string,
-    filters: Record<string, boolean>
-  ) => void;
-};
+// Temporary switch: keep Layout preview static while preserving all saved animation/behavior settings.
+const disableLayoutPreviewMotion = true;
+
+const QUICK_INSERT_SECTION_TYPES = [
+  { type: "imageOnly", label: "Image" },
+  { type: "legalNotes", label: "Notes" },
+  { type: "stickyNote", label: "Sticky Note" },
+  { type: "contact", label: "Contact" },
+] as const;
 
 type SlideshowImage = ImageItem & { w?: number; h?: number };
-
-/**
- * 透過PNG/WebPかどうかを判定する（data URL の先頭を見て判定）
- * PNG または WebP の場合に透過の可能性があるとみなす
- */
-const isTransparentImage = (url: string): boolean => {
-  if (!url) return false;
-  if (url.startsWith("data:image/png")) return true;
-  if (url.startsWith("data:image/webp")) return true;
-  if (url.startsWith("data:image/gif")) return true;
-  // 外部URL の場合は拡張子で判定
-  const lower = url.toLowerCase().split("?")[0];
-  return lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".gif");
-};
 
 const parseHexColor = (value: string) => {
   const cleaned = value.replace("#", "").trim();
@@ -120,6 +100,29 @@ const getContrastRatio = (a: string, b: string) => {
   const lighter = Math.max(lumA, lumB);
   const darker = Math.min(lumA, lumB);
   return (lighter + 0.05) / (darker + 0.05);
+};
+
+const toText = (value: unknown) =>
+  typeof value === "string" ? value : value == null ? "" : String(value);
+
+const TRUTHY_TOKENS = new Set([
+  "対象",
+  "〇",
+  "○",
+  "はい",
+  "yes",
+  "y",
+  "true",
+  "1",
+  "on",
+]);
+
+const isTruthyStoreFlag = (value: string) => {
+  const normalized = value.normalize("NFKC").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return TRUTHY_TOKENS.has(normalized);
 };
 
 const BUTTON_PRESETS: Record<
@@ -284,326 +287,30 @@ const resolveButtonStyle = (item: ButtonContentItem) => {
   };
 };
 
-const CouponFlowSlider = ({
-  slides,
-  assets,
-}: {
-  slides: SlideshowImage[];
-  assets?: ProjectState["assets"];
-}) => {
-  const [index, setIndex] = useState(0);
-  const count = slides.length;
-  const hasMultiple = count > 1;
-  const safeIndex = count > 0 ? Math.min(index, count - 1) : 0;
-  const current = slides[safeIndex];
-  const resolvedSrc = current?.assetId
-    ? assets?.[current.assetId]?.data || current.src
-    : current?.src;
-  const aspectRatio =
-    current?.w && current?.h ? `${current.w} / ${current.h}` : "3 / 4";
-
-  return (
-    <div className="lp-couponflow__slider">
-      <button
-        type="button"
-        className="lp-couponflow__nav lp-couponflow__nav--prev"
-        aria-label="前へ"
-        disabled={!hasMultiple}
-        onClick={() => setIndex((currentIndex) => (currentIndex - 1 + count) % count)}
-      />
-      <div
-        className="lp-couponflow__frame"
-        style={aspectRatio ? { aspectRatio } : undefined}
-      >
-        {resolvedSrc ? (
-          <img
-            src={resolvedSrc}
-            alt={current?.alt ?? ""}
-            className="lp-couponflow__image"
-            data-asset-id={current?.assetId}
-          />
-        ) : (
-          <div className="lp-couponflow__placeholder">画像を追加してください</div>
-        )}
-      </div>
-      <button
-        type="button"
-        className="lp-couponflow__nav lp-couponflow__nav--next"
-        aria-label="次へ"
-        disabled={!hasMultiple}
-        onClick={() => setIndex((currentIndex) => (currentIndex + 1) % count)}
-      />
-      {hasMultiple ? (
-        <div className="lp-couponflow__dots">
-          {slides.map((image, dotIndex) => (
-            <button
-              key={image.id}
-              type="button"
-              className={
-                dotIndex === safeIndex
-                  ? "lp-couponflow__dot is-active"
-                  : "lp-couponflow__dot"
-              }
-              aria-label={`スライド${dotIndex + 1}`}
-              onClick={() => setIndex(dotIndex)}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
-const TabbedNotesSection = ({
-  section,
-  project,
-  cardTextColor,
-}: {
-  section: SectionBase;
-  project: ProjectState;
-  cardTextColor: string | undefined;
-}) => {
-  const data = section.data ?? {};
-  const rawTabs = Array.isArray(data.tabs) ? data.tabs : [];
-  const tabs = rawTabs.map((tab, index) => {
-    const entry = tab && typeof tab === "object"
-      ? (tab as Record<string, unknown>)
-      : {};
-    const rawItems = Array.isArray(entry.items) ? entry.items : [];
-    const items = rawItems.map((item, itemIndex) => {
-      const itemEntry = item && typeof item === "object"
-        ? (item as Record<string, unknown>)
-        : {};
-      return {
-        id:
-          typeof itemEntry.id === "string" && itemEntry.id.trim()
-            ? itemEntry.id
-            : `tab_item_${index + 1}_${itemIndex + 1}`,
-        text: typeof itemEntry.text === "string" ? itemEntry.text : "",
-        bullet: itemEntry.bullet === "none" ? "none" : "disc",
-        tone: itemEntry.tone === "accent" ? "accent" : "normal",
-        bold: Boolean(itemEntry.bold),
-        subItems: Array.isArray(itemEntry.subItems)
-          ? itemEntry.subItems.map((value) => String(value))
-          : [],
-      };
-    });
-    return {
-      id: typeof entry.id === "string" && entry.id.trim()
-        ? entry.id
-        : `tab_${index + 1}`,
-      labelTop: typeof entry.labelTop === "string" ? entry.labelTop : "",
-      labelBottom:
-        typeof entry.labelBottom === "string" ? entry.labelBottom : "注意事項",
-      intro: typeof entry.intro === "string" ? entry.intro : "",
-      items,
-      footnote: typeof entry.footnote === "string" ? entry.footnote : "",
-      ctaText: typeof entry.ctaText === "string" ? entry.ctaText : "",
-      ctaLinkText:
-        typeof entry.ctaLinkText === "string" ? entry.ctaLinkText : "",
-      ctaLinkUrl:
-        typeof entry.ctaLinkUrl === "string" ? entry.ctaLinkUrl : "",
-      ctaTargetKind: entry.ctaTargetKind === "section" ? "section" : "url",
-      ctaSectionId:
-        typeof entry.ctaSectionId === "string" ? entry.ctaSectionId : "",
-      ctaImageUrl:
-        typeof entry.ctaImageUrl === "string" ? entry.ctaImageUrl : "",
-      ctaImageAlt:
-        typeof entry.ctaImageAlt === "string" ? entry.ctaImageAlt : "",
-      ctaImageAssetId:
-        typeof entry.ctaImageAssetId === "string" ? entry.ctaImageAssetId : "",
-      buttonText:
-        typeof entry.buttonText === "string" ? entry.buttonText : "",
-      buttonTargetKind:
-        entry.buttonTargetKind === "section" ? "section" : "url",
-      buttonUrl: typeof entry.buttonUrl === "string" ? entry.buttonUrl : "",
-      buttonSectionId:
-        typeof entry.buttonSectionId === "string" ? entry.buttonSectionId : "",
-    };
-  });
-  const style = data.tabStyle && typeof data.tabStyle === "object"
-    ? (data.tabStyle as Record<string, unknown>)
-    : {};
-  const rawVariant = typeof style.variant === "string" ? style.variant : "simple";
-  const variant =
-    rawVariant === "sticky" || rawVariant === "underline" || rawVariant === "popout"
-      ? rawVariant
-      : "simple";
-  const tabStyle = {
-    variant,
-    inactiveBg: typeof style.inactiveBg === "string" ? style.inactiveBg : "#DDDDDD",
-    inactiveText:
-      typeof style.inactiveText === "string" ? style.inactiveText : "#000000",
-    activeBg: typeof style.activeBg === "string" ? style.activeBg : "#000000",
-    activeText:
-      typeof style.activeText === "string" ? style.activeText : "#FFFFFF",
-    border: typeof style.border === "string" ? style.border : "#000000",
-    contentBg:
-      typeof style.contentBg === "string" ? style.contentBg : "#FFFFFF",
-    contentBorder:
-      typeof style.contentBorder === "string" ? style.contentBorder : "#000000",
-    accent: typeof style.accent === "string" ? style.accent : "#EB5505",
-  };
-  const [activeTabId, setActiveTabId] = useState(tabs[0]?.id ?? "");
-  useEffect(() => {
-    if (tabs.length === 0) {
-      return;
-    }
-    if (!tabs.find((tab) => tab.id === activeTabId)) {
-      setActiveTabId(tabs[0]?.id ?? "");
-    }
-  }, [activeTabId, tabs]);
-  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
-  const textColor = cardTextColor ?? section.style.typography.textColor;
-  const baseStyle: CSSProperties = {
-    fontFamily: section.style.typography.fontFamily,
-    fontSize: `calc(${section.style.typography.fontSize}px * var(--lp-font-scale, 1))`,
-    fontWeight: section.style.typography.fontWeight,
-    letterSpacing: `${section.style.typography.letterSpacing}px`,
-    lineHeight: section.style.typography.lineHeight,
-    color: textColor,
-    ["--lp-tab-inactive-bg" as string]: tabStyle.inactiveBg,
-    ["--lp-tab-inactive-text" as string]: tabStyle.inactiveText,
-    ["--lp-tab-active-bg" as string]: tabStyle.activeBg,
-    ["--lp-tab-active-text" as string]: tabStyle.activeText,
-    ["--lp-tab-border" as string]: tabStyle.border,
-    ["--lp-tab-content-bg" as string]: tabStyle.contentBg,
-    ["--lp-tab-content-border" as string]: tabStyle.contentBorder,
-    ["--lp-tab-accent" as string]: tabStyle.accent,
-  };
-  const resolveLink = (kind: string, sectionId: string, url: string) =>
-    kind === "section" && sectionId ? `#sec-${sectionId}` : url;
-  const resolvedCtaUrl = resolveLink(
-    activeTab?.ctaTargetKind ?? "url",
-    activeTab?.ctaSectionId ?? "",
-    activeTab?.ctaLinkUrl ?? ""
-  );
-  const resolvedButtonUrl = resolveLink(
-    activeTab?.buttonTargetKind ?? "url",
-    activeTab?.buttonSectionId ?? "",
-    activeTab?.buttonUrl ?? ""
-  );
-  const assets = project?.assets ?? {};
-  const resolvedCtaImage = activeTab?.ctaImageAssetId
-    ? assets?.[activeTab.ctaImageAssetId]?.data || activeTab.ctaImageUrl
-    : activeTab?.ctaImageUrl;
-  return (
-    <section
-      className={`lp-tabbed-notes lp-tabbed-notes--${tabStyle.variant}`}
-      style={baseStyle}
-    >
-      <div className="lp-tabbed-notes__shell">
-        <div className="lp-tabbed-notes__card">
-          <div className="lp-tabbed-notes__tabs">
-            {tabs.map((tab) => {
-              const isActive = tab.id === activeTabId;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={
-                    "lp-tabbed-notes__tab" + (isActive ? " is-active" : "")
-                  }
-                  onClick={() => setActiveTabId(tab.id)}
-                >
-                  {tab.labelTop ? (
-                    <span className="lp-tabbed-notes__tab-top">{tab.labelTop}</span>
-                  ) : null}
-                  <span className="lp-tabbed-notes__tab-bottom">
-                    {tab.labelBottom || "注意事項"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="lp-tabbed-notes__panel">
-            {activeTab?.intro ? (
-              <p className="lp-tabbed-notes__intro">{activeTab.intro}</p>
-            ) : null}
-            <ul className="lp-tabbed-notes__list">
-              {(activeTab?.items ?? []).map((item) => (
-                <li
-                  key={item.id}
-                  className={
-                    "lp-tabbed-notes__item" +
-                    (item.bullet === "disc" ? " is-disc" : "") +
-                    (item.tone === "accent" ? " is-accent" : "") +
-                    (item.bold ? " is-bold" : "")
-                  }
-                >
-                  {item.text}
-                  {item.subItems.length > 0 ? (
-                    <ul className="lp-tabbed-notes__sublist">
-                      {item.subItems.map((subItem, index) => (
-                        <li key={`${item.id}_sub_${index}`}>{subItem}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            {activeTab?.footnote ? (
-              <p className="lp-tabbed-notes__footnote">{activeTab.footnote}</p>
-            ) : null}
-            {activeTab?.ctaText || activeTab?.ctaLinkText || resolvedCtaImage ? (
-              <div className="lp-tabbed-notes__cta">
-                {activeTab?.ctaText ? (
-                  <p className="lp-tabbed-notes__cta-text">{activeTab.ctaText}</p>
-                ) : null}
-                {activeTab?.ctaLinkText && resolvedCtaUrl ? (
-                  <a className="lp-tabbed-notes__cta-link" href={resolvedCtaUrl}>
-                    {activeTab.ctaLinkText}
-                  </a>
-                ) : null}
-                {resolvedCtaImage ? (
-                  <a
-                    className="lp-tabbed-notes__cta-image"
-                    href={resolvedCtaUrl || "#"}
-                  >
-                    <img src={resolvedCtaImage} alt={activeTab?.ctaImageAlt ?? ""} />
-                  </a>
-                ) : null}
-              </div>
-            ) : null}
-            {activeTab?.buttonText && resolvedButtonUrl ? (
-              <div className="lp-tabbed-notes__button">
-                <a
-                  className="lp-tabbed-notes__button-link"
-                  href={resolvedButtonUrl}
-                >
-                  {activeTab.buttonText}
-                </a>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
 const ImageSlideshow = ({
   images,
   assets,
   intervalMs = 3000,
+  disableMotion = false,
 }: {
   images: SlideshowImage[];
   assets?: ProjectState["assets"];
   intervalMs?: number;
+  disableMotion?: boolean;
 }) => {
   const [index, setIndex] = useState(0);
   const count = images.length;
   const hasMultiple = count > 1;
 
   useEffect(() => {
-    if (!hasMultiple) {
+    if (!hasMultiple || disableMotion) {
       return;
     }
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % count);
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [count, hasMultiple, intervalMs]);
+  }, [count, disableMotion, hasMultiple, intervalMs]);
 
   const safeIndex = count > 0 ? Math.min(index, count - 1) : 0;
   const current = images[safeIndex];
@@ -620,6 +327,7 @@ const ImageSlideshow = ({
         style={aspectRatio ? { aspectRatio } : undefined}
       >
         {resolvedSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Editor preview needs raw img for data URLs and parity with export HTML.
           <img
             src={resolvedSrc}
             alt={current?.alt ?? ""}
@@ -628,7 +336,7 @@ const ImageSlideshow = ({
           />
         ) : null}
       </div>
-      {hasMultiple ? (
+      {hasMultiple && !disableMotion ? (
         <>
           <button
             type="button"
@@ -668,426 +376,6 @@ const ImageSlideshow = ({
   );
 };
 
-const TRUTHY_TOKENS = new Set([
-  "対象",
-  "〇",
-  "○",
-  "はい",
-  "yes",
-  "y",
-  "true",
-  "1",
-  "on",
-]);
-
-const MAX_LABEL_BADGES = 3;
-
-const str = (value: unknown) =>
-  typeof value === "string" ? value : value == null ? "" : String(value);
-
-const normalizeTruthValue = (value: string) =>
-  value
-    .normalize("NFKC")
-    .trim()
-    .toLowerCase();
-
-const isTruthyStoreFlag = (value: string) => {
-  const normalized = normalizeTruthValue(value);
-  if (!normalized) {
-    return false;
-  }
-  return TRUTHY_TOKENS.has(normalized);
-};
-
-const resolveStoreCsv = (
-  section: SectionBase,
-  stores?: ProjectState["stores"]
-): StoreCsvData | undefined => {
-  const storeCsv = section.content?.storeCsv;
-  if (storeCsv && Array.isArray(storeCsv.headers) && storeCsv.headers.length > 0) {
-    return storeCsv;
-  }
-  if (stores?.columns?.length) {
-    return {
-      headers: stores.columns,
-      rows: stores.rows ?? [],
-    };
-  }
-  return undefined;
-};
-
-const REGION_GROUPS = [
-  {
-    region: "北海道",
-    items: [{ name: "北海道", label: "北海道", id: "hokkaido" }],
-  },
-  {
-    region: "東北",
-    items: [
-      { name: "青森県", label: "青森", id: "aomori" },
-      { name: "岩手県", label: "岩手", id: "iwate" },
-      { name: "宮城県", label: "宮城", id: "miyagi" },
-      { name: "秋田県", label: "秋田", id: "akita" },
-      { name: "山形県", label: "山形", id: "yamagata" },
-      { name: "福島県", label: "福島", id: "fukushima" },
-    ],
-  },
-  {
-    region: "関東",
-    items: [
-      { name: "茨城県", label: "茨城", id: "ibaraki" },
-      { name: "栃木県", label: "栃木", id: "tochigi" },
-      { name: "群馬県", label: "群馬", id: "gunma" },
-      { name: "埼玉県", label: "埼玉", id: "saitama" },
-      { name: "千葉県", label: "千葉", id: "chiba" },
-      { name: "東京都", label: "東京", id: "tokyo" },
-      { name: "神奈川県", label: "神奈川", id: "kanagawa" },
-    ],
-  },
-  {
-    region: "中部",
-    items: [
-      { name: "新潟県", label: "新潟", id: "niigata" },
-      { name: "富山県", label: "富山", id: "toyama" },
-      { name: "石川県", label: "石川", id: "ishikawa" },
-      { name: "福井県", label: "福井", id: "fukui" },
-      { name: "山梨県", label: "山梨", id: "yamanashi" },
-      { name: "長野県", label: "長野", id: "nagano" },
-      { name: "岐阜県", label: "岐阜", id: "gifu" },
-      { name: "静岡県", label: "静岡", id: "shizuoka" },
-      { name: "愛知県", label: "愛知", id: "aichi" },
-    ],
-  },
-  {
-    region: "近畿",
-    items: [
-      { name: "三重県", label: "三重", id: "mie" },
-      { name: "滋賀県", label: "滋賀", id: "shiga" },
-      { name: "京都府", label: "京都", id: "kyoto" },
-      { name: "大阪府", label: "大阪", id: "osaka" },
-      { name: "兵庫県", label: "兵庫", id: "hyogo" },
-      { name: "奈良県", label: "奈良", id: "nara" },
-      { name: "和歌山県", label: "和歌山", id: "wakayama" },
-    ],
-  },
-  {
-    region: "中国",
-    items: [
-      { name: "鳥取県", label: "鳥取", id: "tottori" },
-      { name: "島根県", label: "島根", id: "shimane" },
-      { name: "岡山県", label: "岡山", id: "okayama" },
-      { name: "広島県", label: "広島", id: "hiroshima" },
-      { name: "山口県", label: "山口", id: "yamaguchi" },
-    ],
-  },
-  {
-    region: "四国",
-    items: [
-      { name: "徳島県", label: "徳島", id: "tokushima" },
-      { name: "香川県", label: "香川", id: "kagawa" },
-      { name: "愛媛県", label: "愛媛", id: "ehime" },
-      { name: "高知県", label: "高知", id: "kouchi" },
-    ],
-  },
-  {
-    region: "九州・沖縄",
-    items: [
-      { name: "福岡県", label: "福岡", id: "fukuoka" },
-      { name: "佐賀県", label: "佐賀", id: "saga" },
-      { name: "長崎県", label: "長崎", id: "nagasaki" },
-      { name: "熊本県", label: "熊本", id: "kumamoto" },
-      { name: "大分県", label: "大分", id: "oita" },
-      { name: "宮崎県", label: "宮崎", id: "miyazaki" },
-      { name: "鹿児島県", label: "鹿児島", id: "kagoshima" },
-      { name: "沖縄県", label: "沖縄", id: "okinawa" },
-    ],
-  },
-];
-
-const PREFECTURE_ORDER = REGION_GROUPS.flatMap((group) =>
-  group.items.map((item) => item.name)
-);
-
-const PREFECTURE_ID_MAP = new Map(
-  REGION_GROUPS.flatMap((group) =>
-    group.items.map((item) => [item.name, item.id] as const)
-  )
-);
-
-const resolvePrefectureId = (prefecture: string, fallbackIndex: number) =>
-  PREFECTURE_ID_MAP.get(prefecture) ?? `pref-${fallbackIndex}`;
-
-const buildExcludedStoreGroups = (storeCsv: StoreCsvData | undefined) => {
-  if (!storeCsv || storeCsv.rows.length === 0) {
-    return [] as Array<{
-      prefecture: string;
-      id: string;
-      entries: Array<{ name: string; address: string }>;
-    }>;
-  }
-  const headers = storeCsv.headers ?? [];
-  const storeNameKey = headers.find((entry) => entry === "店舗名") ?? "店舗名";
-  const addressKey = headers.find((entry) => entry === "住所") ?? "住所";
-  const prefectureKey =
-    headers.find((entry) => entry === "都道府県") ?? "都道府県";
-  const groups = new Map<string, Array<{ name: string; address: string }>>();
-  storeCsv.rows.forEach((row) => {
-    if (!row || typeof row !== "object") {
-      return;
-    }
-    const pref = str(row[prefectureKey]).trim();
-    const name = str(row[storeNameKey]).trim();
-    const address = str(row[addressKey]).trim();
-    if (!pref && !name && !address) {
-      return;
-    }
-    const key = pref || "未分類";
-    const list = groups.get(key) ?? [];
-    list.push({ name, address });
-    groups.set(key, list);
-  });
-  const orderMap = new Map(
-    PREFECTURE_ORDER.map((prefecture, index) => [prefecture, index])
-  );
-  return Array.from(groups.entries())
-    .map(([prefecture, entries]) => ({
-      prefecture,
-      entries,
-    }))
-    .sort((a, b) => {
-      const orderA = orderMap.get(a.prefecture) ?? Number.MAX_SAFE_INTEGER;
-      const orderB = orderMap.get(b.prefecture) ?? Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    })
-    .map((group, index) => ({
-      ...group,
-      id: resolvePrefectureId(group.prefecture, index + 1),
-    }));
-};
-
-const pickHeader = (headers: string[], candidates: string[]) =>
-  candidates.find((candidate) => headers.includes(candidate)) ?? "";
-
-const buildBrandAnchorId = (
-  label: string,
-  index: number,
-  used: Set<string>
-) => {
-  const trimmed = label.trim();
-  const base = trimmed ? trimmed.replace(/\s+/g, "-") : `brand-${index + 1}`;
-  let next = base;
-  let counter = 1;
-  while (used.has(next)) {
-    next = `${base}-${counter}`;
-    counter += 1;
-  }
-  used.add(next);
-  return next;
-};
-
-const buildExcludedBrandGroups = (storeCsv: StoreCsvData | undefined) => {
-  if (!storeCsv || storeCsv.rows.length === 0) {
-    return [] as Array<{
-      brand: string;
-      id: string;
-      entries: Array<{ name: string; address: string }>;
-    }>;
-  }
-  const headers = storeCsv.headers ?? [];
-  const brandKey = pickHeader(headers, [
-    "ブランド名",
-    "ブランド",
-    "グループ",
-    "チェーン名",
-  ]);
-  const storeNameKey =
-    pickHeader(headers, ["店舗名", "店名", "対象外店舗名", "加盟店名"]) ||
-    headers[0] ||
-    "店舗名";
-  const addressKey =
-    pickHeader(headers, ["住所", "所在地", "所在地住所"]) ||
-    headers[1] ||
-    "住所";
-  const order: string[] = [];
-  const groups = new Map<string, Array<{ name: string; address: string }>>();
-  storeCsv.rows.forEach((row) => {
-    if (!row || typeof row !== "object") {
-      return;
-    }
-    const brand = str(row[brandKey]).trim();
-    const name = str(row[storeNameKey]).trim();
-    const address = str(row[addressKey]).trim();
-    if (!brand && !name && !address) {
-      return;
-    }
-    const key = brand || "未分類";
-    if (!groups.has(key)) {
-      order.push(key);
-      groups.set(key, []);
-    }
-    groups.get(key)?.push({ name, address });
-  });
-  const usedIds = new Set<string>();
-  return order.map((brand, index) => ({
-    brand,
-    entries: groups.get(brand) ?? [],
-    id: buildBrandAnchorId(brand, index, usedIds),
-  }));
-};
-
-const resolveStoreLabels = (
-  labels: StoreLabels | undefined,
-  extraColumns: string[],
-  colorMap: Record<string, string>
-): StoreLabels => {
-  const result: StoreLabels = {};
-  extraColumns.forEach((column) => {
-    const existing = labels?.[column];
-    const fallbackColor = colorMap[column] ?? getStableLabelColor(column);
-    result[column] = {
-      columnKey: column,
-      displayName:
-        typeof existing?.displayName === "string" && existing.displayName.trim()
-          ? existing.displayName
-          : column,
-      color:
-        typeof existing?.color === "string" && existing.color.trim()
-          ? existing.color
-          : fallbackColor,
-      trueText:
-        typeof existing?.trueText === "string" && existing.trueText.trim()
-          ? existing.trueText
-          : "ON",
-      falseText:
-        typeof existing?.falseText === "string" && existing.falseText.trim()
-          ? existing.falseText
-          : "OFF",
-      valueDisplay: existing?.valueDisplay === "raw" ? "raw" : "toggle",
-      showAsFilter:
-        typeof existing?.showAsFilter === "boolean"
-          ? existing.showAsFilter
-          : true,
-      showAsBadge:
-        typeof existing?.showAsBadge === "boolean"
-          ? existing.showAsBadge
-          : true,
-    };
-  });
-  return result;
-};
-
-const hexToRgb = (value: string) => {
-  const hex = value.replace("#", "").trim();
-  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(hex)) {
-    return null;
-  }
-  const normalized =
-    hex.length === 3
-      ? hex
-          .split("")
-          .map((char) => char + char)
-          .join("")
-      : hex;
-  const int = Number.parseInt(normalized, 16);
-  return {
-    r: (int >> 16) & 255,
-    g: (int >> 8) & 255,
-    b: int & 255,
-  };
-};
-
-const mixRgb = (rgb: { r: number; g: number; b: number }, mix: number) => {
-  const clamp = (value: number) => Math.min(255, Math.max(0, value));
-  const r = clamp(Math.round(rgb.r * (1 - mix) + 255 * mix));
-  const g = clamp(Math.round(rgb.g * (1 - mix) + 255 * mix));
-  const b = clamp(Math.round(rgb.b * (1 - mix) + 255 * mix));
-  return `rgb(${r}, ${g}, ${b})`;
-};
-
-const darkenRgb = (rgb: { r: number; g: number; b: number }, amount: number) => {
-  const clamp = (value: number) => Math.min(255, Math.max(0, value));
-  const r = clamp(Math.round(rgb.r * (1 - amount)));
-  const g = clamp(Math.round(rgb.g * (1 - amount)));
-  const b = clamp(Math.round(rgb.b * (1 - amount)));
-  return `rgb(${r}, ${g}, ${b})`;
-};
-
-const buildLabelStyle = (color: string, selected: boolean) => {
-  const rgb = hexToRgb(color);
-  if (!rgb) {
-    return selected
-      ? { backgroundColor: color, borderColor: color, color: "#000000" }
-      : { backgroundColor: color, borderColor: color, color: "#000000" };
-  }
-  return selected
-    ? {
-        backgroundColor: darkenRgb(rgb, 0.05),
-        borderColor: darkenRgb(rgb, 0.2),
-        color: "#000000",
-      }
-    : {
-        backgroundColor: mixRgb(rgb, 0.70),
-        borderColor: darkenRgb(rgb, 0.1),
-        color: "#000000",
-      };
-};
-
-type LabelPillProps = {
-  label: string;
-  color: string;
-  selected?: boolean;
-  disabled?: boolean;
-  dataKey?: string;
-  onClick?: () => void;
-};
-
-const LabelPill = ({
-  label,
-  color,
-  selected = false,
-  disabled = false,
-  dataKey,
-  onClick,
-}: LabelPillProps) => (
-  <button
-    type="button"
-    className={
-      "inline-flex min-h-[24px] max-w-[180px] items-center justify-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium leading-none transition-all duration-150 hover:scale-105 " +
-      (disabled ? "opacity-50" : "")
-    }
-    style={buildLabelStyle(color, selected)}
-    data-store-filter-key={dataKey}
-    data-store-filter-color={color}
-    data-store-selected={selected ? "true" : "false"}
-    onClick={onClick}
-    disabled={disabled}
-  >
-    <span
-      aria-hidden="true"
-      className={
-        "inline-flex h-3 w-3 items-center justify-center rounded-[3px] border text-[10px] font-bold leading-none " +
-        (selected ? "bg-black/20 border-black/40" : "border-black/30")
-      }
-    >
-      {selected ? "✓" : ""}
-    </span>
-    <span className="truncate">{label}</span>
-  </button>
-);
-
-type LabelBadgeProps = {
-  label: string;
-  color: string;
-};
-
-const LabelBadge = ({ label, color }: LabelBadgeProps) => (
-  <span
-    className="inline-flex min-h-[24px] max-w-[160px] items-center rounded-full border px-2.5 py-1 text-[12px] font-semibold leading-none"
-    style={buildLabelStyle(color, true)}
-  >
-    <span className="truncate">{label}</span>
-  </span>
-);
 
 const isTargetStoresNoticeItem = (item: ContentItem) =>
   item.type === "text" &&
@@ -1096,16 +384,6 @@ const isTargetStoresNoticeItem = (item: ContentItem) =>
 
 const getTargetStoresNoticeItem = (items?: ContentItem[]) =>
   items?.find(isTargetStoresNoticeItem);
-
-const getTargetStoresNoticeLines = (items?: ContentItem[]) => {
-  const noticeItem = getTargetStoresNoticeItem(items);
-  if (!noticeItem || noticeItem.type !== "text") {
-    return [];
-  }
-  return noticeItem.lines
-    .map((line) => line.text.trim())
-    .filter((text) => text.length > 0);
-};
 
 const resolveImageLayout = (
   layout: ImageContentItem["layout"],
@@ -1145,105 +423,6 @@ const getImageLayoutClass = (layout: ImageContentItem["layout"]) => {
   return "flex flex-col gap-3";
 };
 
-function TargetStoresSection({
-  section,
-  stores,
-  ui,
-  assets,
-  onUpdateTargetStoresFilters,
-}: TargetStoresSectionProps) {
-  return (
-    <SharedTargetStoresSection
-      section={section}
-      stores={stores}
-      assets={assets}
-      displayMode={ui?.previewMode === "mobile" ? "sp" : "auto"}
-      onUpdateTargetStoresFilters={onUpdateTargetStoresFilters}
-    />
-  );
-}
-
-const sectionLabels: Record<string, string> = {
-  brandBar: "ブランドバー",
-  heroImage: "ヒーロー画像",
-  imageOnly: "画像のみ",
-  campaignPeriodBar: "キャンペーン期間",
-  campaignOverview: "キャンペーン概要",
-  couponFlow: "クーポン利用の流れ",
-  rankingTable: "ランキング表",
-  paymentHistoryGuide: "決済利用方法",
-  tabbedNotes: "付箋タブセクション",
-  excludedStoresList: "対象外店舗一覧",
-  excludedBrandsList: "対象外ブランド一覧",
-  targetStores: "対象店舗",
-  legalNotes: "注意事項",
-  footerHtml: "問い合わせ",
-  textBlock: "テキストブロック",
-  imageText: "画像+テキスト",
-  cta: "CTA",
-  faq: "FAQ",
-  divider: "区切り",
-};
-
-const formatDate = (value?: string) => (value ? value.replaceAll("-", "/") : "");
-
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-
-const parseIsoDate = (value?: string) => {
-  if (!value || typeof value !== "string") {
-    return null;
-  }
-  const parts = value.split("-").map((entry) => Number(entry));
-  if (parts.length < 3) {
-    return null;
-  }
-  const [year, month, day] = parts;
-  if (!year || !month || !day) {
-    return null;
-  }
-  return new Date(year, month - 1, day);
-};
-
-const getDateParts = (date: Date) => ({
-  year: date.getFullYear(),
-  month: date.getMonth() + 1,
-  day: date.getDate(),
-  weekday: WEEKDAYS[date.getDay()],
-});
-
-const renderPlaceholder = (section: SectionBase) => (
-  <section className="w-full">
-    <div className="rounded-xl border border-dashed border-[var(--lp-border)] bg-[var(--lp-card)] p-4">
-      <div className="text-sm font-semibold text-[var(--lp-text)]">
-        {(sectionLabels[section.type] ?? section.type) + "（準備中）"}
-      </div>
-      <pre className="mt-2 overflow-x-auto rounded-md bg-[var(--lp-surface)] p-3 text-[11px] text-[var(--lp-muted)]">
-        {JSON.stringify(section.data ?? {}, null, 2)}
-      </pre>
-    </div>
-  </section>
-);
-
-const isSurfaceCustomized = (style?: SectionStyle) => {
-  if (!style) {
-    return false;
-  }
-  if (style.backgroundTransparent) {
-    return true;
-  }
-  const styleBackground = style.background;
-  const styleBorder = style.border;
-  const styleShadow = style.shadow;
-  const hasSurfaceBg = Boolean(
-    styleBackground &&
-      (styleBackground.type !== "solid" ||
-        styleBackground.color1 !== "#f1f1f1" ||
-        styleBackground.color2 !== "#ffffff")
-  );
-  const hasSurfaceBorder = Boolean(styleBorder?.enabled);
-  const hasSurfaceShadow = Boolean(styleShadow && styleShadow !== "none");
-  return hasSurfaceBg || hasSurfaceBorder || hasSurfaceShadow;
-};
 
 const buildSectionStyle = (style: SectionStyle | undefined): CSSProperties => {
   if (!style) {
@@ -1299,17 +478,6 @@ const buildSectionStyle = (style: SectionStyle | undefined): CSSProperties => {
   return result;
 };
 
-const buildSurfaceStyle = (style: SectionStyle | undefined): CSSProperties => {
-  const base = buildSectionStyle(style);
-  return {
-    backgroundColor: base.backgroundColor,
-    backgroundImage: base.backgroundImage,
-    border: base.border,
-    boxShadow: base.boxShadow,
-    borderRadius: base.borderRadius,
-  };
-};
-
 const buildLayoutStyle = (style: SectionStyle | undefined): CSSProperties => {
   const base = buildSectionStyle(style);
   return {
@@ -1352,6 +520,9 @@ const buildLayoutStyleWithOverrides = (
 };
 
 const buildAnimationStyle = (animation?: ContentItemAnimation): CSSProperties => {
+  if (disableLayoutPreviewMotion) {
+    return {};
+  }
   if (!animation) {
     return {};
   }
@@ -1369,6 +540,9 @@ const buildAnimationStyle = (animation?: ContentItemAnimation): CSSProperties =>
 const buildSectionAnimationStyle = (
   animation?: SectionAnimation
 ): CSSProperties => {
+  if (disableLayoutPreviewMotion) {
+    return {};
+  }
   if (!animation || animation.type === "none") {
     return {};
   }
@@ -1576,6 +750,18 @@ const animationStyleSheet = `
   }
 `;
 
+const staticLayoutPreviewStyleSheet = `
+  #__lp_root__ {
+    scroll-behavior: auto !important;
+  }
+  #__lp_root__ *,
+  #__lp_root__ *::before,
+  #__lp_root__ *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+`;
+
 const calloutPadding = (value?: "sm" | "md" | "lg") =>
   value === "sm" ? "8px" : value === "lg" ? "16px" : "12px";
 const calloutVariantClass = (variant?: "note" | "warn" | "info") =>
@@ -1696,7 +882,11 @@ const renderContentItems = (
           if (layout === "slideshow") {
             return (
               <div key={item.id} style={buildAnimationStyle(item.animation)}>
-                <ImageSlideshow images={item.images} assets={assets} />
+                <ImageSlideshow
+                  images={item.images}
+                  assets={assets}
+                  disableMotion={disableLayoutPreviewMotion}
+                />
               </div>
             );
           }
@@ -1712,6 +902,7 @@ const renderContentItems = (
                   ? assets?.[image.assetId]?.data || image.src
                   : image.src;
                 return (
+                  // eslint-disable-next-line @next/next/no-img-element -- Editor preview needs raw img for data URLs and parity with export HTML.
                   <img
                     key={image.id}
                     src={resolvedSrc}
@@ -1773,1284 +964,395 @@ const renderContentItems = (
   );
 };
 
+const TargetStoresPreviewSection = ({ section }: { section: SectionBase }) => {
+  const data = (section.data ?? {}) as Record<string, unknown>;
+  const csv = section.content?.storeCsv;
+  const headers = useMemo(
+    () => (Array.isArray(csv?.headers) ? csv.headers : []),
+    [csv]
+  );
+  const rows = useMemo(() => (Array.isArray(csv?.rows) ? csv.rows : []), [csv]);
+  const storeLabels = useMemo(
+    () =>
+      section.content?.storeLabels && typeof section.content.storeLabels === "object"
+        ? section.content.storeLabels
+        : {},
+    [section.content]
+  );
+  const storeFilters =
+    section.content?.storeFilters && typeof section.content.storeFilters === "object"
+      ? section.content.storeFilters
+      : {};
+  const filterOperator = section.content?.storeFilterOperator === "OR" ? "OR" : "AND";
+
+  const pageSize =
+    typeof data.pageSize === "number" && Number.isFinite(data.pageSize) && data.pageSize > 0
+      ? data.pageSize
+      : 10;
+  const showSearchBox = typeof data.showSearchBox === "boolean" ? data.showSearchBox : true;
+  const showRegionFilter =
+    typeof data.showRegionFilter === "boolean" ? data.showRegionFilter : true;
+  const showLabelFilters =
+    typeof data.showLabelFilters === "boolean" ? data.showLabelFilters : true;
+  const showResultCount =
+    typeof data.showResultCount === "boolean" ? data.showResultCount : true;
+  const showPager = typeof data.showPager === "boolean" ? data.showPager : true;
+  const cardVariant = toText(data.cardVariant || "outlined");
+  const cardBg = toText(data.cardBg || "#ffffff");
+  const titleBandColor = toText(data.titleBandColor || "#ffffff");
+  const titleTextColor = toText(data.titleTextColor || "#1d4ed8");
+  const cardBorderColor = toText(data.cardBorderColor || "#e2e8f0");
+  const cardRadius =
+    typeof data.cardRadius === "number" && Number.isFinite(data.cardRadius)
+      ? data.cardRadius
+      : 12;
+  const cardShadow = toText(data.cardShadow || "0 1px 0 rgba(15,23,42,0.04)");
+
+  const searchPlaceholder = toText(data.searchPlaceholder || "店舗名・住所など");
+  const resultCountLabel = toText(data.resultCountLabel || "表示件数");
+  const emptyMessage = toText(
+    data.emptyMessage || "条件に一致する対象店舗が見つかりませんでした。"
+  );
+  const pagerPrevLabel = toText(data.pagerPrevLabel || "前へ");
+  const pagerNextLabel = toText(data.pagerNextLabel || "次へ");
+  const description = toText(data.description || "");
+
+  const idKey = headers.find((entry) => entry === "店舗ID") ?? headers[0] ?? "店舗ID";
+  const nameKey = headers.find((entry) => entry === "店舗名") ?? headers[1] ?? "店舗名";
+  const postalKey = headers.find((entry) => entry === "郵便番号") ?? headers[2] ?? "郵便番号";
+  const addressKey = headers.find((entry) => entry === "住所") ?? headers[3] ?? "住所";
+  const regionKey = headers.find((entry) => entry === "都道府県") ?? headers[4] ?? "都道府県";
+
+  const labelKeys = useMemo(() => {
+    const keys = Object.keys(storeLabels).length
+      ? Object.keys(storeLabels)
+      : headers.filter(
+          (column) => ![idKey, nameKey, postalKey, addressKey, regionKey].includes(column)
+        );
+    return keys.filter(
+      (column) => ![idKey, nameKey, postalKey, addressKey, regionKey].includes(column)
+    );
+  }, [addressKey, headers, idKey, nameKey, postalKey, regionKey, storeLabels]);
+
+  const regions = useMemo(() => {
+    const values = Array.from(
+      new Set(rows.map((row) => toText(row[regionKey]).trim()).filter(Boolean))
+    );
+    return values.sort((a, b) => a.localeCompare(b, "ja"));
+  }, [regionKey, rows]);
+
+  const [keyword, setKeyword] = useState("");
+  const [prefecture, setPrefecture] = useState("");
+  const [activeLabels, setActiveLabels] = useState<Set<string>>(() => {
+    const defaults = new Set<string>();
+    Object.entries(storeFilters).forEach(([key, enabled]) => {
+      if (enabled === true) {
+        defaults.add(key);
+      }
+    });
+    return defaults;
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const filteredStores = useMemo(() => {
+    const needle = keyword.normalize("NFKC").trim().toLowerCase();
+    const selected = Array.from(activeLabels);
+    return rows.filter((row) => {
+      if (needle) {
+        const text = [toText(row[nameKey]), toText(row[addressKey]), toText(row[postalKey])]
+          .join(" ")
+          .normalize("NFKC")
+          .toLowerCase();
+        if (!text.includes(needle)) {
+          return false;
+        }
+      }
+      if (prefecture && toText(row[regionKey]).trim() !== prefecture) {
+        return false;
+      }
+      if (selected.length === 0) {
+        return true;
+      }
+      if (filterOperator === "OR") {
+        return selected.some((key) => isTruthyStoreFlag(toText(row[key])));
+      }
+      return selected.every((key) => isTruthyStoreFlag(toText(row[key])));
+    });
+  }, [activeLabels, addressKey, filterOperator, keyword, nameKey, postalKey, prefecture, regionKey, rows]);
+
+  const totalCount = filteredStores.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / Math.max(1, pageSize)));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const pagedStores = filteredStores.slice(startIndex, startIndex + pageSize);
+
+  const toggleLabel = (labelKey: string) => {
+    setActiveLabels((prev) => {
+      const next = new Set(prev);
+      if (next.has(labelKey)) {
+        next.delete(labelKey);
+      } else {
+        next.add(labelKey);
+      }
+      return next;
+    });
+    setCurrentPage(1);
+  };
+
+  const noticeItem = getTargetStoresNoticeItem(section.content?.items);
+  const explicitNoteText = typeof data.note === "string" ? data.note : undefined;
+  const hasExplicitNote = typeof explicitNoteText === "string";
+  const explicitNoteLines: string[] = hasExplicitNote
+    ? explicitNoteText
+        .split(/\r?\n/)
+        .map((entry: string) => entry.trim())
+        .filter((entry: string) => entry.length > 0)
+    : [];
+  const noticeLines: string[] = hasExplicitNote
+    ? explicitNoteLines
+    : noticeItem && noticeItem.type === "text"
+    ? noticeItem.lines.map((line) => line.text.trim()).filter((entry) => entry.length > 0)
+    : [
+        "ご注意ください！",
+        "リストに記載があっても、店舗の休業・閉業・移転や、その他の事情により利用できない場合があります。",
+      ];
+
+  return (
+    <section className="container target-stores target-stores--searchCards" style={{ padding: 0, background: "#f8fafc" }}>
+      <header className="target-stores__header" style={{ marginBottom: 12 }}>
+        {description ? (
+          <p className="target-stores__description" style={{ margin: 0, color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+            {description}
+          </p>
+        ) : null}
+      </header>
+      {noticeLines.length > 0 ? (
+        <section className="target-stores__notice" style={{ marginBottom: 12 }}>
+          <div style={{ border: "1px solid #fed7aa", background: "#fff7ed", borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ fontWeight: 700, color: "#d9480f", fontSize: 13, marginBottom: 4 }}>
+              {noticeLines[0]}
+            </div>
+            {noticeLines.slice(1).map((line: string, index: number) => (
+              <div key={`${line}-${index}`} style={{ fontSize: 12, color: "#92400e", lineHeight: 1.5 }}>
+                ● {line}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <section className="target-stores__controls" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        {showSearchBox ? (
+          <div className="target-stores__search" style={{ display: "flex", flexWrap: "wrap", gap: "8px 12px", alignItems: "center" }}>
+            <label style={{ fontSize: 12, color: "#475569" }}>キーワード</label>
+            <input
+              type="search"
+              placeholder={searchPlaceholder}
+              value={keyword}
+              onChange={(event) => {
+                setKeyword(event.target.value);
+                setCurrentPage(1);
+              }}
+              style={{ height: 32, border: "1px solid #e2e8f0", borderRadius: 8, padding: "0 10px", fontSize: 12, minWidth: 200, flex: "1 1 260px", background: "#fff" }}
+            />
+          </div>
+        ) : null}
+        {showRegionFilter ? (
+          <div className="target-stores__region" style={{ marginTop: 12 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#475569", marginBottom: 4 }}>都道府県</label>
+            <select
+              value={prefecture}
+              onChange={(event) => {
+                setPrefecture(event.target.value);
+                setCurrentPage(1);
+              }}
+              style={{ width: "100%", height: 32, border: "1px solid #e2e8f0", borderRadius: 8, padding: "0 10px", fontSize: 12, background: "#fff" }}
+            >
+              <option value="">すべて</option>
+              {regions.map((region) => (
+                <option key={region} value={region}>
+                  {region}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        {showLabelFilters ? (
+          <div className="target-stores__filters" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+            <div className="target-stores__chips" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {labelKeys
+                .filter((key) => storeLabels[key]?.showAsFilter !== false)
+                .map((key) => {
+                  const active = activeLabels.has(key);
+                  const label = storeLabels[key]?.displayName?.trim() || key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleLabel(key)}
+                      style={{
+                        border: `1px solid ${active ? "#2563eb" : "#e2e8f0"}`,
+                        background: active ? "#eff6ff" : "#fff",
+                        color: active ? "#1d4ed8" : "#334155",
+                        borderRadius: 999,
+                        padding: "4px 10px",
+                        fontSize: 11,
+                        lineHeight: 1.2,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        ) : null}
+      </section>
+      <section className="target-stores__meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "#64748b", gap: 12, marginBottom: 12 }}>
+        {showResultCount ? (
+          <div className="target-stores__result-count" style={{ fontSize: 12, color: "#64748b", fontWeight: 400 }}>
+            {resultCountLabel}: {totalCount}件
+          </div>
+        ) : (
+          <div />
+        )}
+        {showPager ? (
+          <div className="target-stores__pager" style={{ display: "flex", alignItems: "center" }}>
+            <button
+              type="button"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 6, padding: "4px 10px", fontSize: 11, marginRight: 6, color: safePage <= 1 ? "#cbd5f5" : "#334155" }}
+            >
+              {pagerPrevLabel}
+            </button>
+            <span style={{ fontSize: 12, color: "#64748b", marginRight: 6 }}>
+              {safePage}/{totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={safePage >= totalPages}
+              onClick={() =>
+                setCurrentPage((prev) => Math.min(totalPages, Math.max(1, prev + 1)))
+              }
+              style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 6, padding: "4px 10px", fontSize: 11, marginRight: 6, color: safePage >= totalPages ? "#cbd5f5" : "#334155" }}
+            >
+              {pagerNextLabel}
+            </button>
+          </div>
+        ) : null}
+      </section>
+      <section className="target-stores__cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 12 }}>
+        {pagedStores.map((row, index) => {
+          const storeName = toText(row[nameKey] || `店舗${index + 1}`);
+          const postalCode = toText(row[postalKey] || "");
+          const prefectureName = toText(row[regionKey] || "");
+          const address = toText(row[addressKey] || "");
+          const badges = labelKeys
+            .filter((key) => storeLabels[key]?.showAsBadge !== false)
+            .filter((key) => isTruthyStoreFlag(toText(row[key])))
+            .map((key) => storeLabels[key]?.displayName?.trim() || key);
+          return (
+            <article
+              key={`${toText(row[idKey] || storeName)}-${index}`}
+              className="target-stores__card"
+              style={{
+                background: cardBg,
+                border: `1px solid ${cardBorderColor}`,
+                borderRadius: Math.max(0, cardRadius),
+                boxShadow:
+                  cardVariant === "flat"
+                    ? "none"
+                    : cardVariant === "elevated"
+                    ? cardShadow || "0 8px 18px rgba(15,23,42,0.12)"
+                    : cardShadow,
+                padding: 14,
+              }}
+            >
+              <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {badges.map((badge) => (
+                  <span key={badge} style={{ display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 999, background: "#f1f5f9", padding: "3px 8px", fontSize: 11, lineHeight: 1.3, color: "#475569", fontWeight: 600 }}>
+                    {badge}
+                  </span>
+                ))}
+              </div>
+              <h3
+                style={{
+                  margin: "0 0 6px",
+                  color: titleTextColor,
+                  fontSize: 14,
+                  lineHeight: 1.4,
+                  fontWeight: 700,
+                  background: titleBandColor,
+                }}
+              >
+                {storeName}
+              </h3>
+              <p style={{ margin: 0, color: "#64748b", fontSize: 12, lineHeight: 1.6 }}>
+                {postalCode ? `〒${postalCode} ` : ""}
+                {prefectureName}
+                {address}
+              </p>
+            </article>
+          );
+        })}
+      </section>
+      <section className="target-stores__empty-wrap" style={{ marginTop: 12 }}>
+        {totalCount === 0 ? (
+          <div className="target-stores__empty" style={{ textAlign: "center", padding: 24, border: "1px dashed #e2e8f0", borderRadius: 12, color: "#94a3b8", background: "#fff" }}>
+            {emptyMessage}
+          </div>
+        ) : null}
+      </section>
+    </section>
+  );
+};
+
 const renderSection = (
   section: SectionBase,
   project: ProjectState,
-  ui: PreviewUiState | null | undefined,
-  cardTextColor: string | undefined,
-  mvBackground: ReturnType<typeof buildBackgroundStyle>,
-  onUpdateTargetStoresFilters?: (
-    sectionId: string,
-    filters: Record<string, boolean>
-  ) => void
+  ui: PreviewUiState | null | undefined
 ) => {
   if (!section.visible) {
     return null;
   }
 
-  switch (section.type) {
-    case "brandBar":
-      return (() => {
-        const assets = project?.assets ?? {};
-        const assetId =
-          typeof section.data.brandImageAssetId === "string"
-            ? section.data.brandImageAssetId
-            : undefined;
-        const imageUrl =
-          (assetId ? assets[assetId]?.data : "") ||
-          (typeof section.data.brandImageUrl === "string"
-            ? section.data.brandImageUrl
-            : "") ||
-          "";
-        return (
-          <div className="lp-brandbar" data-sticky="true">
-            <div className="lp-brandbar-inner">
-              {imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt={String(section.data.logoText ?? "ブランドバー")}
-                  className="lp-brandbar-image"
-                  data-asset-id={assetId}
-                />
-              ) : (
-                <div className="w-full text-sm font-semibold text-[var(--lp-text)]">
-                  {typeof section.data.logoText === "string"
-                    ? section.data.logoText
-                    : ""}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })();
-    case "heroImage": {
-      const assets = project?.assets ?? {};
-      const heroFullSize = Boolean(section.data.heroFullSize);
-      const heroSlidesPc = Array.isArray(section.data.heroSlidesPc)
-        ? (section.data.heroSlidesPc as SlideshowImage[])
-        : [];
-      const heroSlidesSp = Array.isArray(section.data.heroSlidesSp)
-        ? (section.data.heroSlidesSp as SlideshowImage[])
-        : [];
-      const pcAssetId =
-        typeof section.data.imageAssetIdPc === "string"
-          ? section.data.imageAssetIdPc
-          : typeof section.data.imageAssetId === "string"
-          ? section.data.imageAssetId
-          : undefined;
-      const spAssetId =
-        typeof section.data.imageAssetIdSp === "string"
-          ? section.data.imageAssetIdSp
-          : undefined;
-      const pcUrl =
-        (pcAssetId ? assets[pcAssetId]?.data : "") ||
-        (typeof section.data.imageUrl === "string" ? section.data.imageUrl : "") ||
-        "";
-      const spUrl =
-        (spAssetId ? assets[spAssetId]?.data : "") ||
-        (typeof section.data.imageUrlSp === "string" ? section.data.imageUrlSp : "") ||
-        "";
-      const isMobilePreview = ui?.previewMode === "mobile";
-      const heroUrl = (isMobilePreview ? spUrl : pcUrl) || pcUrl || spUrl;
-      const heroPc = section.data.heroPc as | { w?: number; h?: number } | undefined;
-      const heroSp = section.data.heroSp as | { w?: number; h?: number } | undefined;
-      const heroMeta = (isMobilePreview ? heroSp : heroPc) ?? heroPc ?? heroSp;
-      const heroSlides = (isMobilePreview ? heroSlidesSp : heroSlidesPc).filter(
-        (entry) => Boolean(entry?.src || entry?.assetId)
-      );
-      const slideMeta = heroSlides[0];
-      const heroBoxStyle: CSSProperties = heroFullSize
-        ? slideMeta?.w && slideMeta?.h
-          ? {
-              width: "100%",
-              aspectRatio: `${slideMeta.w} / ${slideMeta.h}`,
-            }
-          : heroMeta?.w && heroMeta?.h
-          ? {
-              width: "100%",
-              aspectRatio: `${heroMeta.w} / ${heroMeta.h}`,
-            }
-          : {
-              width: "100%",
-            }
-        : heroMeta?.w && heroMeta?.h
-        ? {
-            width: "100%",
-            maxWidth: `${heroMeta.w}px`,
-            aspectRatio: `${heroMeta.w} / ${heroMeta.h}`,
-            marginLeft: "auto",
-            marginRight: "auto",
-          }
-        : {
-            width: "100%",
-          };
-      const heroAnimation = section.data.heroAnimation as
-        | ContentItemAnimation
-        | undefined;
-      const heroImageStyle: CSSProperties = {
-        ...buildAnimationStyle(heroAnimation),
-        objectFit: "contain",
-      };
-      const mvBackgroundStyle = mvBackground.style;
-      const mvVideo = mvBackground.video;
-      const mvVideoUrl = mvVideo?.assetId
-        ? assets?.[mvVideo.assetId]?.data || ""
-        : "";
-      const mvAutoPlay = mvVideo?.autoPlay ?? true;
-      const mvLoop = mvVideo?.loop ?? true;
-      const mvMuted = mvVideo?.muted ?? true;
-      const mvInline = mvVideo?.playsInline ?? true;
-      const mvOpacity =
-        typeof mvVideo?.opacity === "number" ? mvVideo.opacity : 1;
-      const mvBlur = typeof mvVideo?.blur === "number" ? mvVideo.blur : 0;
-      const mvBrightness =
-        typeof mvVideo?.brightness === "number" ? mvVideo.brightness : 1;
-      const mvSaturation =
-        typeof mvVideo?.saturation === "number" ? mvVideo.saturation : 1;
-      const mvFilters = [
-        `brightness(${mvBrightness})`,
-        `saturate(${mvSaturation})`,
-      ];
-      if (mvBlur > 0) {
-        mvFilters.push(`blur(${mvBlur}px)`);
-      }
-      if (mvOpacity !== 1) {
-        mvFilters.push(`opacity(${mvOpacity})`);
-      }
-      return (
-        <div className="lp-hero relative overflow-hidden">
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={mvBackgroundStyle}
-          >
-            {mvVideo && mvVideoUrl ? (
-              <video
-                className="h-full w-full object-cover"
-                src={mvVideoUrl}
-                autoPlay={mvAutoPlay}
-                muted={mvMuted}
-                loop={mvLoop}
-                playsInline={mvInline}
-                style={{ filter: mvFilters.join(" ") }}
-              />
-            ) : null}
-          </div>
-          <div className="relative z-10">
-            {heroSlides.length > 0 ? (
-              <div className="w-full" style={heroBoxStyle}>
-                <ImageSlideshow images={heroSlides} assets={assets} />
-              </div>
-            ) : heroUrl ? (
-              <div
-                className="w-full"
-                style={{
-                  ...heroBoxStyle,
-                  ...(isTransparentImage(heroUrl)
-                    ? {
-                        backgroundImage:
-                          "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)",
-                        backgroundSize: "16px 16px",
-                        backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
-                        backgroundColor: "#fff",
-                      }
-                    : {}),
-                }}
-              >
-                <img
-                  src={String(heroUrl)}
-                  alt={String(section.data.alt ?? section.data.altText ?? "")}
-                  className="lp-hero-image"
-                  style={heroImageStyle}
-                  data-asset-id={(isMobilePreview ? spAssetId : pcAssetId) ?? undefined}
-                />
-              </div>
-            ) : (
-              <div
-                className="flex w-full items-center justify-center border border-[var(--lp-border)] bg-gradient-to-br from-[var(--lp-surface)] to-[var(--lp-card)] text-sm text-[var(--lp-muted)]"
-                style={heroBoxStyle}
-              >
-                ヒーロー画像
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-    case "imageOnly": {
-      const assets = project?.assets ?? {};
-      const assetId =
-        typeof section.data.imageOnlyAssetId === "string"
-          ? section.data.imageOnlyAssetId
-          : "";
-      const imageUrl =
-        (assetId ? assets[assetId]?.data : "") ||
-        (typeof section.data.imageOnlyUrl === "string"
-          ? section.data.imageOnlyUrl
-          : "") ||
-        "";
-      const imageAlt =
-        typeof section.data.imageOnlyAlt === "string"
-          ? section.data.imageOnlyAlt
-          : "";
-      const sizeMode =
-        section.data.imageOnlySizeMode === "auto" ||
-        section.data.imageOnlySizeMode === "custom"
-          ? section.data.imageOnlySizeMode
-          : "fit";
-      const imageWidth =
-        typeof section.data.imageOnlyWidth === "number"
-          ? section.data.imageOnlyWidth
-          : undefined;
-      const imageMaxWidth =
-        typeof section.data.imageOnlyMaxWidth === "number"
-          ? section.data.imageOnlyMaxWidth
-          : undefined;
-      const imageFit = section.data.imageOnlyFit === "cover" ? "cover" : "contain";
-      const imageAlign =
-        section.data.imageOnlyAlign === "left" ||
-        section.data.imageOnlyAlign === "right"
-          ? section.data.imageOnlyAlign
-          : "center";
-      const justifyContent =
-        imageAlign === "left"
-          ? "flex-start"
-          : imageAlign === "right"
-          ? "flex-end"
-          : "center";
-      const maxWidthStyle =
-        imageMaxWidth && imageMaxWidth > 0 ? `${imageMaxWidth}px` : "100%";
-      const imageStyle: CSSProperties = {
-        objectFit: imageFit,
-        height: "auto",
-        maxWidth: maxWidthStyle,
-      };
-      if (sizeMode === "fit") {
-        imageStyle.width = "100%";
-      } else if (sizeMode === "custom" && imageWidth && imageWidth > 0) {
-        imageStyle.width = `${imageWidth}px`;
-      }
-
-      return (
-        <section className="w-full">
-          <div className="flex w-full" style={{ justifyContent }}>
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={imageAlt}
-                style={imageStyle}
-                data-asset-id={assetId || undefined}
-              />
-            ) : (
-              <div
-                className="flex h-[200px] w-full items-center justify-center rounded-md border border-dashed border-[var(--lp-border)] text-sm text-[var(--lp-muted)]"
-                style={{ maxWidth: maxWidthStyle }}
-              >
-                画像を追加してください
-              </div>
-            )}
-          </div>
-        </section>
-      );
-    }
-    case "campaignPeriodBar": {
-      const periodText =
-        typeof section.data.periodBarText === "string"
-          ? section.data.periodBarText.trim()
-          : "";
-      const periodLabel =
-        typeof section.data.periodLabel === "string"
-          ? section.data.periodLabel.trim()
-          : "";
-      const startDateRaw =
-        typeof section.data.startDate === "string"
-          ? section.data.startDate
-          : undefined;
-      const endDateRaw =
-        typeof section.data.endDate === "string"
-          ? section.data.endDate
-          : undefined;
-      const style = section.data.periodBarStyle as
-        | { bold?: boolean; color?: string; size?: number }
-        | undefined;
-      const animation = section.data.periodBarAnimation as
-        | ContentItemAnimation
-        | undefined;
-      const resolvedSurfaceStyle = buildSectionStyle(section.style);
-      const hasSurfaceOverride = isSurfaceCustomized(section.style);
-      const defaultBandColor = "#EB5505";
-      const fallbackBackground = hasSurfaceOverride
-        ? section.style.backgroundTransparent
-          ? "transparent"
-          : section.style.background.type === "gradient"
-          ? `linear-gradient(135deg, ${section.style.background.color1}, ${section.style.background.color2})`
-          : section.style.background.color1 || defaultBandColor
-        : defaultBandColor;
-      const resolvedBackgroundImage =
-        hasSurfaceOverride &&
-        typeof resolvedSurfaceStyle.backgroundImage === "string" &&
-        resolvedSurfaceStyle.backgroundImage !== "none"
-          ? resolvedSurfaceStyle.backgroundImage
-          : undefined;
-      const resolvedBackgroundColor =
-        hasSurfaceOverride &&
-        typeof resolvedSurfaceStyle.backgroundColor === "string" &&
-        resolvedSurfaceStyle.backgroundColor.trim() !== ""
-          ? resolvedSurfaceStyle.backgroundColor
-          : undefined;
-      const bandBackground = hasSurfaceOverride
-        ? resolvedBackgroundImage || resolvedBackgroundColor || fallbackBackground
-        : defaultBandColor;
-      const bandColor = resolvedBackgroundColor || defaultBandColor;
-      const surfaceDecorStyle: CSSProperties = {
-        background: bandBackground,
-        border:
-          hasSurfaceOverride && typeof resolvedSurfaceStyle.border === "string"
-            ? resolvedSurfaceStyle.border
-            : undefined,
-        boxShadow:
-          hasSurfaceOverride &&
-          typeof resolvedSurfaceStyle.boxShadow === "string"
-            ? resolvedSurfaceStyle.boxShadow
-            : undefined,
-      };
-      const startDate = parseIsoDate(startDateRaw);
-      const endDate = parseIsoDate(endDateRaw);
-      const startParts = startDate ? getDateParts(startDate) : null;
-      const endParts = endDate ? getDateParts(endDate) : null;
-      const sameYear = startParts?.year === endParts?.year;
-      const textColor =
-        typeof style?.color === "string" && style.color.trim() !== ""
-          ? style.color
-          : "#ffffff";
-      const baseWeight = style?.bold ? 700 : 600;
-      const textStyle: CSSProperties = {
-        fontWeight: baseWeight,
-        fontSize: style?.size
-          ? `calc(${style.size}px * var(--lp-font-scale, 1))`
-          : undefined,
-      };
-      const bandStyle = {
-        ...surfaceDecorStyle,
-        color: textColor,
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        minHeight:
-          Number.isFinite(section.style.layout.minHeight) &&
-          section.style.layout.minHeight > 0
-            ? `${section.style.layout.minHeight}px`
-            : undefined,
-        height:
-          Number.isFinite(section.style.layout.minHeight) &&
-          section.style.layout.minHeight > 0
-            ? `${section.style.layout.minHeight}px`
-            : undefined,
-        "--lp-periodbar-bg": bandColor,
-        "--lp-periodbar-band": bandColor,
-        "--lp-periodbar-text": textColor,
-        ...buildAnimationStyle(animation),
-      } as CSSProperties;
-      const periodAlign =
-        (section.style as { titleBand?: { textAlign?: string } })
-          .titleBand?.textAlign ?? "center";
-      const periodJustify =
-        periodAlign === "left"
-          ? "flex-start"
-          : periodAlign === "right"
-          ? "flex-end"
-          : "center";
-      const labelText = periodLabel.length > 0 ? periodLabel : "キャンペーン期間";
-      const label =
-        periodText.length > 0
-          ? periodText
-          : `${formatDate(startDateRaw)} - ${formatDate(endDateRaw)}`;
-      return (
-        <div
-          className={"lp-periodbar lp-periodbar--responsive"}
-          data-testid="campaign-period-bar"
-          data-sticky="true"
-          style={bandStyle}
-        >
-          <div
-            className="lp-periodbar__center"
-            style={{
-              justifyContent: periodJustify,
-              textAlign: periodAlign as CSSProperties["textAlign"],
-            }}
-          >
-            <div className="lp-periodbar__label">{labelText}</div>
-            <div className="lp-periodbar__date" style={textStyle}>
-              {startParts && endParts ? (
-                <>
-                  <span className="lp-periodbar__pair">
-                    <span className="lp-periodbar__num">{startParts.year}</span>
-                    <span className="lp-periodbar__unit">年</span>
-                  </span>
-                  <span className="lp-periodbar__pair">
-                    <span className="lp-periodbar__num">{startParts.month}</span>
-                    <span className="lp-periodbar__unit">月</span>
-                  </span>
-                  <span className="lp-periodbar__pair">
-                    <span className="lp-periodbar__num">{startParts.day}</span>
-                    <span className="lp-periodbar__unit">日</span>
-                  </span>
-                  <span className="lp-periodbar__badge">{startParts.weekday}</span>
-                  <span className="lp-periodbar__sep">～</span>
-                  {!sameYear ? (
-                    <>
-                      <span className="lp-periodbar__pair">
-                        <span className="lp-periodbar__num">{endParts.year}</span>
-                        <span className="lp-periodbar__unit">年</span>
-                      </span>
-                    </>
-                  ) : null}
-                  <span className="lp-periodbar__pair">
-                    <span className="lp-periodbar__num">{endParts.month}</span>
-                    <span className="lp-periodbar__unit">月</span>
-                  </span>
-                  <span className="lp-periodbar__pair">
-                    <span className="lp-periodbar__num">{endParts.day}</span>
-                    <span className="lp-periodbar__unit">日</span>
-                  </span>
-                  <span className="lp-periodbar__badge">{endParts.weekday}</span>
-                </>
-              ) : (
-                <span className="lp-periodbar__num">{label}</span>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-    case "campaignOverview":
-      return null;
-    case "couponFlow": {
-      const assets = project?.assets ?? {};
-      const items = Array.isArray(section.content?.items)
-        ? (section.content?.items as ContentItem[])
-        : [];
-      const imageItem = items.find(
-        (item) => item.type === "image"
-      ) as ImageContentItem | undefined;
-      const buttonItems = items.filter(
-        (item): item is ButtonContentItem => item.type === "button"
-      );
-      const slides = imageItem?.images ?? [];
-      const lead = String(section.data.lead ?? "").trim();
-      const note = String(section.data.note ?? "").trim();
-      const textColor = section.style.typography.textColor;
-      return (
-        <div className="lp-couponflow" data-section-type="couponFlow">
-          <div className="lp-couponflow__body">
-            {lead ? <p className="lp-couponflow__lead">{lead}</p> : null}
-            <CouponFlowSlider slides={slides} assets={assets} />
-            {note ? <p className="lp-couponflow__note">{note}</p> : null}
-            {buttonItems.length > 0
-              ? renderContentItems(section, buttonItems, textColor, assets)
-              : null}
-          </div>
-        </div>
-      );
-    }
-    case "paymentHistoryGuide": {
-      const data = section.data ?? {};
-      const body = typeof data.body === "string" ? data.body : "";
-      const linkText = typeof data.linkText === "string" ? data.linkText : "";
-      const linkUrl = typeof data.linkUrl === "string" ? data.linkUrl : "";
-      const linkTargetKind =
-        data.linkTargetKind === "section" ? "section" : "url";
-      const linkSectionId =
-        typeof data.linkSectionId === "string" ? data.linkSectionId : "";
-      const resolvedLinkUrl =
-        linkTargetKind === "section" && linkSectionId
-          ? `#sec-${linkSectionId}`
-          : linkUrl;
-      const linkSuffix =
-        typeof data.linkSuffix === "string" ? data.linkSuffix : "";
-      const alert = typeof data.alert === "string" ? data.alert : "";
-      const imageUrl =
-        typeof data.imageUrl === "string" ? data.imageUrl : "";
-      const imageAlt =
-        typeof data.imageAlt === "string" ? data.imageAlt : "";
-      const imageAssetId =
-        typeof data.imageAssetId === "string" ? data.imageAssetId : "";
-      const assets = project?.assets ?? {};
-      const resolvedImage = imageAssetId
-        ? assets?.[imageAssetId]?.data || imageUrl
-        : imageUrl;
-      const textColor = cardTextColor ?? section.style.typography.textColor;
-      const baseStyle: CSSProperties = {
-        fontFamily: section.style.typography.fontFamily,
-        fontSize: `calc(${section.style.typography.fontSize}px * var(--lp-font-scale, 1))`,
-        fontWeight: section.style.typography.fontWeight,
-        letterSpacing: `${section.style.typography.letterSpacing}px`,
-        lineHeight: section.style.typography.lineHeight,
-        color: textColor,
-      };
-      const bodyLines = body.split("\n");
-      const alertLines = alert.split("\n");
-      return (
-        <section className="w-full" style={baseStyle}>
-          <div className="flex flex-col gap-2">
-            {body ? (
-              <p className="text-center text-[13px] font-semibold leading-relaxed sm:text-[14px]">
-                {bodyLines.map((line, index) => (
-                  <span key={`payment-body-${index}`}>
-                    {renderRichText(line)}
-                    {index < bodyLines.length - 1 ? <br /> : null}
-                  </span>
-                ))}
-                {linkText && resolvedLinkUrl ? (
-                  <>
-                    {" "}
-                    <a
-                      className="font-bold text-[#bf1d20] underline"
-                      href={resolvedLinkUrl}
-                    >
-                      {linkText}
-                    </a>
-                    {linkSuffix}
-                  </>
-                ) : null}
-              </p>
-            ) : null}
-            {alert ? (
-              <p className="text-center text-[13px] font-bold leading-relaxed text-[#bf1d20] sm:text-[14px]">
-                {alertLines.map((line, index) => (
-                  <span key={`payment-alert-${index}`}>
-                    {renderRichText(line)}
-                    {index < alertLines.length - 1 ? <br /> : null}
-                  </span>
-                ))}
-              </p>
-            ) : null}
-            <div className="flex justify-center">
-              {resolvedImage ? (
-                <img
-                  src={resolvedImage}
-                  alt={imageAlt}
-                  className="w-full max-w-[240px]"
-                  data-asset-id={imageAssetId || undefined}
-                />
-              ) : (
-                <div className="flex h-[180px] w-full max-w-[240px] items-center justify-center rounded-md border border-dashed border-[var(--lp-border)]/70 text-sm text-[var(--lp-muted)]">
-                  画像を追加してください
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      );
-    }
-    case "tabbedNotes": {
-      return (
-        <TabbedNotesSection
-          section={section}
-          project={project}
-          cardTextColor={cardTextColor}
-        />
-      );
-    }
-    case "rankingTable": {
-      const data = section.data ?? {};
-      const headers = data && typeof data.headers === "object"
-        ? (data.headers as {
-            rank?: string;
-            label?: string;
-            value?: string;
-          })
-        : {};
-      const rankLabel =
-        typeof data.rankLabel === "string"
-          ? data.rankLabel
-          : typeof headers.rank === "string"
-          ? headers.rank
-          : "順位";
-      const rawColumns = data.columns;
-      const columns = Array.isArray(rawColumns) && rawColumns.length > 0
-        ? rawColumns.map((col, index) => {
-            if (typeof col === "string") {
-              return { key: `col_${index + 1}`, label: col };
-            }
-            const entry = col && typeof col === "object"
-              ? (col as Record<string, unknown>)
-              : {};
-            return {
-              key: typeof entry.key === "string" ? entry.key : `col_${index + 1}`,
-              label:
-                typeof entry.label === "string"
-                  ? entry.label
-                  : `列${index + 1}`,
-            };
-          })
-        : [
-            {
-              key: "label",
-              label: typeof headers.label === "string" ? headers.label : "項目",
-            },
-            {
-              key: "value",
-              label: typeof headers.value === "string" ? headers.value : "決済金額",
-            },
-          ];
-      const columnCount = columns.length;
-      const rows = Array.isArray(data.rows) ? data.rows : [];
-      const normalizedRows = rows.map((row, index) => {
-        if (Array.isArray(row)) {
-          const values = row.map((value) => String(value));
-          return {
-            id: `rank_${index + 1}`,
-            values: values
-              .slice(0, columnCount)
-              .concat(Array(Math.max(0, columnCount - values.length)).fill("")),
-          };
-        }
-        const entry = row && typeof row === "object"
-          ? (row as Record<string, unknown>)
-          : {};
-        const rawValues = Array.isArray(entry.values)
-          ? entry.values.map((value) => String(value))
-          : [String(entry.label ?? ""), String(entry.value ?? "")];
-        return {
-          id:
-            typeof entry.id === "string" && entry.id.trim()
-              ? entry.id
-              : `rank_${index + 1}`,
-          values: rawValues
-            .slice(0, columnCount)
-            .concat(Array(Math.max(0, columnCount - rawValues.length)).fill("")),
-        };
-      });
-      const subtitle = typeof data.subtitle === "string" ? data.subtitle : "";
-      const period = typeof data.period === "string" ? data.period : "";
-      const dateText = typeof data.date === "string" ? data.date : "";
-      const notes = Array.isArray(data.notes)
-        ? (data.notes as Array<string>)
-            .map((note) => String(note).trim())
-            .filter((note) => note.length > 0)
-        : [];
-      const rawStyle = data.tableStyle && typeof data.tableStyle === "object"
-        ? (data.tableStyle as Record<string, unknown>)
-        : {};
-      const tableStyle = {
-        headerBg: typeof rawStyle.headerBg === "string" ? rawStyle.headerBg : "#f8fafc",
-        headerText:
-          typeof rawStyle.headerText === "string" ? rawStyle.headerText : "#0f172a",
-        cellBg: typeof rawStyle.cellBg === "string" ? rawStyle.cellBg : "#ffffff",
-        cellText: typeof rawStyle.cellText === "string" ? rawStyle.cellText : "#0f172a",
-        border: typeof rawStyle.border === "string" ? rawStyle.border : "#e2e8f0",
-        rankBg: typeof rawStyle.rankBg === "string" ? rawStyle.rankBg : "#e2e8f0",
-        rankText: typeof rawStyle.rankText === "string" ? rawStyle.rankText : "#0f172a",
-        top1Bg: typeof rawStyle.top1Bg === "string" ? rawStyle.top1Bg : "#f59e0b",
-        top2Bg: typeof rawStyle.top2Bg === "string" ? rawStyle.top2Bg : "#cbd5f5",
-        top3Bg: typeof rawStyle.top3Bg === "string" ? rawStyle.top3Bg : "#fb923c",
-        periodLabelBg:
-          typeof rawStyle.periodLabelBg === "string" ? rawStyle.periodLabelBg : "#f1f5f9",
-        periodLabelText:
-          typeof rawStyle.periodLabelText === "string"
-            ? rawStyle.periodLabelText
-            : "#0f172a",
-      };
-      const textColor = cardTextColor ?? section.style.typography.textColor;
-      const baseStyle: CSSProperties = {
-        fontFamily: section.style.typography.fontFamily,
-        fontSize: `calc(${section.style.typography.fontSize}px * var(--lp-font-scale, 1))`,
-        fontWeight: section.style.typography.fontWeight,
-        letterSpacing: `${section.style.typography.letterSpacing}px`,
-        lineHeight: section.style.typography.lineHeight,
-        color: textColor,
-      };
-      return (
-        <section className="w-full" style={baseStyle}>
-          <div className="flex flex-col gap-2">
-            {subtitle ? (
-              <div className="text-center text-sm font-semibold text-[var(--lp-muted)]">
-                {subtitle}
-              </div>
-            ) : null}
-            {period ? (
-              <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[var(--lp-muted)]">
-                <span
-                  className="rounded px-2 py-0.5"
-                  style={{
-                    backgroundColor: tableStyle.periodLabelBg,
-                    color: tableStyle.periodLabelText,
-                  }}
-                >
-                  集計期間
-                </span>
-                <span>{period}</span>
-              </div>
-            ) : null}
-            {dateText ? (
-              <div className="text-center text-lg font-semibold text-[var(--lp-text)]">
-                {dateText}
-              </div>
-            ) : null}
-            {normalizedRows.length === 0 ? (
-              <div className="rounded-md border border-dashed border-[var(--lp-border)]/70 px-3 py-3 text-center text-sm text-[var(--lp-muted)]">
-                ランキング行がありません。
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-separate border-spacing-2 font-semibold">
-                  <thead>
-                    <tr>
-                      <th
-                        className="rounded border px-3 py-2 text-center text-[12px] sm:text-[13px]"
-                        style={{
-                          backgroundColor: tableStyle.headerBg,
-                          color: tableStyle.headerText,
-                          borderColor: tableStyle.border,
-                        }}
-                      >
-                        {rankLabel}
-                      </th>
-                      {columns.map((column) => (
-                        <th
-                          key={column.key}
-                          className="rounded border px-3 py-2 text-center text-[12px] sm:text-[13px]"
-                          style={{
-                            backgroundColor: tableStyle.headerBg,
-                            color: tableStyle.headerText,
-                            borderColor: tableStyle.border,
-                          }}
-                        >
-                          {column.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {normalizedRows.map((row, index) => {
-                      const rank = index + 1;
-                      const rankBg =
-                        rank === 1
-                          ? tableStyle.top1Bg
-                          : rank === 2
-                          ? tableStyle.top2Bg
-                          : rank === 3
-                          ? tableStyle.top3Bg
-                          : tableStyle.rankBg;
-                      const rankColor = tableStyle.rankText;
-                      return (
-                        <tr key={row.id ?? `rank-${index}`}>
-                          <td
-                            className="rounded border px-3 py-2 text-center text-[16px] font-extrabold sm:text-[18px]"
-                            style={{
-                              backgroundColor: tableStyle.cellBg,
-                              color: tableStyle.cellText,
-                              borderColor: tableStyle.border,
-                            }}
-                          >
-                            <span
-                              className="inline-flex min-h-[28px] min-w-[28px] items-center justify-center rounded-full px-2"
-                              style={{ backgroundColor: rankBg, color: rankColor }}
-                            >
-                              {rank}
-                            </span>
-                          </td>
-                          {row.values.map((value, valueIndex) => (
-                            <td
-                              key={`${row.id}_${valueIndex}`}
-                              className="rounded border px-3 py-2 text-center text-[14px] font-semibold sm:text-[16px]"
-                              style={{
-                                backgroundColor: tableStyle.cellBg,
-                                color: tableStyle.cellText,
-                                borderColor: tableStyle.border,
-                              }}
-                            >
-                              {value.trim() ? value : "-"}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {notes.length > 0 ? (
-              <ul className="space-y-1 text-[12px] text-[var(--lp-muted)]">
-                {notes.map((note, index) => (
-                  <li key={`rank-note-${index}`}>{note}</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        </section>
-      );
-    }
-    case "targetStores":
-      return (
-        <section className="w-full">
-          <TargetStoresSection
-            section={section}
-            stores={project?.stores}
-            ui={ui}
-            assets={project?.assets}
-            onUpdateTargetStoresFilters={onUpdateTargetStoresFilters}
-          />
-        </section>
-      );
-    case "excludedStoresList": {
-      const storeCsv = resolveStoreCsv(section, project?.stores);
-      const groups = buildExcludedStoreGroups(storeCsv);
-      const returnUrl =
-        typeof section.data.returnUrl === "string" && section.data.returnUrl.trim()
-          ? section.data.returnUrl
-          : "#";
-      const returnLabel =
-        typeof section.data.returnLabel === "string" &&
-        section.data.returnLabel.trim()
-          ? section.data.returnLabel
-          : "キャンペーンページに戻る";
-      const footerCopy =
-        typeof section.data.footerCopy === "string" && section.data.footerCopy.trim()
-          ? section.data.footerCopy
-          : "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED.";
-      const footerLinks = Array.isArray(section.data.footerLinks)
-        ? section.data.footerLinks
-            .map((entry) => {
-              if (!entry || typeof entry !== "object") {
-                return null;
-              }
-              const label =
-                "label" in entry && typeof entry.label === "string"
-                  ? entry.label
-                  : "";
-              const url =
-                "url" in entry && typeof entry.url === "string" ? entry.url : "";
-              if (!label || !url) {
-                return null;
-              }
-              return { label, url };
-            })
-            .filter(
-              (entry): entry is { label: string; url: string } => entry != null
-            )
-        : [];
-      const resolvedFooterLinks =
-        footerLinks.length > 0
-          ? footerLinks
-          : [
-              { label: "サイトポリシー", url: "#" },
-              { label: "会社概要", url: "#" },
-              { label: "動作環境", url: "#" },
-              { label: "Cookie情報の利用", url: "#" },
-              { label: "広告配信などについて", url: "#" },
-            ];
-      const titleTemplate =
-        typeof section.data.title === "string" && section.data.title.trim()
-          ? section.data.title
-          : "対象外店舗一覧";
-      const highlight =
-        typeof section.data.highlightLabel === "string" &&
-        section.data.highlightLabel.trim()
-          ? section.data.highlightLabel
-          : "対象外";
-      const hasHighlightPlaceholder =
-        highlight && titleTemplate.includes("{highlight}");
-      const titleSegments = hasHighlightPlaceholder
-        ? titleTemplate.split("{highlight}")
-        : [titleTemplate];
-      return (
-        <section className="excluded-stores-section">
-          <div className="excluded-wrap">
-            <h1 className="excluded-title">
-              {hasHighlightPlaceholder ? (
-                <>
-                  <span className="excluded-title__text">{titleSegments[0]}</span>
-                  <span className="excluded-title__badge">{highlight}</span>
-                  <span className="excluded-title__text">
-                    {titleSegments.slice(1).join("{highlight}")}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="excluded-title__text">{titleTemplate}</span>
-                  {highlight ? (
-                    <span className="excluded-title__badge">{highlight}</span>
-                  ) : null}
-                </>
-              )}
-            </h1>
-            <table className="excluded-region-table">
-              <tbody>
-                {REGION_GROUPS.map((group) => (
-                  <tr key={group.region}>
-                    <th className="excluded-region-th">
-                      <strong>{group.region}</strong>
-                    </th>
-                    <td className="excluded-region-td">
-                      {group.items.map((item) => (
-                        <a
-                          key={item.id}
-                          className="excluded-region-link"
-                          href={`#${item.id}`}
-                        >
-                          {item.label}
-                        </a>
-                      ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {groups.length === 0 ? (
-              <div className="excluded-empty">
-                CSVを取り込むと、対象外店舗の一覧が表示されます。
-              </div>
-            ) : (
-              <div className="tenpo-container">
-                {groups.map((group) => (
-                  <div key={group.id}>
-                    <div className="tenpo_list_title">
-                      <h2 id={group.id}>{group.prefecture}</h2>
-                    </div>
-                    {group.entries.map((entry, index) => (
-                      <div key={`${group.id}-${index}`} className="tenpo_list">
-                        <span className="tenpo_list_shop">
-                          {entry.name || "店舗名"}
-                        </span>
-                        <span className="tenpo_list_add">{entry.address}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="excluded-footer">
-              <a className="excluded-return" href={returnUrl}>
-                <span className="excluded-return__label">{returnLabel}</span>
-                <span className="excluded-return__arrow" aria-hidden="true" />
-              </a>
-              <div className="excluded-footer__links">
-                {resolvedFooterLinks.map((link) => (
-                  <a key={link.label} href={link.url}>
-                    {link.label}
-                  </a>
-                ))}
-              </div>
-              <div className="excluded-footer__copy">{footerCopy}</div>
-            </div>
-          </div>
-        </section>
-      );
-    }
-    case "excludedBrandsList": {
-      const storeCsv = resolveStoreCsv(section, project?.stores);
-      const groups = buildExcludedBrandGroups(storeCsv);
-      const returnUrl =
-        typeof section.data.returnUrl === "string" && section.data.returnUrl.trim()
-          ? section.data.returnUrl
-          : "#";
-      const returnLabel =
-        typeof section.data.returnLabel === "string" &&
-        section.data.returnLabel.trim()
-          ? section.data.returnLabel
-          : "キャンペーンページに戻る";
-      const footerCopy =
-        typeof section.data.footerCopy === "string" && section.data.footerCopy.trim()
-          ? section.data.footerCopy
-          : "COPYRIGHT © KDDI CORPORATION. ALL RIGHTS RESERVED.";
-      const footerLinks = Array.isArray(section.data.footerLinks)
-        ? section.data.footerLinks
-            .map((entry) => {
-              if (!entry || typeof entry !== "object") {
-                return null;
-              }
-              const label =
-                "label" in entry && typeof entry.label === "string"
-                  ? entry.label
-                  : "";
-              const url =
-                "url" in entry && typeof entry.url === "string" ? entry.url : "";
-              if (!label || !url) {
-                return null;
-              }
-              return { label, url };
-            })
-            .filter(
-              (entry): entry is { label: string; url: string } => entry != null
-            )
-        : [];
-      const resolvedFooterLinks =
-        footerLinks.length > 0
-          ? footerLinks
-          : [
-              { label: "サイトポリシー", url: "#" },
-              { label: "会社概要", url: "#" },
-              { label: "動作環境", url: "#" },
-              { label: "Cookie情報の利用", url: "#" },
-              { label: "広告配信などについて", url: "#" },
-            ];
-      const titleTemplate =
-        typeof section.data.title === "string" && section.data.title.trim()
-          ? section.data.title
-          : "対象外ブランド一覧";
-      const highlight =
-        typeof section.data.highlightLabel === "string" &&
-        section.data.highlightLabel.trim()
-          ? section.data.highlightLabel
-          : "対象外";
-      const hasHighlightPlaceholder =
-        highlight && titleTemplate.includes("{highlight}");
-      const titleSegments = hasHighlightPlaceholder
-        ? titleTemplate.split("{highlight}")
-        : [titleTemplate];
-      return (
-        <section className="excluded-stores-section">
-          <div className="excluded-wrap">
-            <h1 className="excluded-title">
-              {hasHighlightPlaceholder ? (
-                <>
-                  <span className="excluded-title__text">{titleSegments[0]}</span>
-                  <span className="excluded-title__badge">{highlight}</span>
-                  <span className="excluded-title__text">
-                    {titleSegments.slice(1).join("{highlight}")}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="excluded-title__text">{titleTemplate}</span>
-                  {highlight ? (
-                    <span className="excluded-title__badge">{highlight}</span>
-                  ) : null}
-                </>
-              )}
-            </h1>
-            {groups.length > 0 ? (
-              <ul className="excluded-brand-list">
-                {groups.map((group) => (
-                  <li key={group.id}>
-                    <span className="excluded-brand-marker">▼</span>
-                    <a className="excluded-brand-link" href={`#${group.id}`}>
-                      {group.brand}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {groups.length === 0 ? (
-              <div className="excluded-empty">
-                CSVを取り込むと、対象外ブランドの一覧が表示されます。
-              </div>
-            ) : (
-              <div className="tenpo-container">
-                {groups.map((group) => (
-                  <div key={group.id}>
-                    <div className="tenpo_list_title">
-                      <h2 id={group.id}>{group.brand}</h2>
-                    </div>
-                    {group.entries.map((entry, index) => (
-                      <div key={`${group.id}-${index}`} className="tenpo_list">
-                        <span className="tenpo_list_shop">
-                          {entry.name || "ブランド名"}
-                        </span>
-                        <span className="tenpo_list_add">{entry.address}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="excluded-footer">
-              <a className="excluded-return" href={returnUrl}>
-                <span className="excluded-return__label">{returnLabel}</span>
-                <span className="excluded-return__arrow" aria-hidden="true" />
-              </a>
-              <div className="excluded-footer__links">
-                {resolvedFooterLinks.map((link) => (
-                  <a key={link.label} href={link.url}>
-                    {link.label}
-                  </a>
-                ))}
-              </div>
-              <div className="excluded-footer__copy">{footerCopy}</div>
-            </div>
-          </div>
-        </section>
-      );
-    }
-    case "legalNotes": {
-      const legalBullet = section.data?.bullet === "none" ? "none" : "disc";
-      const legalTextItem = (section.content?.items ?? []).find(
-        (item) => item.type === "text"
-      ) as TextContentItem | undefined;
-      const normalizeLegalItems = (
-        items: unknown,
-        defaultBullet: "none" | "disc"
-      ) => {
-        if (!Array.isArray(items)) {
-          return [] as Array<{ text: string; bullet: "none" | "disc" }>;
-        }
-        return items
-          .map((item) => {
-            if (typeof item === "string") {
-              return { text: item, bullet: defaultBullet };
-            }
-            if (!item || typeof item !== "object") {
-              return null;
-            }
-            const entry = item as Record<string, unknown>;
-            const text = typeof entry.text === "string" ? entry.text : "";
-            const bullet =
-              entry.bullet === "none" || entry.bullet === "disc"
-                ? entry.bullet
-                : defaultBullet;
-            return { text, bullet };
-          })
-          .filter(
-            (item): item is { text: string; bullet: "none" | "disc" } =>
-              Boolean(item)
-          );
-      };
-      const legalItems =
-        legalTextItem?.lines?.length
-          ? legalTextItem.lines.map((line) => ({
-              text: line.text,
-              bullet: line.marks?.bullet ?? legalBullet,
-            }))
-          : normalizeLegalItems(section.data.items, legalBullet);
-      const rawNoteWidth = section.data?.noteWidthPct;
-      const noteWidthPct =
-        typeof rawNoteWidth === "number" && Number.isFinite(rawNoteWidth)
-          ? Math.min(100, Math.max(40, rawNoteWidth))
-          : 100;
-      return (
-        <section className="w-full">
-          <ul
-            className="mt-3 space-y-2 pl-0 text-sm text-[var(--lp-muted)] list-none"
-            style={{
-              ...(cardTextColor ? { color: cardTextColor } : {}),
-              width: `${noteWidthPct}%`,
-              marginLeft: "auto",
-              marginRight: "auto",
-            }}
-          >
-            {legalItems.map((item, index) => (
-              <li
-                key={`${section.id}-note-${index}`}
-                className={
-                  item.bullet === "disc"
-                    ? "list-disc ml-5"
-                    : "list-none ml-0"
-                }
-              >
-                {renderRichText(item.text)}
-              </li>
-            ))}
-          </ul>
-        </section>
-      );
-    }
-    case "footerHtml":
-      const brandBarSection = project?.sections?.find(
-        (entry) => entry.type === "brandBar" && entry.visible
-      );
-      const brandBarAssetId = brandBarSection?.data
-        ?.brandImageAssetId as string | undefined;
-      return (
-        <section
-          className="w-full"
-          style={buildSurfaceStyle(section.style)}
-        >
-          <div
-            dangerouslySetInnerHTML={{
-              __html: buildFooterHtml(
-                project?.assets,
-                section.data?.footerAssets as
-                  | Record<string, string | undefined>
-                  | undefined,
-                { brandBarAssetId, hideFooterLogo: !brandBarSection }
-              ),
-            }}
-          />
-        </section>
-      );
-    case "imageOnly": {
-      const sectionAssets = project?.assets ?? {};
-      const resolveImg = (img: ImageItem) => {
-        const assetUrl = img.assetId ? sectionAssets[img.assetId]?.data : undefined;
-        return assetUrl || img.src || "";
-      };
-      // 全ての image アイテムから画像を集約（複数 image アイテムが存在する場合も対応）
-      const allImages: ImageItem[] = (section.content?.items ?? [])
-        .filter((item) => item.type === "image")
-        .flatMap((item) => (item.type === "image" ? item.images ?? [] : []));
-      const layout = (section.data?.layout as string) ?? "single";
-
-      const isTransparent = (url: string) =>
-        /\.(png|gif|webp)(\?|$)/i.test(url) ||
-        (url.startsWith("data:image/png") ||
-          url.startsWith("data:image/gif") ||
-          url.startsWith("data:image/webp"));
-
-      const gridClass =
-        layout === "columns2"
-          ? "grid grid-cols-2 gap-3"
-          : layout === "columns3"
-          ? "grid grid-cols-3 gap-3"
-          : layout === "grid"
-          ? "grid grid-cols-2 gap-3 sm:grid-cols-3"
-          : "flex flex-col items-center";
-
-      return (
-        <section className="w-full lp-image-only">
-          <div className={gridClass}>
-            {allImages.length === 0 ? (
-              <div className="flex h-32 w-full items-center justify-center rounded-lg border border-dashed border-[var(--lp-border)] text-sm text-[var(--lp-muted)]">
-                画像なし
-              </div>
-            ) : (
-              allImages.map((img: ImageItem) => {
-                const src = resolveImg(img);
-                const transparent = isTransparent(src);
-                return (
-                  <div
-                    key={img.id}
-                    className="relative overflow-hidden rounded-md"
-                    style={
-                      transparent
-                        ? {
-                            backgroundImage:
-                              "repeating-conic-gradient(#cccccc 0% 25%, #ffffff 0% 50%)",
-                            backgroundSize: "16px 16px",
-                          }
-                        : undefined
-                    }
-                  >
-                    {src ? (
-                      <img
-                        src={src}
-                        alt={img.alt ?? (section.data?.imageAlt as string) ?? ""}
-                        className="block w-full h-auto"
-                        data-asset-id={img.assetId}
-                      />
-                    ) : (
-                      <div className="flex h-32 items-center justify-center text-xs text-[var(--lp-muted)]">
-                        画像なし
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-      );
-    }
-    default:
-      return renderPlaceholder(section);
+  if (section.type === "targetStores") {
+    return <TargetStoresPreviewSection section={section} />;
   }
+
+  const sharedRendered = renderLayoutSection(
+    section,
+    project.assets ?? {},
+    ui?.previewMode === "mobile" ? "mobile" : "desktop",
+    {
+      allSections: getLayoutSections(project),
+      stores: project.stores ?? null,
+      disableMotion: disableLayoutPreviewMotion,
+    }
+  );
+  if (sharedRendered) {
+    return (
+      <div
+        className="w-full"
+        dangerouslySetInnerHTML={{ __html: sharedRendered }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="w-full"
+      dangerouslySetInnerHTML={{
+        __html: renderUnhandledLayoutSectionFallback(section),
+      }}
+    />
+  );
 };
 
-export default function PreviewSsr({
-  project,
-  ui,
-  onUpdateTargetStoresFilters,
-}: PreviewSsrProps) {
+export default function PreviewSsr(props: PreviewSsrProps) {
+  const { project, ui } = props;
   const assets = project?.assets ?? {};
   const resolveAssetUrl = (assetId: string) => assets?.[assetId]?.data;
   const pageBackground = buildBackgroundStyle(
@@ -3061,16 +1363,11 @@ export default function PreviewSsr({
       fallbackColor: "#ffffff",
     }
   );
-  const mvBackground = buildBackgroundStyle(project?.settings?.backgrounds?.mv, {
-    resolveAssetUrl,
-    resolvePreset: resolveBackgroundPreset,
-    fallbackColor: "#ffffff",
-  });
   const pageBaseStyle = project?.pageBaseStyle;
   const pageSectionAnimationStyle = buildSectionAnimationStyle(
     pageBaseStyle?.sectionAnimation
   );
-  const allSections = project?.sections ?? [];
+  const allSections = project ? getLayoutSections(project) : [];
   const visibleSections = allSections.filter((section) => section.visible);
   const orderedSections = visibleSections;
   const firstSection = orderedSections[0];
@@ -3080,6 +1377,7 @@ export default function PreviewSsr({
         firstSection.type === "heroImage" ||
         firstSection.type === "campaignPeriodBar" ||
         firstSection.type === "footerHtml" ||
+        firstSection.type === "footer" ||
         firstSection.type === "excludedStoresList" ||
         firstSection.type === "excludedBrandsList" ||
         firstSection.type === "tabbedNotes" ||
@@ -3132,8 +1430,10 @@ export default function PreviewSsr({
   const pageVideoUrl = pageVideo?.assetId
     ? assets?.[pageVideo.assetId]?.data || ""
     : "";
-  const pageAutoPlay = pageVideo?.autoPlay ?? true;
-  const pageLoop = pageVideo?.loop ?? true;
+  const pageAutoPlay = disableLayoutPreviewMotion
+    ? false
+    : pageVideo?.autoPlay ?? true;
+  const pageLoop = disableLayoutPreviewMotion ? false : pageVideo?.loop ?? true;
   const pageMuted = pageVideo?.muted ?? true;
   const pageInline = pageVideo?.playsInline ?? true;
   const pageOpacity =
@@ -3158,6 +1458,90 @@ export default function PreviewSsr({
       ? pageBaseStyle.spacing.sectionGap
       : 0;
 
+  useEffect(() => {
+    const root = document.getElementById("__lp_root__");
+    if (!root) {
+      return;
+    }
+
+    const cleanups: Array<() => void> = [];
+    const sliders = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-coupon-slideshow="true"]')
+    );
+
+    sliders.forEach((sliderRoot) => {
+      const slides = Array.from(
+        sliderRoot.querySelectorAll<HTMLElement>(".lp-couponflow__slide")
+      );
+      const dots = Array.from(
+        sliderRoot.querySelectorAll<HTMLElement>(".lp-couponflow__dot")
+      );
+      if (slides.length <= 1) {
+        return;
+      }
+
+      let currentSlide = Math.max(
+        0,
+        slides.findIndex((slide) => slide.classList.contains("is-active"))
+      );
+
+      const apply = () => {
+        slides.forEach((slide, index) => {
+          slide.classList.toggle("is-active", index === currentSlide);
+        });
+        dots.forEach((dot, index) => {
+          dot.classList.toggle("is-active", index === currentSlide);
+        });
+      };
+
+      const goTo = (index: number) => {
+        const length = slides.length;
+        currentSlide = ((index % length) + length) % length;
+        apply();
+      };
+
+      const prevButton = sliderRoot.querySelector<HTMLElement>(
+        '[data-coupon-nav="prev"]'
+      );
+      const nextButton = sliderRoot.querySelector<HTMLElement>(
+        '[data-coupon-nav="next"]'
+      );
+
+      const onPrev = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        goTo(currentSlide - 1);
+      };
+      const onNext = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        goTo(currentSlide + 1);
+      };
+
+      prevButton?.addEventListener("click", onPrev);
+      nextButton?.addEventListener("click", onNext);
+
+      dots.forEach((dot, dotIndex) => {
+        const onDot = (event: Event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          goTo(dotIndex);
+        };
+        dot.addEventListener("click", onDot);
+        cleanups.push(() => dot.removeEventListener("click", onDot));
+      });
+
+      cleanups.push(() => prevButton?.removeEventListener("click", onPrev));
+      cleanups.push(() => nextButton?.removeEventListener("click", onNext));
+
+      apply();
+    });
+
+    return () => {
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  });
+
   return (
     <div
       id="__lp_root__"
@@ -3165,7 +1549,12 @@ export default function PreviewSsr({
       className="relative min-h-screen lp-preview-bg text-[var(--lp-text)]"
       style={previewRootStyle}
     >
-      <style dangerouslySetInnerHTML={{ __html: animationStyleSheet }} />
+      {!disableLayoutPreviewMotion ? (
+        <style dangerouslySetInnerHTML={{ __html: animationStyleSheet }} />
+      ) : null}
+      {disableLayoutPreviewMotion ? (
+        <style dangerouslySetInnerHTML={{ __html: staticLayoutPreviewStyleSheet }} />
+      ) : null}
       <div className="absolute inset-0 pointer-events-none" style={pageBackgroundStyle}>
         {pageVideo && pageVideoUrl ? (
           <video
@@ -3194,6 +1583,7 @@ export default function PreviewSsr({
           </div>
         ) : null}
         {orderedSections.map((section, index) => {
+          const frameData = getSectionFrameData(section, index);
           const scopedCss = buildScopedCustomCss(
             section.style.customCss,
             section.id
@@ -3209,7 +1599,14 @@ export default function PreviewSsr({
             section.type === "heroImage" ||
             section.type === "imageOnly" ||
             section.type === "campaignPeriodBar" ||
+            section.type === "campaignOverview" ||
+            section.type === "rankingTable" ||
+            section.type === "legalNotes" ||
             section.type === "footerHtml" ||
+            section.type === "image" ||
+            section.type === "stickyNote" ||
+            section.type === "contact" ||
+            section.type === "footer" ||
             section.type === "tabbedNotes" ||
             section.type === "imageOnly" ||
             Boolean(section.data?.footerAssets);
@@ -3220,6 +1617,13 @@ export default function PreviewSsr({
             ? section.content?.items
             : [];
           const titleItem = items.find((item) => item.type === "title");
+          const sectionData = (section.data ?? {}) as Record<string, unknown>;
+          const effectiveSectionTitle =
+            section.type === "targetStores"
+              ? toText(sectionData.title ?? "").trim()
+              : titleItem?.text;
+          const effectiveTitleMarks =
+            section.type === "targetStores" ? undefined : titleItem?.marks;
           const noticeItem =
             section.type === "targetStores"
               ? getTargetStoresNoticeItem(items)
@@ -3246,58 +1650,106 @@ export default function PreviewSsr({
           const isLowContrast =
             typeof contrastRatio === "number" && contrastRatio < 4.5;
           return (
-            <div
-              key={section.id}
-              data-section-id={section.id}
-              data-contrast-warning={isLowContrast ? "true" : "false"}
-              id={`sec-${section.id}`}
-              className={"scroll-mt-4 transition-shadow transition-colors "}
-              style={pageSectionAnimationStyle}
-            >
-              {scopedCss ? (
-                <style
-                  dangerouslySetInnerHTML={{
-                    __html: scopedCss,
-                  }}
-                />
-              ) : null}
+            <div key={section.id}>
               <div
-                className="lp-section-layout"
-                style={
-                  isFooterLastSection
-                    ? buildLayoutStyleWithOverrides(section.style, {
-                        paddingBottomPx: 0,
-                      })
-                    : isHeroFullSize
-                    ? buildLayoutStyleWithOverrides(section.style, {
-                        forceFullWidth: true,
-                      })
-                    : buildLayoutStyle(section.style)
-                }
+                data-section-id={section.id}
+                data-section-type={frameData.sectionType}
+                data-section-frame={frameData.sectionFrame}
+                data-full-width-background={frameData.fullWidthBackground}
+                data-lp-metrics={frameData.lpMetrics}
+                data-contrast-warning={isLowContrast ? "true" : "false"}
+                id={`sec-${section.id}`}
+                className={"scroll-mt-4 transition-shadow transition-colors "}
+                style={pageSectionAnimationStyle}
               >
-                {isSpecialSection ? (
-                  renderSection(section, project, ui, undefined, mvBackground)
-                ) : (
-                  <SectionCard
-                    title={titleItem?.text}
-                    titleMarks={titleItem?.marks}
-                    sectionCardStyle={sectionCardStyle}
-                    sectionStyle={section.style}
-                    titleAnimationStyle={buildAnimationStyle(
-                      titleItem?.animation
-                    )}
+                <div className="lp-preview-section-actions" data-preview-section-actions="true">
+                  <button
+                    type="button"
+                    data-section-action="duplicate"
+                    data-section-target-id={section.id}
+                    className="lp-preview-section-action-btn"
+                    title="Duplicate section"
+                    aria-label="Duplicate section"
                   >
-                    {renderContentItems(section, restItems, textColor, assets)}
-                    {renderSection(
-                      section,
-                      project,
-                      ui,
-                      textColor,
-                      mvBackground
-                    )}
-                  </SectionCard>
-                )}
+                    <Copy size={12} aria-hidden="true" />
+                    <span className="sr-only">Duplicate</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-section-action="delete"
+                    data-section-target-id={section.id}
+                    className="lp-preview-section-action-btn lp-preview-section-action-btn--danger"
+                    title="Delete section"
+                    aria-label="Delete section"
+                  >
+                    <Trash2 size={12} aria-hidden="true" />
+                    <span className="sr-only">Delete</span>
+                  </button>
+                </div>
+                {scopedCss ? (
+                  <style
+                    dangerouslySetInnerHTML={{
+                      __html: scopedCss,
+                    }}
+                  />
+                ) : null}
+                <div
+                  className="lp-section-layout"
+                  style={
+                    isFooterLastSection
+                      ? buildLayoutStyleWithOverrides(section.style, {
+                          paddingBottomPx: 0,
+                        })
+                      : isHeroFullSize
+                      ? buildLayoutStyleWithOverrides(section.style, {
+                          forceFullWidth: true,
+                        })
+                      : buildLayoutStyle(section.style)
+                  }
+                >
+                  {isSpecialSection ? (
+                    renderSection(section, project, ui)
+                  ) : (
+                    <SectionCard
+                      title={effectiveSectionTitle}
+                      titleMarks={effectiveTitleMarks}
+                      sectionCardStyle={sectionCardStyle}
+                      sectionStyle={section.style}
+                      titleAnimationStyle={buildAnimationStyle(
+                        titleItem?.animation
+                      )}
+                    >
+                      {renderContentItems(section, restItems, textColor, assets)}
+                      {renderSection(
+                        section,
+                        project,
+                        ui
+                      )}
+                    </SectionCard>
+                  )}
+                </div>
               </div>
+              {index < orderedSections.length - 1 ? (
+                <div
+                  data-preview-insert-slot="true"
+                  className="lp-preview-insert-slot"
+                >
+                  <div className="lp-preview-insert-separator" aria-hidden="true" />
+                  <div className="lp-preview-insert-actions">
+                    {QUICK_INSERT_SECTION_TYPES.map((entry) => (
+                      <button
+                        key={`${section.id}-${entry.type}`}
+                        type="button"
+                        data-add-after-id={section.id}
+                        data-add-type={entry.type}
+                        className="lp-preview-insert-btn"
+                      >
+                        + {entry.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}

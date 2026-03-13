@@ -1,4 +1,5 @@
 import type {
+  EditorMode,
   ProjectSettings,
   ProjectState,
   SectionBase,
@@ -7,6 +8,11 @@ import type {
   StoresTable,
 } from "@/src/types/project";
 import { normalizeSectionCardStyle } from "@/src/lib/sections/sectionCardPresets";
+import { applySectionFrameDefaults } from "@/src/lib/sections/sectionFrame";
+import { createDefaultCanvasDocument } from "@/src/types/canvas";
+import { applyTemplateHydrator } from "@/src/lib/sections/sectionArchitecture/TemplateHydrator";
+import { normalizeProjectAiAssets } from "@/src/features/ai-assets/types";
+import { ensureProjectAiAssetsConsistency } from "@/src/features/ai-assets/lib/projectAiAssets";
 
 const DEFAULT_TARGET_STORES_CONFIG = {
   labelKeys: [],
@@ -20,6 +26,9 @@ const str = (value: unknown) =>
 
 const createItemId = () => `item_${Math.random().toString(36).slice(2, 8)}`;
 const createLineId = () => `line_${Math.random().toString(36).slice(2, 8)}`;
+
+const canonicalizeSectionType = (type: string) =>
+  type === "paymentUsageGuide" ? "paymentHistoryGuide" : type;
 
 const createDefaultContent = (): SectionContent => ({
   title: "",
@@ -73,7 +82,7 @@ const sanitizeFilename = (value: string) =>
 const normalizeSection = (section: Partial<SectionBase>, index: number): SectionBase => {
   const base: SectionBase = {
     id: section.id ?? `sec_${section.type ?? "section"}_${index}`,
-    type: section.type ?? "section",
+    type: canonicalizeSectionType(section.type ?? "section"),
     visible: section.visible ?? true,
     locked: typeof section.locked === "boolean" ? section.locked : false,
     name: typeof section.name === "string" ? section.name : undefined,
@@ -93,24 +102,254 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
     ),
   };
 
+  const framed = applySectionFrameDefaults(base);
+  base.data = framed.data;
+  if (typeof base.data.fullWidthBackground === "boolean") {
+    base.style.layout.fullWidth = base.data.fullWidthBackground;
+  }
+
   switch (base.type) {
     case "brandBar":
       base.data.logoText = str(base.data.logoText ?? base.data.brandText);
       base.data.brandText = str(base.data.brandText ?? base.data.logoText);
+      base.data.brandImageAssetId = str(base.data.brandImageAssetId ?? "");
+      base.data.brandImageUrl = str(base.data.brandImageUrl ?? "");
       break;
     case "heroImage":
+      base.data.imageAssetIdPc = str(
+        base.data.imageAssetIdPc ?? base.data.imageAssetId ?? ""
+      );
+      base.data.imageAssetIdSp = str(
+        base.data.imageAssetIdSp ?? base.data.imageAssetId ?? ""
+      );
       base.data.imageUrl = str(base.data.imageUrl);
+      base.data.imageUrlSp = str(base.data.imageUrlSp ?? base.data.imageUrl);
       base.data.alt = str(base.data.alt ?? base.data.altText);
       base.data.altText = str(base.data.altText ?? base.data.alt);
       break;
     case "campaignPeriodBar":
+      base.data.periodLabel = str(base.data.periodLabel ?? "キャンペーン期間");
+      base.data.periodBarText = str(base.data.periodBarText ?? "");
       base.data.startDate = str(base.data.startDate);
       base.data.endDate = str(base.data.endDate);
+      if (base.data.startDate && base.data.endDate && base.data.startDate > base.data.endDate) {
+        const tmp = base.data.startDate;
+        base.data.startDate = base.data.endDate;
+        base.data.endDate = tmp;
+      }
+      base.data.showWeekday =
+        typeof base.data.showWeekday === "boolean" ? base.data.showWeekday : true;
+      base.data.allowWrap =
+        typeof base.data.allowWrap === "boolean" ? base.data.allowWrap : true;
+      {
+        const rawStyle =
+          base.data.periodBarStyle && typeof base.data.periodBarStyle === "object"
+            ? (base.data.periodBarStyle as Record<string, unknown>)
+            : {};
+        const size =
+          typeof rawStyle.size === "number" && Number.isFinite(rawStyle.size)
+            ? rawStyle.size
+            : 14;
+        const paddingX =
+          typeof rawStyle.paddingX === "number" && Number.isFinite(rawStyle.paddingX)
+            ? rawStyle.paddingX
+            : 18;
+        const paddingY =
+          typeof rawStyle.paddingY === "number" && Number.isFinite(rawStyle.paddingY)
+            ? rawStyle.paddingY
+            : 0;
+        const shadow = str(rawStyle.shadow ?? "none");
+        base.data.periodBarStyle = {
+          bold: typeof rawStyle.bold === "boolean" ? rawStyle.bold : true,
+          color: str(rawStyle.color ?? "#FFFFFF"),
+          background: str(rawStyle.background ?? "#EB5505"),
+          labelColor: str(rawStyle.labelColor ?? rawStyle.color ?? "#FFFFFF"),
+          size: Math.max(10, Math.min(32, size)),
+          paddingX: Math.max(0, Math.min(48, paddingX)),
+          paddingY: Math.max(0, Math.min(24, paddingY)),
+          shadow: shadow === "soft" || shadow === "none" ? shadow : "none",
+          advancedStyleText: str(rawStyle.advancedStyleText ?? ""),
+        };
+      }
       break;
     case "campaignOverview":
       base.data.title = str(base.data.title);
       base.data.body = str(base.data.body);
       break;
+    case "couponFlow": {
+      base.data.title = str(base.data.title ?? "クーポン利用の流れ");
+      base.data.lead = str(
+        base.data.lead ??
+          "＊必ずクーポンを獲得してからau PAY（コード支払い）でお支払いください。"
+      );
+      base.data.note = str(base.data.note ?? "※画面はイメージです。");
+      const rawVariant = str(base.data.variant ?? "slideshow");
+      base.data.variant =
+        rawVariant === "stepCards" ||
+        rawVariant === "timeline" ||
+        rawVariant === "simpleList"
+          ? rawVariant
+          : "slideshow";
+
+      const fallbackSteps = (() => {
+        const contentItems = Array.isArray(base.content?.items) ? base.content.items : [];
+        const imageItem = contentItems.find((item) => item.type === "image") as
+          | { images?: Array<{ src?: unknown; alt?: unknown; assetId?: unknown }> }
+          | undefined;
+        const slides = Array.isArray(imageItem?.images) ? imageItem.images : [];
+        const buttonItem = contentItems.find((item) => item.type === "button") as
+          | {
+              label?: unknown;
+              target?: { kind?: unknown; url?: unknown };
+            }
+          | undefined;
+        return slides.map((slide, index) => ({
+          id: `coupon_step_${index + 1}`,
+          stepNo: str(index + 1),
+          title: `ステップ${index + 1}`,
+          description: "",
+          supplement: "",
+          imageUrl: str(slide?.src ?? ""),
+          imageAlt: str(slide?.alt ?? ""),
+          imageAssetId: str(slide?.assetId ?? ""),
+          iconUrl: "",
+          iconAssetId: "",
+          buttonText: str(buttonItem?.label ?? ""),
+          buttonUrl:
+            buttonItem?.target?.kind === "url" ? str(buttonItem.target.url ?? "") : "",
+        }));
+      })();
+
+      const fallbackPrimaryButton = (() => {
+        const contentItems = Array.isArray(base.content?.items) ? base.content.items : [];
+        return contentItems.find((item) => item.type === "button") as
+          | {
+              label?: unknown;
+              target?: { kind?: unknown; url?: unknown };
+              style?: { presetId?: unknown; backgroundColor?: unknown; textColor?: unknown; borderColor?: unknown; radius?: unknown };
+            }
+          | undefined;
+      })();
+
+      const rawSteps = Array.isArray(base.data.steps) ? base.data.steps : fallbackSteps;
+      base.data.steps = rawSteps.map((step: unknown, index: number) => {
+        const entry = step && typeof step === "object"
+          ? (step as Record<string, unknown>)
+          : {};
+        return {
+          id: str(entry.id ?? `coupon_step_${index + 1}`),
+          stepNo: str(entry.stepNo ?? index + 1),
+          title: str(entry.title ?? ""),
+          description: str(entry.description ?? ""),
+          supplement: str(entry.supplement ?? ""),
+          imageUrl: str(entry.imageUrl ?? ""),
+          imageAlt: str(entry.imageAlt ?? ""),
+          imageAssetId: str(entry.imageAssetId ?? ""),
+          iconUrl: str(entry.iconUrl ?? ""),
+          iconAssetId: str(entry.iconAssetId ?? ""),
+          buttonText: str(entry.buttonText ?? ""),
+          buttonUrl: str(entry.buttonUrl ?? ""),
+        };
+      });
+
+      base.data.ctaEnabled = base.data.ctaEnabled !== false;
+      base.data.buttonLabel = str(
+        base.data.buttonLabel ?? fallbackPrimaryButton?.label ?? "クーポンを獲得する"
+      );
+      base.data.buttonUrl = str(
+        base.data.buttonUrl ??
+          (fallbackPrimaryButton?.target?.kind === "url"
+            ? fallbackPrimaryButton.target.url
+            : "")
+      );
+      base.data.buttonPreset = str(
+        base.data.buttonPreset ?? fallbackPrimaryButton?.style?.presetId ?? "couponFlow"
+      );
+      base.data.buttonVariant =
+        str(base.data.buttonVariant ?? "primary") === "secondary" ? "secondary" : "primary";
+      base.data.buttonBg = str(
+        base.data.buttonBg ??
+          fallbackPrimaryButton?.style?.backgroundColor ??
+          (base.data.buttonPreset === "couponFlow" ? "#ea5504" : "#eb5505")
+      );
+      base.data.buttonTextColor = str(
+        base.data.buttonTextColor ?? fallbackPrimaryButton?.style?.textColor ?? "#ffffff"
+      );
+      base.data.buttonBorderColor = str(
+        base.data.buttonBorderColor ??
+          fallbackPrimaryButton?.style?.borderColor ??
+          (base.data.buttonPreset === "couponFlow" ? "#ffffff" : "#eb5505")
+      );
+      base.data.buttonRadius =
+        typeof base.data.buttonRadius === "number" && Number.isFinite(base.data.buttonRadius)
+          ? base.data.buttonRadius
+          : typeof fallbackPrimaryButton?.style?.radius === "number" && Number.isFinite(fallbackPrimaryButton.style.radius)
+          ? fallbackPrimaryButton.style.radius
+          : 999;
+      base.data.buttonShadow = str(
+        base.data.buttonShadow ?? "0 6px 14px rgba(0, 0, 0, 0.18)"
+      );
+
+      const rawSlideshow =
+        base.data.slideshow && typeof base.data.slideshow === "object"
+          ? (base.data.slideshow as Record<string, unknown>)
+          : {};
+      base.data.slideshow = {
+        autoplay: rawSlideshow.autoplay !== false,
+        intervalMs:
+          typeof rawSlideshow.intervalMs === "number" && Number.isFinite(rawSlideshow.intervalMs)
+            ? rawSlideshow.intervalMs
+            : 3500,
+        loop: rawSlideshow.loop !== false,
+        showArrows: rawSlideshow.showArrows !== false,
+        showDots: rawSlideshow.showDots !== false,
+        allowSwipe: rawSlideshow.allowSwipe !== false,
+      };
+
+      const rawDesign =
+        base.data.design && typeof base.data.design === "object"
+          ? (base.data.design as Record<string, unknown>)
+          : {};
+      base.data.design = {
+        stepNumberColor: str(rawDesign.stepNumberColor ?? "#ffffff"),
+        stepNumberBg: str(rawDesign.stepNumberBg ?? "#eb5505"),
+        cardBg: str(rawDesign.cardBg ?? "#ffffff"),
+        cardText: str(rawDesign.cardText ?? "#0f172a"),
+        borderColor: str(rawDesign.borderColor ?? "#d1d5db"),
+        radius:
+          typeof rawDesign.radius === "number" && Number.isFinite(rawDesign.radius)
+            ? rawDesign.radius
+            : 12,
+        shadow: str(rawDesign.shadow ?? "0 8px 20px rgba(15, 23, 42, 0.08)"),
+        gap:
+          typeof rawDesign.gap === "number" && Number.isFinite(rawDesign.gap)
+            ? rawDesign.gap
+            : 16,
+      };
+
+      const rawAnim =
+        base.data.couponFlowAnimation && typeof base.data.couponFlowAnimation === "object"
+          ? (base.data.couponFlowAnimation as Record<string, unknown>)
+          : undefined;
+      if (rawAnim) {
+        const preset = str(rawAnim.preset ?? "none");
+        base.data.couponFlowAnimation =
+          preset === "fade" || preset === "slideUp" || preset === "zoom"
+            ? {
+                preset,
+                durationMs:
+                  typeof rawAnim.durationMs === "number" && Number.isFinite(rawAnim.durationMs)
+                    ? rawAnim.durationMs
+                    : 500,
+                delayMs:
+                  typeof rawAnim.delayMs === "number" && Number.isFinite(rawAnim.delayMs)
+                    ? rawAnim.delayMs
+                    : 0,
+              }
+            : undefined;
+      }
+      break;
+    }
     case "targetStores":
       base.data.title = str(base.data.title ?? "対象店舗");
       base.data.note = str(base.data.note ?? "");
@@ -125,9 +364,9 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
     case "legalNotes":
       base.data.title = str(base.data.title ?? "注意事項");
       base.data.text = str(base.data.text ?? "");
-      base.data.bullet = base.data.bullet === "none" ? "none" : "disc";
+      base.data.bullet = !(base.data.bullet === false || base.data.bullet === "none");
       {
-        const defaultBullet = base.data.bullet;
+        const defaultBullet = base.data.bullet ? "disc" : "none";
         const rawItems = Array.isArray(base.data.items) ? base.data.items : [];
         base.data.items = rawItems
           .map((item: unknown) => {
@@ -158,19 +397,9 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
       break;
     case "rankingTable": {
       base.data.title = str(base.data.title ?? "ランキング");
-      base.data.subtitle = str(base.data.subtitle ?? "");
+      base.data.subtitle = str(base.data.subtitle ?? "最新順位はこちら");
       base.data.period = str(base.data.period ?? "");
       base.data.date = str(base.data.date ?? "");
-      const headers =
-        base.data.headers && typeof base.data.headers === "object"
-          ? (base.data.headers as Record<string, unknown>)
-          : {};
-      base.data.rankLabel = str(base.data.rankLabel ?? headers.rank ?? "順位");
-      base.data.headers = {
-        rank: str(headers.rank ?? "順位"),
-        label: str(headers.label ?? "項目"),
-        value: str(headers.value ?? "決済金額"),
-      };
       base.data.notes = Array.isArray(base.data.notes)
         ? base.data.notes.map((note: unknown) => str(note)).filter(Boolean)
         : [];
@@ -197,8 +426,8 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
         }));
       if (columns.length === 0) {
         columns = [
-          { key: "label", label: str(headers.label ?? "項目") },
-          { key: "value", label: str(headers.value ?? "決済金額") },
+          { key: "amount", label: "決済金額" },
+          { key: "count", label: "品数" },
         ];
       }
       base.data.columns = columns;
@@ -218,7 +447,10 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
           : {};
         const rawValues = Array.isArray(entry.values)
           ? entry.values.map((value) => str(value))
-          : [str(entry.label ?? ""), str(entry.value ?? "")];
+          : [
+              str(entry.product ?? entry.label ?? ""),
+              str(entry.description ?? entry.value ?? ""),
+            ];
         const normalizedValues = rawValues
           .slice(0, columns.length)
           .concat(
@@ -226,41 +458,35 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
           );
         return {
           id: str(entry.id ?? `rank_${index + 1}`),
+          rank: str(entry.rank ?? index + 1),
           values: normalizedValues,
         };
       });
-      const tableStyle =
-        base.data.tableStyle && typeof base.data.tableStyle === "object"
-          ? (base.data.tableStyle as Record<string, unknown>)
-          : {};
-      base.data.tableStyle = {
-        headerBg: str(tableStyle.headerBg ?? "#f8fafc"),
-        headerText: str(tableStyle.headerText ?? "#0f172a"),
-        cellBg: str(tableStyle.cellBg ?? "#ffffff"),
-        cellText: str(tableStyle.cellText ?? "#0f172a"),
-        border: str(tableStyle.border ?? "#e2e8f0"),
-        rankBg: str(tableStyle.rankBg ?? "#e2e8f0"),
-        rankText: str(tableStyle.rankText ?? "#0f172a"),
-        top1Bg: str(tableStyle.top1Bg ?? "#f59e0b"),
-        top2Bg: str(tableStyle.top2Bg ?? "#cbd5f5"),
-        top3Bg: str(tableStyle.top3Bg ?? "#fb923c"),
-        periodLabelBg: str(tableStyle.periodLabelBg ?? "#f1f5f9"),
-        periodLabelText: str(tableStyle.periodLabelText ?? "#0f172a"),
-      };
+      delete base.data.rankLabel;
+      delete base.data.headers;
+      delete base.data.tableStyle;
+      delete base.data.mobileDisplayMode;
+      delete base.data.showCrown;
       break;
     }
     case "paymentHistoryGuide":
       base.data.title = str(base.data.title ?? "決済履歴の確認方法");
-      base.data.body = str(base.data.body ?? "");
-      base.data.linkText = str(base.data.linkText ?? "");
-      base.data.linkUrl = str(base.data.linkUrl ?? "");
+      base.data.body = str(
+        base.data.body ??
+          "現在の決済金額については、au PAY アプリ内の「取引履歴」をご確認ください。"
+      );
+      base.data.linkText = str(base.data.linkText ?? "こちら");
+      base.data.linkUrl = str(base.data.linkUrl ?? "#contact");
       base.data.linkTargetKind =
         base.data.linkTargetKind === "section" ? "section" : "url";
       base.data.linkSectionId = str(base.data.linkSectionId ?? "");
-      base.data.linkSuffix = str(base.data.linkSuffix ?? "");
-      base.data.alert = str(base.data.alert ?? "");
+      base.data.linkSuffix = str(base.data.linkSuffix ?? "までお問い合わせください。");
+      base.data.alert = str(
+        base.data.alert ??
+          "なお、店頭や問い合わせ窓口での現在の順位や金額、当選結果についてのご質問にはお答えできません。"
+      );
       base.data.imageUrl = str(base.data.imageUrl ?? "/footer-defaults/img-02.png");
-      base.data.imageAlt = str(base.data.imageAlt ?? "");
+      base.data.imageAlt = str(base.data.imageAlt ?? "決済履歴の確認方法");
       base.data.imageAssetId = str(base.data.imageAssetId ?? "");
       break;
     case "tabbedNotes": {
@@ -270,46 +496,34 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
         const entry = tab && typeof tab === "object"
           ? (tab as Record<string, unknown>)
           : {};
-        const rawItems = Array.isArray(entry.items) ? entry.items : [];
-        const items = rawItems.map((item: unknown, itemIndex: number) => {
-          const itemEntry = item && typeof item === "object"
-            ? (item as Record<string, unknown>)
-            : {};
-          const subItems = Array.isArray(itemEntry.subItems)
-            ? itemEntry.subItems.map((value) => str(value)).filter(Boolean)
-            : [];
-          return {
-            id: str(itemEntry.id ?? `tab_item_${index + 1}_${itemIndex + 1}`),
-            text: str(itemEntry.text ?? ""),
-            bullet: itemEntry.bullet === "none" ? "none" : "disc",
-            tone: itemEntry.tone === "accent" ? "accent" : "normal",
-            bold: Boolean(itemEntry.bold),
-            subItems,
-          };
-        });
+        const notes = Array.isArray(entry.notes)
+          ? entry.notes.map((note) => str(note)).filter(Boolean)
+          : [
+              ...(Array.isArray(entry.items)
+                ? entry.items.map((item) => {
+                    const itemEntry = item && typeof item === "object"
+                      ? (item as Record<string, unknown>)
+                      : {};
+                    return str(itemEntry.text ?? "");
+                  })
+                : []),
+              str(entry.footnote ?? ""),
+            ].filter((note) => note.trim().length > 0);
         return {
           id: str(entry.id ?? `tab_${index + 1}`),
-          labelTop: str(entry.labelTop ?? `タブ${index + 1}`),
-          labelBottom: str(entry.labelBottom ?? "注意事項"),
-          intro: str(entry.intro ?? ""),
-          items,
-          footnote: str(entry.footnote ?? ""),
-          ctaText: str(entry.ctaText ?? ""),
-          ctaLinkText: str(entry.ctaLinkText ?? ""),
-          ctaLinkUrl: str(entry.ctaLinkUrl ?? ""),
-          ctaTargetKind: entry.ctaTargetKind === "section" ? "section" : "url",
-          ctaSectionId: str(entry.ctaSectionId ?? ""),
-          ctaImageUrl: str(entry.ctaImageUrl ?? ""),
-          ctaImageAlt: str(entry.ctaImageAlt ?? ""),
-          ctaImageAssetId: str(entry.ctaImageAssetId ?? ""),
-          buttonText: str(entry.buttonText ?? ""),
-          buttonTargetKind:
-            entry.buttonTargetKind === "section" ? "section" : "url",
-          buttonUrl: str(entry.buttonUrl ?? ""),
-          buttonSectionId: str(entry.buttonSectionId ?? ""),
+          label: str(entry.label ?? entry.labelTop ?? entry.labelBottom ?? `タブ${index + 1}`),
+          contentTitle: str(entry.contentTitle ?? entry.intro ?? ""),
+          notes,
         };
       });
       base.data.tabs = tabs;
+      const tabCount = tabs.length;
+      const rawInitial =
+        typeof base.data.initialTabIndex === "number" && Number.isFinite(base.data.initialTabIndex)
+          ? Math.floor(base.data.initialTabIndex)
+          : 0;
+      base.data.initialTabIndex =
+        tabCount <= 0 ? 0 : Math.max(0, Math.min(tabCount - 1, rawInitial));
       const rawStyle =
         base.data.tabStyle && typeof base.data.tabStyle === "object"
           ? (base.data.tabStyle as Record<string, unknown>)
@@ -323,20 +537,18 @@ const normalizeSection = (section: Partial<SectionBase>, index: number): Section
           : "simple";
       base.data.tabStyle = {
         variant,
+        showBorder: rawStyle.showBorder !== false,
         inactiveBg: str(rawStyle.inactiveBg ?? "#DDDDDD"),
-        inactiveText: str(rawStyle.inactiveText ?? "#000000"),
         activeBg: str(rawStyle.activeBg ?? "#000000"),
-        activeText: str(rawStyle.activeText ?? "#FFFFFF"),
-        border: str(rawStyle.border ?? "#000000"),
         contentBg: str(rawStyle.contentBg ?? "#FFFFFF"),
-        contentBorder: str(rawStyle.contentBorder ?? "#000000"),
-        accent: str(rawStyle.accent ?? "#EB5505"),
       };
       break;
     }
     default:
       break;
   }
+
+  applyTemplateHydrator(base);
 
   return base;
 };
@@ -416,6 +628,7 @@ export const validateAndNormalizeProject = (raw: unknown): ProjectState => {
 
   const assets =
     data.assets && typeof data.assets === "object" ? data.assets : undefined;
+  const aiAssets = normalizeProjectAiAssets(data.aiAssets);
 
   const stores = normalizeStores(data.stores as StoresTable | undefined);
   const schemaVersion =
@@ -444,13 +657,35 @@ export const validateAndNormalizeProject = (raw: unknown): ProjectState => {
     data.pageBaseStyle && typeof data.pageBaseStyle === "object"
       ? (data.pageBaseStyle as ProjectState["pageBaseStyle"])
       : undefined;
+  const legacyCanvasPages = Array.isArray(data.canvasPages)
+    ? (data.canvasPages as ProjectState["canvasPages"])
+    : undefined;
+  const rawEditorDocuments =
+    data.editorDocuments && typeof data.editorDocuments === "object"
+      ? (data.editorDocuments as ProjectState["editorDocuments"])
+      : undefined;
 
-  return {
+  const mode: EditorMode = rawEditorDocuments?.mode === "canvas" ? "canvas" : "layout";
+  const activeDevice: "pc" | "sp" =
+    rawEditorDocuments?.activeDevice === "sp"
+      ? "sp"
+      : rawEditorDocuments?.activeDevice === "pc"
+      ? "pc"
+      : globalSettings?.ui?.previewMode === "mobile"
+      ? "sp"
+      : "pc";
+  const canvasDocument =
+    rawEditorDocuments?.canvasDocument ??
+    legacyCanvasPages?.[0]?.canvas ??
+    createDefaultCanvasDocument();
+
+  const normalizedProject: ProjectState = {
     meta,
     settings: settings as ProjectSettings,
     sections,
     stores,
     assets,
+    aiAssets,
     schemaVersion,
     appVersion,
     globalSettings,
@@ -459,7 +694,37 @@ export const validateAndNormalizeProject = (raw: unknown): ProjectState => {
     themeSpec,
     animationRegistry,
     pageBaseStyle,
+    editorDocuments: {
+      mode,
+      activeDevice,
+      layoutDocument:
+        // Read compatibility: accept legacy lpDocument when loading old files.
+        // Write path should always persist layoutDocument as canonical.
+        rawEditorDocuments?.layoutDocument ??
+        rawEditorDocuments?.lpDocument ??
+        {
+        settings: settings as ProjectSettings,
+        sections,
+        pageBaseStyle,
+        stores,
+        assets,
+        aiAssets,
+        schemaVersion,
+        appVersion,
+        globalSettings,
+        assetMeta,
+        storeListSpec,
+        themeSpec,
+        animationRegistry,
+      },
+      canvasDocument,
+    },
+    // Legacy data is retained for backwards compatibility. Migration consumers
+    // should prefer editorDocuments.canvasDocument and treat canvasPages as read-only legacy.
+    canvasPages: legacyCanvasPages,
   };
+
+  return ensureProjectAiAssetsConsistency(normalizedProject);
 };
 
 export const downloadProjectJson = (project: ProjectState) => {

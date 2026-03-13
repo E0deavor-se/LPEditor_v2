@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { buildIndexHtml } from "@/src/lib/exportZip";
+import { renderProjectToHtml } from "@/src/export/exportZip";
+import { normalizeLayoutExportProject } from "@/src/lib/export/normalizeLayoutExportProject";
 import type { ProjectState } from "@/src/types/project";
 
 export const runtime = "nodejs";
@@ -25,9 +26,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const sectionCount = body.project.sections?.length ?? 0;
+    const layoutProject = normalizeLayoutExportProject(body.project);
+    const sectionCount = layoutProject.sections?.length ?? 0;
     console.log("[export-html] sections:", sectionCount);
-    const html = buildIndexHtml(body.project);
+    const html = renderProjectToHtml(
+      layoutProject,
+      "assets/main.css",
+      body.ui?.previewMode === "mobile" ? "mobile" : "desktop"
+    );
     console.log("[export-html] final html length:", html.length);
 
     if (!html || html.trim().length < 50) {

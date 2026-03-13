@@ -93,7 +93,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
-  const [fitScale, setFitScale] = useState(1);
+  const fitScale = 1;
   const panStartRef = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
 
   /* ---- hover ---- */
@@ -126,6 +126,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
 
   /* ---- active snap guides (visual) ---- */
   const [activeGuides, setActiveGuides] = useState<ActiveGuide[]>([]);
+  const hasActiveInteraction = Boolean(dragState || guideDrag || isPanning);
 
   /* ---- snap hysteresis (persists across pointermove frames) ---- */
   const snapHysteresisRef = useRef<SnapHysteresis>({ x: null, y: null });
@@ -249,25 +250,6 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
     return () => el.removeEventListener("wheel", handler);
   }, [zoom, setZoom]);
 
-  /* ---- Responsive fit scale (containerWidth / designWidth) ---- */
-  useEffect(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-
-    const recompute = () => {
-      const rect = el.getBoundingClientRect();
-      const horizontalPadding = 80;
-      const containerWidth = Math.max(1, rect.width - horizontalPadding);
-      const next = Math.min(1, containerWidth / Math.max(1, size.width));
-      setFitScale(next);
-    };
-
-    recompute();
-    const observer = new ResizeObserver(() => recompute());
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [size.width]);
-
   /* ---- Pan pointer handlers ---- */
   const handleWrapperPointerDown = (e: ReactPointerEvent) => {
     if (spaceHeld) {
@@ -296,7 +278,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
 
   /* ---- Click background to deselect ---- */
   const handleStageClick = (e: ReactMouseEvent) => {
-    if (isPanning) return;
+    if (hasActiveInteraction) return;
     if (e.target === stageRef.current) {
       clearSelection();
     }
@@ -339,6 +321,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Layer click ---- */
   const handleLayerPointerDown = (e: ReactPointerEvent, layer: CanvasLayer) => {
     e.stopPropagation();
+    if (dragState || guideDrag || isPanning) return;
     if (spaceHeld) { handleWrapperPointerDown(e); return; }
     if (targetDevice && targetDevice !== storeDevice) {
       setDevice(targetDevice);
@@ -387,6 +370,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Resize handle ---- */
   const handleResizePointerDown = (e: ReactPointerEvent, layerId: string, dir: HandleDir) => {
     e.stopPropagation();
+    if (dragState || guideDrag || isPanning) return;
     const layer = editableLayers.find((l) => l.id === layerId);
     if (!layer || layer.locked) return;
     pushSnapshot();
@@ -404,6 +388,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Rotation handle ---- */
   const handleRotatePointerDown = (e: ReactPointerEvent, layerId: string) => {
     e.stopPropagation();
+    if (dragState || guideDrag || isPanning) return;
     const layer = editableLayers.find((l) => l.id === layerId);
     if (!layer || layer.locked) return;
     pushSnapshot();
@@ -420,6 +405,7 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
   /* ---- Guide pointer down ---- */
   const handleGuidePointerDown = (e: ReactPointerEvent, guide: CanvasGuide) => {
     e.stopPropagation();
+    if (dragState || isPanning) return;
     pushSnapshot();
     setGuideDrag({
       guideId: guide.id,
@@ -1036,7 +1022,8 @@ export default function CanvasStage({ targetDevice, className }: CanvasStageProp
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
-        overflow: "hidden",
+        overflowX: "auto",
+        overflowY: "auto",
         flex: 1,
         padding: 40,
         backgroundColor: "var(--ui-bg, #f3f4f6)",

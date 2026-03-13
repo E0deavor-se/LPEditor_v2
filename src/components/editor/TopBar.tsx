@@ -10,11 +10,14 @@ import { ArrowLeft, Check, ChevronDown, Settings } from "lucide-react";
 import StatusChip from "./StatusChip";
 import { useEditorStore } from "@/src/store/editorStore";
 import { useThemeStore } from "@/src/store/themeStore";
+import { EDITOR_UI_COMPACT_BUTTON_HEIGHT_CLASS } from "@/src/components/editor/editorUiTokens";
 import {
   downloadProjectJson,
   pickAndLoadProjectJson,
 } from "@/src/lib/projectFile";
-import { exportProjectToZip, exportCanvasOnlyToZip, triggerZipDownload } from "@/src/export/exportZip";
+import { serializeProjectForPersistence } from "@/src/lib/editorProject";
+import { getLayoutSections } from "@/src/lib/editorProject";
+import { exportProjectToZip, exportCanvasDocumentToZip, triggerZipDownload } from "@/src/export/exportZip";
 import { pickAndImportZip } from "@/src/lib/importZip";
 import { exportPreviewToPng } from "@/src/lib/exportImage";
 
@@ -24,12 +27,10 @@ type TopBarProps = {
   /** プレビューiframeへの参照 */
   previewIframeRef?: React.RefObject<HTMLIFrameElement | null>;
   /** 現在のエディタモード */
-  editorMode?: "lp" | "canvas";
-  /** Canvas モード時のアクティブ Canvas ページ ID */
-  activeCanvasPageId?: string | null;
+  editorMode?: "layout" | "canvas";
 };
 
-export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = "lp", activeCanvasPageId }: TopBarProps) {
+export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = "layout" }: TopBarProps) {
   const themeMode = useThemeStore((state) => state.mode);
   const themeAccent = useThemeStore((state) => state.accent);
   const setThemeMode = useThemeStore((state) => state.setMode);
@@ -41,6 +42,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   const [isScreenshotting, setIsScreenshotting] = useState(false);
   const [rollbackSteps, setRollbackSteps] = useState(1);
   const previewMode = useEditorStore((state) => state.previewMode);
+  const activeDevice = useEditorStore((state) => state.activeDevice);
   const previewAspect = useEditorStore((state) => state.previewAspect);
   const previewDesktopWidth = useEditorStore(
     (state) => state.previewDesktopWidth
@@ -91,7 +93,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   const replaceProject = useEditorStore((state) => state.replaceProject);
   const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
   const setPreviewBusy = useEditorStore((state) => state.setPreviewBusy);
-  const setPreviewMode = useEditorStore((state) => state.setPreviewMode);
+  const setActiveDevice = useEditorStore((state) => state.setActiveDevice);
   const setPreviewDesktopWidth = useEditorStore(
     (state) => state.setPreviewDesktopWidth
   );
@@ -136,8 +138,8 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
     (state) => state.setAiTargetSectionTypes
   );
 
-  const isDesktop = previewMode === "desktop";
-  const isMobile = previewMode === "mobile";
+  const isDesktop = activeDevice === "pc";
+  const isMobile = activeDevice === "sp";
   const isDev =
     process.env.NODE_ENV === "development" ||
     process.env.NEXT_PUBLIC_APP_ENV === "development";
@@ -244,13 +246,11 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
     }
   };
 
-  const handleExportCanvasOnlyZip = async () => {
-    if (!activeCanvasPageId) return;
+  const handleExportCanvasZip = async () => {
     try {
       setSaveStatus("saving", "Canvas ZIPを書き出し中…");
-      const result = await exportCanvasOnlyToZip(project, activeCanvasPageId);
-      const canvasPage = (project.canvasPages ?? []).find((p) => p.id === activeCanvasPageId);
-      const baseName = canvasPage?.name || project.meta.projectName || "canvas-lp";
+      const result = await exportCanvasDocumentToZip(project);
+      const baseName = project.meta.projectName || "canvas-lp";
       triggerZipDownload(result.blob, baseName);
       setSaveStatus("saved", "Canvas ZIPを書き出しました");
     } catch (error) {
@@ -308,9 +308,10 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
       replaceProject(nextProject);
       const { getDb } = await import("@/src/db/db");
       const db = await getDb();
+      const normalizedProject = serializeProjectForPersistence(nextProject);
       await db.projects.put({
         id: "project_default",
-        data: nextProject,
+        data: normalizedProject,
         updatedAt: Date.now(),
       });
       setSaveStatus("saved", "プロジェクトを読み込みました");
@@ -333,9 +334,10 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
       replaceProject(nextProject);
       const { getDb } = await import("@/src/db/db");
       const db = await getDb();
+      const normalizedProject = serializeProjectForPersistence(nextProject);
       await db.projects.put({
         id: "project_default",
-        data: nextProject,
+        data: normalizedProject,
         updatedAt: Date.now(),
       });
       setPreviewBusy(false);
@@ -353,9 +355,9 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   };
 
   const sectionTypeOptions = useMemo(() => {
-    const types = new Set(project.sections.map((section) => section.type));
+    const types = new Set(getLayoutSections(project).map((section) => section.type));
     return Array.from(types).sort();
-  }, [project.sections]);
+  }, [project]);
 
   const exportRef = useRef<HTMLDivElement | null>(null);
 
@@ -389,11 +391,11 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   const zoomOptions = [0.8, 0.9, 1, 1.1, 1.2];
 
   const flatButtonBase =
-    "flex h-8 items-center gap-1 rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] px-2 text-[11px] text-[var(--ui-text)] shadow-none transition";
+    `flex ${EDITOR_UI_COMPACT_BUTTON_HEIGHT_CLASS} items-center gap-1 rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] px-2 text-[11px] text-[var(--ui-text)] shadow-none transition`;
   const flatButtonActive =
     "border-transparent bg-[var(--ui-accent)] text-[var(--ui-accent-foreground)]";
   const flatIconButton =
-    "flex h-8 w-8 items-center justify-center rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] text-[var(--ui-text)] shadow-none transition";
+    `flex ${EDITOR_UI_COMPACT_BUTTON_HEIGHT_CLASS} w-7 items-center justify-center rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] text-[var(--ui-text)] shadow-none transition`;
 
   const handleExportImage = async () => {
     if (isScreenshotting) {
@@ -470,7 +472,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   return (
     <header
       className={
-        "ui-panel sticky top-0 z-20 grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-none border-x-0 border-t-0 bg-[var(--surface)] px-3 text-[var(--ui-text)] " +
+        "ui-panel sticky top-0 z-20 grid h-11 grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-none border-x-0 border-t-0 bg-[var(--surface-2)] px-3 text-[var(--ui-text)] " +
         glassClass
       }
     >
@@ -507,96 +509,102 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
           </button>
         </div>
       </div>
-      <div className="flex items-center justify-center gap-3">
-        <div className="flex items-center gap-1">
-          <button
-            className={
-              flatButtonBase + (isDesktop ? ` ${flatButtonActive}` : "")
-            }
-            type="button"
-            aria-label="デスクトップ表示"
-            aria-pressed={isDesktop}
-            onClick={() => setPreviewMode("desktop")}
-          >
-            デスクトップ
-          </button>
-          <button
-            className={
-              flatButtonBase + (isMobile ? ` ${flatButtonActive}` : "")
-            }
-            type="button"
-            aria-label="モバイル表示"
-            aria-pressed={isMobile}
-            onClick={() => setPreviewMode("mobile")}
-          >
-            モバイル
-          </button>
-        </div>
-        <div ref={aspectMenuRef} className="relative hidden sm:block">
-          <button
-            ref={aspectTriggerRef}
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={isAspectOpen}
-            aria-label="ズームを選択"
-            className={flatButtonBase + (isMobile ? " opacity-60" : "")}
-            onClick={() => {
-              if (isMobile) {
-                return;
-              }
-              setIsAspectOpen((current) => !current);
-            }}
-            onKeyDown={(event) => {
-              if (isMobile) {
-                return;
-              }
-              if (
-                event.key === "Enter" ||
-                event.key === " " ||
-                event.key === "ArrowDown"
-              ) {
-                event.preventDefault();
-                setIsAspectOpen(true);
-              }
-            }}
-          >
-            <span>ズーム</span>
-            <span className="text-[10px] text-[var(--ui-muted)]">
-              {Math.round(previewFontScale * 100)}%
-            </span>
-            <ChevronDown size={14} className={isAspectOpen ? "rotate-180" : ""} />
-          </button>
-          {isAspectOpen ? (
-            <div
-              role="menu"
-              aria-label="ズーム"
-              className="absolute right-0 top-full z-20 mt-1 w-28 rounded-md border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_92%,transparent)] p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
-            >
-              {zoomOptions.map((option) => {
-                const value = Math.round(option * 100);
-                const isActive = Math.abs(previewFontScale - option) < 0.01;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={isActive}
-                    className={
-                      "ui-menu-item " + (isActive ? " is-active" : "")
-                    }
-                    onClick={() => {
-                      setPreviewFontScale(option);
-                      setIsAspectOpen(false);
-                    }}
-                  >
-                    <span>{value}%</span>
-                    {isActive ? <Check size={14} /> : null}
-                  </button>
-                );
-              })}
+      <div className="flex items-center justify-center gap-2">
+        {editorMode === "canvas" ? (
+          <>
+            <div className="flex items-center gap-1">
+              <button
+                className={
+                  flatButtonBase + (isDesktop ? ` ${flatButtonActive}` : "")
+                }
+                type="button"
+                aria-label="デスクトップ表示"
+                aria-pressed={isDesktop}
+                onClick={() => setActiveDevice("pc")}
+              >
+                デスクトップ
+              </button>
+              <button
+                className={
+                  flatButtonBase + (isMobile ? ` ${flatButtonActive}` : "")
+                }
+                type="button"
+                aria-label="モバイル表示"
+                aria-pressed={isMobile}
+                onClick={() => setActiveDevice("sp")}
+              >
+                モバイル
+              </button>
             </div>
-          ) : null}
-        </div>
+            <div ref={aspectMenuRef} className="relative hidden sm:block">
+              <button
+                ref={aspectTriggerRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={isAspectOpen}
+                aria-label="ズームを選択"
+                className={flatButtonBase + (isMobile ? " opacity-60" : "")}
+                onClick={() => {
+                  if (isMobile) {
+                    return;
+                  }
+                  setIsAspectOpen((current) => !current);
+                }}
+                onKeyDown={(event) => {
+                  if (isMobile) {
+                    return;
+                  }
+                  if (
+                    event.key === "Enter" ||
+                    event.key === " " ||
+                    event.key === "ArrowDown"
+                  ) {
+                    event.preventDefault();
+                    setIsAspectOpen(true);
+                  }
+                }}
+              >
+                <span>ズーム</span>
+                <span className="text-[10px] text-[var(--ui-muted)]">
+                  {Math.round(previewFontScale * 100)}%
+                </span>
+                <ChevronDown size={14} className={isAspectOpen ? "rotate-180" : ""} />
+              </button>
+              {isAspectOpen ? (
+                <div
+                  role="menu"
+                  aria-label="ズーム"
+                  className="absolute right-0 top-full z-20 mt-1 w-28 rounded-md border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--bg-panel)_92%,transparent)] p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
+                >
+                  {zoomOptions.map((option) => {
+                    const value = Math.round(option * 100);
+                    const isActive = Math.abs(previewFontScale - option) < 0.01;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isActive}
+                        className={
+                          "ui-menu-item " + (isActive ? " is-active" : "")
+                        }
+                        onClick={() => {
+                          setPreviewFontScale(option);
+                          setIsAspectOpen(false);
+                        }}
+                      >
+                        <span>{value}%</span>
+                        {isActive ? <Check size={14} /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <div className="text-[11px] text-[var(--ui-muted)]">Layout v2</div>
+        )}
       </div>
       <div className="flex items-center justify-end gap-2">
         <div ref={exportRef} className="relative">
@@ -622,24 +630,15 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
                 className={exportItemBase}
                 onClick={() => {
                   setIsExportOpen(false);
-                  handleExportZip();
+                  if (editorMode === "canvas") {
+                    void handleExportCanvasZip();
+                    return;
+                  }
+                  void handleExportZip();
                 }}
               >
-                {editorMode === "canvas" ? "ZIP（プロジェクト全体）" : "ZIPを書き出し"}
+                {editorMode === "canvas" ? "Canvas ZIPを書き出し" : "ZIPを書き出し"}
               </button>
-              {activeCanvasPageId ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={exportItemBase}
-                  onClick={() => {
-                    setIsExportOpen(false);
-                    void handleExportCanvasOnlyZip();
-                  }}
-                >
-                  Canvasのみ（独立LP）
-                </button>
-              ) : null}
               <button
                 type="button"
                 role="menuitem"

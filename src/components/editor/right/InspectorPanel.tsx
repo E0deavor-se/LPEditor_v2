@@ -30,8 +30,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useShallow } from "zustand/shallow";
-import { useEditorStore, type EditorUIState } from "@/src/store/editorStore";
+import { useEditorStore } from "@/src/store/editorStore";
+import { useInspectorCore } from "@/src/components/editor/right/useInspectorCore";
 import InspectorHeader from "@/src/components/editor/right/InspectorHeader";
 import InspectorTabs from "@/src/components/editor/right/InspectorTabs";
 import ColorField from "@/src/components/editor/right/primitives/ColorField";
@@ -70,7 +70,6 @@ import type {
   SectionStylePatch,
   TextContentItem,
 } from "@/src/types/project";
-import { useI18n } from "@/src/i18n";
 import { parseCsv } from "@/src/lib/csv";
 import { buildCsvImportPreview } from "@/src/lib/csv/importSummary";
 import {
@@ -81,6 +80,9 @@ import {
   getSectionCardPreset,
   DEFAULT_SECTION_CARD_STYLE,
 } from "@/src/lib/sections/sectionCardPresets";
+import { EDITOR_UI_INSPECTOR_WIDTH } from "@/src/components/editor/editorUiTokens";
+import InspectorShell from "@/src/components/inspector/InspectorShell";
+import { getLayoutSections } from "@/src/lib/editorProject";
 
 const DEFAULT_PAGE_STYLE: PageBaseStyle = {
   typography: {
@@ -133,6 +135,7 @@ const TRUTHY_TOKENS = new Set([
 
 type RankingRow = {
   id: string;
+  rank: string;
   values: string[];
 };
 
@@ -215,8 +218,12 @@ const SIMPLE_GUIDE_STEPS = [
   },
 ];
 
-export default function InspectorPanel() {
-  const t = useI18n();
+type InspectorPanelProps = {
+  /** true の場合 InspectorShell を省略（V2 Inspector から埋め込み時に使用） */
+  skipShell?: boolean;
+};
+
+export default function InspectorPanel({ skipShell }: InspectorPanelProps = {}) {
   const [activeTab, setActiveTab] = useState<TabKey>("style");
   const [isAnimationsOpen, setIsAnimationsOpen] = useState(false);
   const [isStoreDesignOpen, setIsStoreDesignOpen] = useState(false);
@@ -282,78 +289,50 @@ export default function InspectorPanel() {
     isCsvImportModalOpen,
     setCsvImportDraft,
     setCsvImportModalOpen,
-  } = useEditorStore(
-    useShallow((state: EditorUIState) => ({
-      selected: state.selected,
-      project: state.project,
-      uiMode: state.uiMode,
-      selectedItemId: state.selectedItemId,
-      selectedLineId: state.selectedLineId,
-      selectedImageIds: state.selectedImageIds,
-      setPageTypography: state.setPageTypography,
-      setPageColors: state.setPageColors,
-      setPageSpacing: state.setPageSpacing,
-      setPageLayout: state.setPageLayout,
-      setPageSectionAnimation: state.setPageSectionAnimation,
-      setPageBackground: state.setPageBackground,
-      setMvBackground: state.setMvBackground,
-      setPageMeta: state.setPageMeta,
-      updateSectionContent: state.updateSectionContent,
-      updateSectionData: state.updateSectionData,
-      updateSectionStyle: state.updateSectionStyle,
-      updateSectionCardStyle: state.updateSectionCardStyle,
-      updateTargetStoresContent: state.updateTargetStoresContent,
-      addContentItem: state.addContentItem,
-      removeContentItem: state.removeContentItem,
-      reorderContentItems: state.reorderContentItems,
-      reorderTextLines: state.reorderTextLines,
-      addTextLine: state.addTextLine,
-      removeTextLine: state.removeTextLine,
-      updateTextLineText: state.updateTextLineText,
-      updateTextLineMarks: state.updateTextLineMarks,
-      updateContentItemText: state.updateContentItemText,
-      updateTitleItemText: state.updateTitleItemText,
-      updateTitleItemMarks: state.updateTitleItemMarks,
-      updateTextLineAnimation: state.updateTextLineAnimation,
-      addImageToItem: state.addImageToItem,
-      removeImageFromItem: state.removeImageFromItem,
-      updateImageInItem: state.updateImageInItem,
-      setImageItemLayout: state.setImageItemLayout,
-      updateImageAnimation: state.updateImageAnimation,
-      updateButtonItem: state.updateButtonItem,
-      updateContentItemAnimation: state.updateContentItemAnimation,
-      applyLineMarksToAllLines: state.applyLineMarksToAllLines,
-      promoteLineMarksToSectionTypography:
-        state.promoteLineMarksToSectionTypography,
-      applyCalloutToSelection: state.applyCalloutToSelection,
-      setSelectedSection: state.setSelectedSection,
-      setSelectedItemId: state.setSelectedItemId,
-      setSelectedLineId: state.setSelectedLineId,
-      setSelectedImageIds: state.setSelectedImageIds,
-      applySectionAppearanceToAll: state.applySectionAppearanceToAll,
-      toggleSectionLocked: state.toggleSectionLocked,
-      toggleSectionVisible: state.toggleSectionVisible,
-      duplicateSection: state.duplicateSection,
-      deleteSection: state.deleteSection,
-      addAsset: state.addAsset,
-      csvImportDraft: state.csvImportDraft,
-      isCsvImportModalOpen: state.isCsvImportModalOpen,
-      setCsvImportDraft: state.setCsvImportDraft,
-      setCsvImportModalOpen: state.setCsvImportModalOpen,
-    }))
-  );
+    // Derived from useInspectorCore
+    selectedSection,
+    pageStyle,
+    pageMeta,
+    isPageSelection,
+    isSection,
+    isSimpleMode,
+    isLocked,
+    isVisible,
+    sectionType,
+    isBrandBar,
+    isHeroImage,
+    isImageOnly,
+    isTargetStores,
+    isExcludedStoresList,
+    isExcludedBrandsList,
+    isLegalNotes,
+    isInquiry,
+    isCampaignPeriodBar,
+    isCampaignOverview,
+    isCouponFlow,
+    isRankingTable,
+    isPaymentHistoryGuide,
+    isTabbedNotes,
+    isStoreCsvSection,
+    isItemlessSection,
+    hideStyleTab,
+    contentItems,
+    selectedItem,
+    selectedTitleItem,
+    selectedTextItem,
+    selectedImageItem,
+    selectedButtonItem,
+    selectedLine,
+    titleItem,
+    breadcrumb,
+    targetName,
+    sectionOptions,
+    canSelectSection,
+    canSelectElement,
+    t,
+  } = useInspectorCore();
+  const layoutSections = getLayoutSections(project);
 
-  const selectedSection = useMemo(() => {
-    if (selected.kind !== "section") {
-      return undefined;
-    }
-    return project.sections.find(
-      (section: SectionBase) => section.id === selected.id
-    );
-  }, [project.sections, selected]);
-
-  const pageStyle = project.pageBaseStyle as PageBaseStyle;
-  const pageMeta = project.settings?.pageMeta;
   const [backgroundTarget, setBackgroundTarget] = useState<
     "page" | "mv"
   >("page");
@@ -368,35 +347,9 @@ export default function InspectorPanel() {
       setMvBackground(spec);
     }
   };
-  const isSection = selected.kind === "section" && Boolean(selectedSection);
-  const isSimpleMode = uiMode === "simple";
-  const isLocked = Boolean(selectedSection?.locked);
-  const isVisible = Boolean(selectedSection?.visible ?? true);
   const [imageUrlInput, setImageUrlInput] = useState("");
   const [imageAltInput, setImageAltInput] = useState("");
   const [csvError, setCsvError] = useState<string | null>(null);
-  const isPageSelection = selected.kind === "page";
-  const sectionType = selectedSection?.type ?? "";
-  const isBrandBar = sectionType === "brandBar";
-  const isHeroImage = sectionType === "heroImage";
-  const isImageOnly = sectionType === "imageOnly";
-  const isTargetStores = sectionType === "targetStores";
-  const isExcludedStoresList = sectionType === "excludedStoresList";
-  const isExcludedBrandsList = sectionType === "excludedBrandsList";
-  const isLegalNotes = sectionType === "legalNotes";
-  const isInquiry = sectionType === "footerHtml";
-  const isCampaignPeriodBar = sectionType === "campaignPeriodBar";
-  const isCampaignOverview = sectionType === "campaignOverview";
-  const isCouponFlow = sectionType === "couponFlow";
-  const isRankingTable = sectionType === "rankingTable";
-  const isPaymentHistoryGuide = sectionType === "paymentHistoryGuide";
-  const isTabbedNotes = sectionType === "tabbedNotes";
-  const isStoreCsvSection =
-    isTargetStores || isExcludedStoresList || isExcludedBrandsList;
-  const isItemlessSection =
-    isBrandBar || isHeroImage || isCampaignPeriodBar || isImageOnly;
-  const hideStyleTab =
-    isBrandBar || isHeroImage || isImageOnly || (isSimpleMode && isSection);
   const guideStepIndex = Math.min(
     Math.max(simpleGuideStep, 0),
     SIMPLE_GUIDE_STEPS.length - 1
@@ -505,22 +458,6 @@ export default function InspectorPanel() {
   );
   const heroPcSlidesInputRef = useRef<HTMLInputElement | null>(null);
   const heroSpSlidesInputRef = useRef<HTMLInputElement | null>(null);
-  const contentItems =
-    (selectedSection?.content?.items ?? []) as ContentItem[];
-  const selectedItem =
-    contentItems.find((item) => item.id === selectedItemId) ?? contentItems[0];
-  const selectedTitleItem =
-    selectedItem?.type === "title" ? selectedItem : undefined;
-  const selectedTextItem =
-    selectedItem?.type === "text" ? selectedItem : undefined;
-  const selectedImageItem =
-    selectedItem?.type === "image" ? selectedItem : undefined;
-  const selectedButtonItem =
-    selectedItem?.type === "button" ? selectedItem : undefined;
-  const selectedLine =
-    selectedTextItem?.lines.find((line) => line.id === selectedLineId) ??
-    selectedTextItem?.lines[0];
-  const titleItem = contentItems.find((item) => item.type === "title");
   const buttonTargetKind = selectedButtonItem?.target.kind ?? "url";
   const buttonTargetSectionId =
     selectedButtonItem?.target.kind === "section"
@@ -744,17 +681,6 @@ export default function InspectorPanel() {
     typeof selectedSection?.data?.noteWidthPct === "number"
       ? selectedSection?.data?.noteWidthPct
       : 100;
-  const rankingRankLabel = useMemo(() => {
-    const data = selectedSection?.data ?? {};
-    const headers = data.headers && typeof data.headers === "object"
-      ? (data.headers as Record<string, unknown>)
-      : {};
-    return typeof data.rankLabel === "string"
-      ? data.rankLabel
-      : typeof headers.rank === "string"
-      ? headers.rank
-      : "順位";
-  }, [selectedSection?.data]);
   const rankingColumns = useMemo<RankingColumn[]>(() => {
     const rawColumns = selectedSection?.data?.columns;
     if (Array.isArray(rawColumns) && rawColumns.length > 0) {
@@ -812,6 +738,7 @@ export default function InspectorPanel() {
         const values = row.map((value) => String(value));
         return {
           id: `rank_${index + 1}`,
+          rank: String(index + 1),
           values: values
             .slice(0, columnCount)
             .concat(Array(Math.max(0, columnCount - values.length)).fill("")),
@@ -829,34 +756,13 @@ export default function InspectorPanel() {
         : [String(entry.label ?? ""), String(entry.value ?? "")];
       return {
         id,
+        rank: String(entry.rank ?? index + 1),
         values: rawValues
           .slice(0, columnCount)
           .concat(Array(Math.max(0, columnCount - rawValues.length)).fill("")),
       };
     });
   }, [rankingColumns.length, selectedSection?.data?.rows]);
-  const rankingStyle = useMemo(() => {
-    const data = selectedSection?.data ?? {};
-    const style = data.tableStyle && typeof data.tableStyle === "object"
-      ? (data.tableStyle as Record<string, unknown>)
-      : {};
-    return {
-      headerBg: typeof style.headerBg === "string" ? style.headerBg : "#f8fafc",
-      headerText: typeof style.headerText === "string" ? style.headerText : "#0f172a",
-      cellBg: typeof style.cellBg === "string" ? style.cellBg : "#ffffff",
-      cellText: typeof style.cellText === "string" ? style.cellText : "#0f172a",
-      border: typeof style.border === "string" ? style.border : "#e2e8f0",
-      rankBg: typeof style.rankBg === "string" ? style.rankBg : "#e2e8f0",
-      rankText: typeof style.rankText === "string" ? style.rankText : "#0f172a",
-      top1Bg: typeof style.top1Bg === "string" ? style.top1Bg : "#f59e0b",
-      top2Bg: typeof style.top2Bg === "string" ? style.top2Bg : "#cbd5f5",
-      top3Bg: typeof style.top3Bg === "string" ? style.top3Bg : "#fb923c",
-      periodLabelBg:
-        typeof style.periodLabelBg === "string" ? style.periodLabelBg : "#f1f5f9",
-      periodLabelText:
-        typeof style.periodLabelText === "string" ? style.periodLabelText : "#0f172a",
-    };
-  }, [selectedSection?.data]);
   const paymentGuideData = useMemo(() => {
     const data = selectedSection?.data ?? {};
     return {
@@ -1020,8 +926,8 @@ export default function InspectorPanel() {
       "imageOnly",
       "footerHtml",
     ]);
-    return project.sections.find((section) => !excludeTypes.has(section.type));
-  }, [project.sections]);
+    return layoutSections.find((section) => !excludeTypes.has(section.type));
+  }, [layoutSections]);
   const designTargetCardStyle =
     designTargetSection?.sectionCardStyle ?? DEFAULT_SECTION_CARD_STYLE;
   const designTargetBandSize =
@@ -1294,40 +1200,7 @@ export default function InspectorPanel() {
       { excludeTypes: ["brandBar", "heroImage", "imageOnly", "footerHtml"] }
     );
   };
-  const breadcrumb = useMemo(() => {
-    const sectionLabel = selectedSection?.name ?? t.inspector.breadcrumb.untitled;
-    const lineLabel = selectedLine?.text?.trim();
-    const itemLabel = selectedItem
-      ? (
-          {
-            title: t.inspector.section.itemTypes.title,
-            text: t.inspector.section.itemTypes.text,
-            image: t.inspector.section.itemTypes.image,
-            button: t.inspector.section.itemTypes.button,
-          } as Record<string, string>
-        )[selectedItem.type] ?? t.inspector.breadcrumb.block
-      : t.inspector.breadcrumb.block;
-    const elementLabel = lineLabel || itemLabel;
-
-    if (selected.kind === "page") {
-      return [t.inspector.breadcrumb.page];
-    }
-    if (selected.kind === "section" && selectedSection) {
-      return [t.inspector.breadcrumb.page, sectionLabel];
-    }
-    if (selected.kind === "block") {
-      return [t.inspector.breadcrumb.page, sectionLabel, elementLabel];
-    }
-    return [t.inspector.breadcrumb.page];
-  }, [selected, selectedItem, selectedLine, selectedSection, t]);
-
-  const sectionOptions = project.sections.map((section) => ({
-    value: section.id,
-    label: section.name ?? section.type,
-  }));
   const isElementScope = inspectorScope === "element";
-  const canSelectSection = project.sections.length > 0;
-  const canSelectElement = contentItems.length > 0 && Boolean(selectedSection);
 
   const selectItemById = (itemId?: string) => {
     if (!selectedSection || !itemId) {
@@ -1359,7 +1232,7 @@ export default function InspectorPanel() {
       setInspectorScope("page");
       return;
     }
-    const nextSectionId = selectedSection?.id ?? project.sections[0]?.id;
+    const nextSectionId = selectedSection?.id ?? layoutSections[0]?.id;
     if (!nextSectionId) {
       return;
     }
@@ -1387,7 +1260,6 @@ export default function InspectorPanel() {
   const isContentReady = selected.kind === "section" && selectedSection;
   const showFooterApplyToAll =
     activeTab === "style" && selected.kind === "section" && Boolean(selectedSection);
-  const targetName = breadcrumb[breadcrumb.length - 1] ?? t.inspector.breadcrumb.page;
   const escapeSelector = (value: string) => {
     const cssApi =
       typeof globalThis !== "undefined"
@@ -1401,10 +1273,10 @@ export default function InspectorPanel() {
     return value.replace(/["\\]/g, "\\$&");
   };
   const cardClass =
-    "group w-full border-b border-[var(--ui-border)]/50 py-3";
+    "group w-full border-b border-[var(--ui-border)]/50 py-2";
   const cardHeaderClass =
-    "flex h-8 items-center justify-between border-l-2 border-transparent pl-3 pr-4 text-[11px] font-semibold tracking-wide text-[var(--ui-text)] mb-2.5 group-data-[active=true]:border-[var(--ui-accent)]";
-  const cardBodyClass = "min-w-0 pl-3 pr-4";
+    "flex h-7 items-center justify-between border-l-2 border-transparent pl-2.5 pr-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--ui-text)] mb-2 group-data-[active=true]:border-[var(--ui-accent)]";
+  const cardBodyClass = "min-w-0 pl-2.5 pr-3";
   const cardBodyInnerClass = "min-w-0";
   const isLineScopeEnabled = Boolean(selectedLineId);
   const isItemScopeEnabled = Boolean(selectedItemId);
@@ -1474,9 +1346,9 @@ export default function InspectorPanel() {
     updateSectionData,
   ]);
   const quickRowClass =
-    "grid min-h-8 grid-cols-[96px_minmax(0,1fr)] items-center gap-x-3";
+    "grid min-h-8 grid-cols-[88px_minmax(0,1fr)] items-center gap-x-2";
   const quickLabelClass = "text-[11px] text-[var(--ui-muted)]";
-  const quickControlClass = "min-w-0 flex items-center gap-2 justify-end";
+  const quickControlClass = "min-w-0 flex items-center gap-1.5 justify-end";
   const quickSegmentWrapClass =
     "inline-flex rounded-md border border-[var(--ui-border)]/50 bg-transparent p-1";
   const quickSegmentButtonClass = "h-6 px-2 text-[11px] rounded-sm";
@@ -1497,14 +1369,14 @@ export default function InspectorPanel() {
     <div className="flex items-center gap-2">
       <input
         type="color"
-        className="h-8 w-8 cursor-pointer rounded border border-[var(--ui-border)] bg-transparent"
+        className="h-7 w-7 cursor-pointer rounded border border-[var(--ui-border)] bg-transparent"
         value={toSafeHexColor(value)}
         aria-label={ariaLabel}
         onChange={(event) => onChange(event.target.value)}
       />
       <input
         type="text"
-        className="ui-input h-8 w-[110px] text-[12px]"
+        className="ui-input h-7 w-[110px] text-[11px]"
         value={value}
         aria-label={ariaLabel}
         onChange={(event) => onChange(event.target.value)}
@@ -2380,9 +2252,8 @@ export default function InspectorPanel() {
     setCsvImportModalOpen(false);
   };
 
-  return (
+  const inspectorBody = (
     <>
-      <aside className="ui-panel lp-inspector flex h-full min-h-0 flex-col rounded-none border-y-0 border-r-0">
         <div className="shrink-0 border-b border-[var(--ui-border)]/60 bg-[var(--ui-panel)]/95 backdrop-blur">
           <InspectorHeader
             targetName={targetName}
@@ -2432,7 +2303,7 @@ export default function InspectorPanel() {
               setPageLayout(DEFAULT_PAGE_STYLE.layout);
             }}
           />
-          <div className="px-4 py-2">
+          <div className="px-3 py-2">
             <InspectorTabs
               value={activeTab}
               onChange={setActiveTab}
@@ -2442,7 +2313,7 @@ export default function InspectorPanel() {
           </div>
         </div>
         <div className="lp-inspector-scroll flex-1 min-h-0 overflow-y-auto">
-          <div className="px-4 py-4">
+          <div className="px-3 py-2">
             <div className="flex flex-col gap-2">
               {isSimpleMode ? (
                 <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)]/70 p-3">
@@ -4455,22 +4326,24 @@ export default function InspectorPanel() {
                                           files,
                                           (entries) => {
                                             // 非同期完了後は最新のstoreから取得する
-                                            let latestSection = useEditorStore
+                                            let latestProject = useEditorStore
                                               .getState()
-                                              .project.sections.find(
-                                                (s) => s.id === sectionId
-                                              );
+                                              .project;
+                                            let latestSection = getLayoutSections(
+                                              latestProject
+                                            ).find((s) => s.id === sectionId);
                                             let imageItem2 = latestSection?.content?.items?.find(
                                               (item) => item.type === "image"
                                             ) as ImageContentItem | undefined;
                                             // image アイテムが存在しない場合は自動作成してから再取得
                                             if (!imageItem2) {
                                               addContentItem(sectionId, "image");
-                                              latestSection = useEditorStore
+                                              latestProject = useEditorStore
                                                 .getState()
-                                                .project.sections.find(
-                                                  (s) => s.id === sectionId
-                                                );
+                                                .project;
+                                              latestSection = getLayoutSections(
+                                                latestProject
+                                              ).find((s) => s.id === sectionId);
                                               imageItem2 = latestSection?.content?.items?.find(
                                                 (item) => item.type === "image"
                                               ) as ImageContentItem | undefined;
@@ -4687,7 +4560,7 @@ export default function InspectorPanel() {
                                 onChange={(next) => {
                                   if (next === "section") {
                                     const firstSectionId =
-                                      project.sections[0]?.id ?? "";
+                                      layoutSections[0]?.id ?? "";
                                     updateSectionData(selectedSection.id, {
                                       linkTargetKind: "section",
                                       linkSectionId: firstSectionId,
@@ -4711,7 +4584,7 @@ export default function InspectorPanel() {
                                     })
                                   }
                                 >
-                                  {project.sections.map((section: SectionBase) => (
+                                  {layoutSections.map((section: SectionBase) => (
                                     <option key={section.id} value={section.id}>
                                       {section.name ?? section.type}
                                     </option>
@@ -5227,7 +5100,7 @@ export default function InspectorPanel() {
                                             }
                                             if (next === "section") {
                                               const firstSectionId =
-                                                project.sections[0]?.id ?? "";
+                                                layoutSections[0]?.id ?? "";
                                               return {
                                                 ...entry,
                                                 ctaTargetKind: "section",
@@ -5260,7 +5133,7 @@ export default function InspectorPanel() {
                                           });
                                         }}
                                       >
-                                        {project.sections.map((section: SectionBase) => (
+                                        {layoutSections.map((section: SectionBase) => (
                                           <option key={section.id} value={section.id}>
                                             {section.name ?? section.type}
                                           </option>
@@ -5396,7 +5269,7 @@ export default function InspectorPanel() {
                                             }
                                             if (next === "section") {
                                               const firstSectionId =
-                                                project.sections[0]?.id ?? "";
+                                                layoutSections[0]?.id ?? "";
                                               return {
                                                 ...entry,
                                                 buttonTargetKind: "section",
@@ -5429,7 +5302,7 @@ export default function InspectorPanel() {
                                           });
                                         }}
                                       >
-                                        {project.sections.map((section: SectionBase) => (
+                                        {layoutSections.map((section: SectionBase) => (
                                           <option key={section.id} value={section.id}>
                                             {section.name ?? section.type}
                                           </option>
@@ -5577,22 +5450,6 @@ export default function InspectorPanel() {
                               />
                             </label>
                             <div className="text-xs text-[var(--ui-muted)]">
-                              テーブル
-                            </div>
-                            <FieldRow label="順位ラベル">
-                              <input
-                                type="text"
-                                className="ui-input h-7 w-full text-[12px]"
-                                value={rankingRankLabel}
-                                onChange={(event) =>
-                                  updateSectionData(selectedSection.id, {
-                                    rankLabel: event.target.value,
-                                  })
-                                }
-                                disabled={isLocked}
-                              />
-                            </FieldRow>
-                            <div className="text-xs text-[var(--ui-muted)]">
                               列
                             </div>
                             {rankingColumns.length === 0 ? (
@@ -5693,6 +5550,23 @@ export default function InspectorPanel() {
                                     <span className="w-5 text-right text-xs text-[var(--ui-muted)]">
                                       {index + 1}
                                     </span>
+                                    <input
+                                      type="text"
+                                      className="ui-input h-7 w-14 text-[12px]"
+                                      value={row.rank}
+                                      placeholder="順位"
+                                      onChange={(event) => {
+                                        const nextRows = rankingRows.map((entry, rowIndex) =>
+                                          rowIndex === index
+                                            ? { ...entry, rank: event.target.value }
+                                            : entry
+                                        );
+                                        updateSectionData(selectedSection.id, {
+                                          rows: nextRows,
+                                        });
+                                      }}
+                                      disabled={isLocked}
+                                    />
                                     <div className="flex flex-1 flex-wrap gap-2">
                                       {rankingColumns.map((column, columnIndex) => (
                                         <input
@@ -5799,188 +5673,22 @@ export default function InspectorPanel() {
                                   ...rankingRows,
                                   {
                                     id: createRankingRowId(),
+                                    rank: String(rankingRows.length + 1),
                                     values: Array(rankingColumns.length).fill(""),
                                   },
                                 ];
                                 updateSectionData(selectedSection.id, {
-                                  rows: nextRows,
+                                  rows: nextRows.map((row) => ({
+                                    id: row.id,
+                                    rank: row.rank,
+                                    values: row.values,
+                                  })),
                                 });
                               }}
                               disabled={isLocked}
                             >
                               行を追加
                             </button>
-                            <div className="text-xs text-[var(--ui-muted)]">
-                              色
-                            </div>
-                            <FieldRow label="ヘッダー背景">
-                              <ColorField
-                                value={rankingStyle.headerBg}
-                                ariaLabel="ヘッダー背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      headerBg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="ヘッダーテキスト">
-                              <ColorField
-                                value={rankingStyle.headerText}
-                                ariaLabel="ヘッダーテキスト"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      headerText: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="セル背景">
-                              <ColorField
-                                value={rankingStyle.cellBg}
-                                ariaLabel="セル背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      cellBg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="セルテキスト">
-                              <ColorField
-                                value={rankingStyle.cellText}
-                                ariaLabel="セルテキスト"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      cellText: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="ボーダー">
-                              <ColorField
-                                value={rankingStyle.border}
-                                ariaLabel="ボーダー"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      border: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="順位背景">
-                              <ColorField
-                                value={rankingStyle.rankBg}
-                                ariaLabel="順位背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      rankBg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="順位テキスト">
-                              <ColorField
-                                value={rankingStyle.rankText}
-                                ariaLabel="順位テキスト"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      rankText: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="1位背景">
-                              <ColorField
-                                value={rankingStyle.top1Bg}
-                                ariaLabel="1位背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      top1Bg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="2位背景">
-                              <ColorField
-                                value={rankingStyle.top2Bg}
-                                ariaLabel="2位背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      top2Bg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="3位背景">
-                              <ColorField
-                                value={rankingStyle.top3Bg}
-                                ariaLabel="3位背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      top3Bg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="期間ラベル背景">
-                              <ColorField
-                                value={rankingStyle.periodLabelBg}
-                                ariaLabel="期間ラベル背景"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      periodLabelBg: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
-                            <FieldRow label="期間ラベル文字">
-                              <ColorField
-                                value={rankingStyle.periodLabelText}
-                                ariaLabel="期間ラベル文字"
-                                onChange={(next) =>
-                                  updateSectionData(selectedSection.id, {
-                                    tableStyle: {
-                                      ...rankingStyle,
-                                      periodLabelText: next,
-                                    },
-                                  })
-                                }
-                              />
-                            </FieldRow>
                           </div>
                         ) : null}
                         {isCampaignPeriodBar ? (
@@ -6001,6 +5709,36 @@ export default function InspectorPanel() {
                                   })
                                 }
                               />
+                            </FieldRow>
+                            <FieldRow label="曜日表示">
+                              <label className="inline-flex items-center gap-2 text-[11px] text-[var(--ui-muted)]">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4"
+                                  checked={selectedSection.data.showWeekday !== false}
+                                  onChange={(event) =>
+                                    updateSectionData(selectedSection.id, {
+                                      showWeekday: event.target.checked,
+                                    })
+                                  }
+                                />
+                                <span>日付の曜日を表示</span>
+                              </label>
+                            </FieldRow>
+                            <FieldRow label="フル幅">
+                              <label className="inline-flex items-center gap-2 text-[11px] text-[var(--ui-muted)]">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4"
+                                  checked={selectedSection.data.fullWidth !== false}
+                                  onChange={(event) =>
+                                    updateSectionData(selectedSection.id, {
+                                      fullWidth: event.target.checked,
+                                    })
+                                  }
+                                />
+                                <span>期間バーをフル幅表示</span>
+                              </label>
                             </FieldRow>
                             <FieldRow label="開始日">
                               <input
@@ -6709,7 +6447,7 @@ export default function InspectorPanel() {
                                 onChange={(next) => {
                                   if (next === "section") {
                                     const firstSectionId =
-                                      project.sections[0]?.id ?? "";
+                                      layoutSections[0]?.id ?? "";
                                     updateButtonItem(
                                       selectedSection.id,
                                       selectedButtonItem.id,
@@ -6750,7 +6488,7 @@ export default function InspectorPanel() {
                                     )
                                   }
                                 >
-                                  {project.sections.map((section: SectionBase) => (
+                                  {layoutSections.map((section: SectionBase) => (
                                     <option key={section.id} value={section.id}>
                                       {section.name ?? section.type}
                                     </option>
@@ -7380,7 +7118,20 @@ export default function InspectorPanel() {
             </div>
           )}
         </div>
-      </aside>
+    </>
+  );
+
+  return (
+    <>
+      {skipShell ? inspectorBody : (
+        <InspectorShell
+          width={EDITOR_UI_INSPECTOR_WIDTH}
+          className="ui-panel lp-inspector rounded-none border-y-0 border-r-0"
+          scrollable={false}
+        >
+          {inspectorBody}
+        </InspectorShell>
+      )}
       {isCsvImportModalOpen && csvImportDraft ? (
         <CsvImportPreviewModal
           isOpen={isCsvImportModalOpen}

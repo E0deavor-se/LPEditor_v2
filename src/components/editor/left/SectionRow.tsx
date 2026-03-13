@@ -24,7 +24,7 @@ const IconButton = forwardRef<
   <button
     ref={ref}
     type="button"
-    className={`ui-button ui-button-ghost h-7 w-7 px-0 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
+    className={`ui-button ui-button-ghost h-6 w-6 px-0 text-[10px] disabled:cursor-not-allowed disabled:opacity-40 ${
       className ?? ""
     }`}
     onPointerDown={(event) => {
@@ -144,7 +144,7 @@ function SectionRow({
       ref={setNodeRef}
       style={{ ...dragStyle, ...activeStyle }}
       className={
-        "group relative flex h-8 items-center gap-2 border-b border-[var(--ui-border)]/40 px-0 text-[12px] transition-colors duration-150 ease-out hover:bg-[var(--surface-2)]/70 last:border-b-0 cursor-pointer " +
+        "group relative flex h-8 items-center gap-1.5 border-b border-[var(--ui-border)] px-2 text-[11px] transition-colors duration-150 ease-out hover:bg-[var(--surface-2)]/70 last:border-b-0 cursor-pointer " +
         (!section.visible ? " opacity-60" : "") +
         (isDragging ? " opacity-50" : "")
       }
@@ -158,7 +158,7 @@ function SectionRow({
       {showDropIndicator ? (
         <span className="absolute left-0 right-0 bottom-0 h-px bg-[var(--ui-accent)]/70" />
       ) : null}
-      <div className="flex min-w-0 flex-1 items-center gap-2 pr-20" style={indentStyle}>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-16" style={indentStyle}>
         <button
           type="button"
           className={
@@ -187,7 +187,7 @@ function SectionRow({
         {isEditing ? (
           <input
             ref={inputRef}
-            className="ui-input h-7 w-full min-w-0 text-[12px]"
+            className="ui-input h-6 w-full min-w-0 text-[11px]"
             value={draftName}
             onChange={(event) => onChangeName(event.target.value)}
             onKeyDown={(event) => {
@@ -203,7 +203,7 @@ function SectionRow({
             onBlur={onCommitName}
           />
         ) : (
-          <span className="truncate text-[12px] text-[var(--ui-text)]" title={label}>
+          <span className="truncate text-[11px] text-[var(--ui-text)]" title={label}>
             {label}
           </span>
         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import {
   DndContext,
@@ -57,27 +57,25 @@ export default function PrimaryLineEditor({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
   const isDndEnabled = Boolean(onReorderLine) && !disabled;
-  const [resolvedLines, setResolvedLines] = useState(lines);
+  const resolvedLines = useMemo(
+    () =>
+      lines.map((line, index) =>
+        line.id
+          ? line
+          : {
+              ...line,
+              id: `line_missing_${index}`,
+            }
+      ),
+    [lines]
+  );
 
   useEffect(() => {
     const hasMissingId = lines.some((line) => !line.id);
-    if (!hasMissingId) {
-      setResolvedLines(lines);
-      return;
+    if (hasMissingId) {
+      onEnsureLineIds?.(resolvedLines);
     }
-    const nextLines = lines.map((line) =>
-      line.id
-        ? line
-        : {
-            ...line,
-            id: `line_${Date.now().toString(36)}_${Math.random()
-              .toString(36)
-              .slice(2, 8)}`,
-          }
-    );
-    setResolvedLines(nextLines);
-    onEnsureLineIds?.(nextLines);
-  }, [lines, onEnsureLineIds]);
+  }, [lines, onEnsureLineIds, resolvedLines]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!isDndEnabled || !onReorderLine) {
@@ -141,7 +139,7 @@ export default function PrimaryLineEditor({
                       ) : null}
                       <button
                         type="button"
-                        className="ui-button ui-button-ghost h-8 w-8 px-0 text-[10px] opacity-0 transition group-hover:opacity-100"
+                        className="ui-button ui-button-ghost h-7 w-7 px-0 text-[10px] opacity-0 transition group-hover:opacity-100"
                         aria-label={t.inspector.section.buttons.deleteLine}
                         title={t.inspector.section.buttons.deleteLine}
                         onClick={(event) => {
@@ -157,7 +155,7 @@ export default function PrimaryLineEditor({
                 >
                   <input
                     type="text"
-                    className="ui-input h-8 flex-1 text-[12px]"
+                    className="ui-input h-7 flex-1 text-[11px]"
                     value={line.text}
                     onChange={(event) =>
                       onUpdateText(line.id, event.target.value)

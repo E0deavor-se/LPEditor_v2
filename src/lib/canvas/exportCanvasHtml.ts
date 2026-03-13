@@ -286,7 +286,7 @@ export type CanvasStandaloneOptions = CanvasExportOptions & {
 
 /**
  * CanvasDocument → 独立した index.html 文字列を返す。
- * LP モードのセクション・CSS は一切含まない。
+ * Layout モードのセクション・CSS は一切含まない。
  */
 export const renderCanvasStandaloneHtml = (
   doc: CanvasDocument,

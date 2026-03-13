@@ -152,7 +152,7 @@ export default function TextLineList({
             ) : null}
             <button
               type="button"
-              className="ui-button ui-button-ghost h-8 w-8 shrink-0 px-0"
+              className="ui-button ui-button-ghost h-7 w-7 shrink-0 px-0"
               onClick={() => onRemoveLine(line.id)}
               aria-label={t.inspector.section.buttons.deleteLine}
               title={t.inspector.section.buttons.deleteLine}
@@ -165,7 +165,7 @@ export default function TextLineList({
       >
           <input
             type="text"
-            className="ui-input h-8 flex-1 min-w-0 w-full px-2 text-[12px]"
+            className="ui-input h-7 flex-1 min-w-0 w-full px-2 text-[11px]"
             value={localText}
             key={isSelected ? `${line.id}-active` : `${line.id}-idle`}
             autoFocus={isSelected}
