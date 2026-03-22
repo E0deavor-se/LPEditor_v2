@@ -4,8 +4,28 @@ import type {
   AiGeneratedAsset,
 } from "@/src/features/ai-assets/types";
 
-const jobMap = new Map<string, AiAssetGenerationJob>();
-const sectionAssetsMap = new Map<string, AiGeneratedAsset[]>();
+type ServerAssetStore = {
+  jobMap: Map<string, AiAssetGenerationJob>;
+  sectionAssetsMap: Map<string, AiGeneratedAsset[]>;
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __aurbitServerAssetStore: ServerAssetStore | undefined;
+}
+
+const store: ServerAssetStore =
+  globalThis.__aurbitServerAssetStore ?? {
+    jobMap: new Map<string, AiAssetGenerationJob>(),
+    sectionAssetsMap: new Map<string, AiGeneratedAsset[]>(),
+  };
+
+if (!globalThis.__aurbitServerAssetStore) {
+  globalThis.__aurbitServerAssetStore = store;
+}
+
+const jobMap = store.jobMap;
+const sectionAssetsMap = store.sectionAssetsMap;
 const isDebug = process.env.NODE_ENV !== "production";
 
 const logDebug = (message: string, meta?: Record<string, unknown>) => {

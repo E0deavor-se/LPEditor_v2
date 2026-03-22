@@ -169,6 +169,8 @@ export type AiAssetGenerationMeta = {
   provider: string;
   model: string;
   prompt: string;
+  inputPrompt?: string;
+  derivedFromAssetId?: string;
   negativePrompt?: string;
   seed?: number;
   width: number;
@@ -203,6 +205,7 @@ export type AiAssetGenerationJob = {
   message?: string;
   assetId?: string;
   error?: string;
+  errorCode?: "missing_key" | "auth_or_permission" | "invalid_response" | "unknown";
   generatedAsset?: AiGeneratedAsset;
 };
 
@@ -219,10 +222,20 @@ export type AiAssetBindingRecord = {
   height?: number;
 };
 
+export type AiAssetPromptPreset = {
+  sectionId: string;
+  target: AiAssetPromptTarget;
+  overlayPosition?: AiAssetOverlayPosition;
+  textOverlay?: AiAssetTextOverlayLevel;
+  density?: AiAssetDensity;
+  updatedAt?: string;
+};
+
 export type ProjectAiAssets = {
   generatedAssets: AiGeneratedAsset[];
   jobs: AiAssetGenerationJob[];
   bindings: AiAssetBindingRecord[];
+  promptPresets: AiAssetPromptPreset[];
 };
 
 const parseAiGeneratedAsset = (value: unknown): AiGeneratedAsset | null => {
@@ -263,6 +276,14 @@ const parseAiGeneratedAsset = (value: unknown): AiGeneratedAsset | null => {
       provider: generationMeta.provider,
       model: generationMeta.model,
       prompt: generationMeta.prompt,
+      inputPrompt:
+        typeof generationMeta.inputPrompt === "string"
+          ? generationMeta.inputPrompt
+          : undefined,
+      derivedFromAssetId:
+        typeof generationMeta.derivedFromAssetId === "string"
+          ? generationMeta.derivedFromAssetId
+          : undefined,
       negativePrompt:
         typeof generationMeta.negativePrompt === "string"
           ? generationMeta.negativePrompt
@@ -327,6 +348,13 @@ const parseAiJob = (value: unknown): AiAssetGenerationJob | null => {
     message: typeof raw.message === "string" ? raw.message : undefined,
     assetId: typeof raw.assetId === "string" ? raw.assetId : undefined,
     error: typeof raw.error === "string" ? raw.error : undefined,
+    errorCode:
+      raw.errorCode === "missing_key" ||
+      raw.errorCode === "auth_or_permission" ||
+      raw.errorCode === "invalid_response" ||
+      raw.errorCode === "unknown"
+        ? raw.errorCode
+        : undefined,
     generatedAsset: parseAiGeneratedAsset(raw.generatedAsset) ?? undefined,
   };
 };
@@ -359,10 +387,54 @@ const parseAiBinding = (value: unknown): AiAssetBindingRecord | null => {
   };
 };
 
+const isPromptTarget = (value: unknown): value is AiAssetPromptTarget =>
+  value === "heroImage" ||
+  value === "heroBackground" ||
+  value === "sectionBackground" ||
+  value === "sectionImage" ||
+  value === "sectionIcon" ||
+  value === "bannerImage" ||
+  value === "mainVisual";
+
+const parseAiPromptPreset = (value: unknown): AiAssetPromptPreset | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Partial<AiAssetPromptPreset>;
+  if (typeof raw.sectionId !== "string" || !isPromptTarget(raw.target)) {
+    return null;
+  }
+  const hasOverlayPosition =
+    raw.overlayPosition === "left" ||
+    raw.overlayPosition === "right" ||
+    raw.overlayPosition === "top" ||
+    raw.overlayPosition === "bottom" ||
+    raw.overlayPosition === "center";
+  const hasTextOverlay =
+    raw.textOverlay === "none" ||
+    raw.textOverlay === "light" ||
+    raw.textOverlay === "medium" ||
+    raw.textOverlay === "strong";
+  const hasDensity =
+    raw.density === "low" || raw.density === "medium" || raw.density === "high";
+  if (!hasOverlayPosition && !hasTextOverlay && !hasDensity) {
+    return null;
+  }
+  return {
+    sectionId: raw.sectionId,
+    target: raw.target,
+    overlayPosition: hasOverlayPosition ? raw.overlayPosition : undefined,
+    textOverlay: hasTextOverlay ? raw.textOverlay : undefined,
+    density: hasDensity ? raw.density : undefined,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : undefined,
+  };
+};
+
 export const createEmptyProjectAiAssets = (): ProjectAiAssets => ({
   generatedAssets: [],
   jobs: [],
   bindings: [],
+  promptPresets: [],
 });
 
 export const normalizeProjectAiAssets = (value: unknown): ProjectAiAssets | undefined => {
@@ -386,6 +458,11 @@ export const normalizeProjectAiAssets = (value: unknown): ProjectAiAssets | unde
           .map((entry) => parseAiBinding(entry))
           .filter((entry): entry is AiAssetBindingRecord => Boolean(entry))
       : [],
+    promptPresets: Array.isArray(raw.promptPresets)
+      ? raw.promptPresets
+          .map((entry) => parseAiPromptPreset(entry))
+          .filter((entry): entry is AiAssetPromptPreset => Boolean(entry))
+      : [],
   };
 };
 
@@ -394,6 +471,7 @@ export type AiAssetGeneratePayload = {
   sectionType?: string;
   role: AiAssetRole;
   prompt: string;
+  sourceAssetId?: string;
   negativePrompt?: string;
   width?: number;
   height?: number;

@@ -4,12 +4,14 @@ import { useRouter } from "next/navigation";
 import CampaignForm from "@/src/features/campaign/components/CampaignForm";
 import CampaignPlanPreview from "@/src/features/campaign/components/CampaignPlanPreview";
 import { useCampaignStore } from "@/src/features/campaign/stores/useCampaignStore";
+import { useEditorStore } from "@/src/store/editorStore";
+import { buildCampaignCanvasDraftDocument } from "@/src/features/campaign/lib/campaignCanvasDraft";
 
 const steps = [
   { key: "input", label: "キャンペーン内容入力" },
   { key: "analyze", label: "AI分析" },
   { key: "review", label: "内容確認" },
-  { key: "apply", label: "Builderへ反映" },
+  { key: "apply", label: "Canvasへ反映" },
 ] as const;
 
 export default function CampaignPage() {
@@ -25,6 +27,11 @@ export default function CampaignPage() {
   const generatePlan = useCampaignStore((s) => s.generatePlan);
   const resetPlan = useCampaignStore((s) => s.resetPlan);
   const applyToBuilder = useCampaignStore((s) => s.applyToBuilder);
+  const saveCreativeDirectionForBuilder = useCampaignStore(
+    (s) => s.saveCreativeDirectionForBuilder,
+  );
+  const setEditorMode = useEditorStore((s) => s.setEditorMode);
+  const updateCanvasDocument = useEditorStore((s) => s.updateCanvasDocument);
 
   const currentIndex = steps.findIndex((entry) => entry.key === step);
 
@@ -43,7 +50,7 @@ export default function CampaignPage() {
               <button
                 type="button"
                 className="h-7 rounded border border-[var(--ui-border)] px-3 text-[11px]"
-                onClick={() => router.push("/editor?mode=layout")}
+                onClick={() => router.push("/editor?mode=canvas")}
               >
                 Builderに戻る
               </button>
@@ -115,11 +122,19 @@ export default function CampaignPage() {
                 onClick={() => {
                   const ok = applyToBuilder();
                   if (ok) {
-                    router.push("/editor?mode=layout&source=campaign");
+                    const handoff = useCampaignStore.getState().builderHandoff;
+                    if (!handoff) {
+                      return;
+                    }
+                    saveCreativeDirectionForBuilder();
+                    const canvasDraft = buildCampaignCanvasDraftDocument(handoff);
+                    updateCanvasDocument(canvasDraft);
+                    setEditorMode("canvas");
+                    router.push("/editor?mode=canvas&source=campaign");
                   }
                 }}
               >
-                Builderへ反映
+                LP草案を作成
               </button>
             </div>
           </section>
@@ -127,17 +142,17 @@ export default function CampaignPage() {
 
         {step === "apply" ? (
           <section className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)] p-4">
-            <h2 className="text-[13px] font-semibold">Builderへ引き渡し完了</h2>
+            <h2 className="text-[13px] font-semibold">Canvasへ引き渡し完了</h2>
             <p className="mt-1 text-[11px] text-[var(--ui-muted)]">
-              LP構成案とヒーローコピーを Builder 参照用ストアに保存しました。
+              LP構成案とヒーローコピーを Canvas 草案として保存しました。
             </p>
             <div className="mt-3 flex justify-end gap-2">
               <button
                 type="button"
                 className="h-8 rounded border border-[var(--ui-border)] px-3 text-[11px]"
-                onClick={() => router.push("/editor?mode=layout&source=campaign")}
+                onClick={() => router.push("/editor?mode=canvas&source=campaign")}
               >
-                Builderを開く
+                Canvasを開く
               </button>
               <button
                 type="button"

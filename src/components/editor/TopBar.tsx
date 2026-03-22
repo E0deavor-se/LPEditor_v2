@@ -18,8 +18,10 @@ import {
 import { serializeProjectForPersistence } from "@/src/lib/editorProject";
 import { getLayoutSections } from "@/src/lib/editorProject";
 import { exportProjectToZip, exportCanvasDocumentToZip, triggerZipDownload } from "@/src/export/exportZip";
+import type { ExportWarning } from "@/src/export/exportZip";
 import { pickAndImportZip } from "@/src/lib/importZip";
 import { exportPreviewToPng } from "@/src/lib/exportImage";
+import { buildSaveStatusMessage } from "@/src/lib/userMessageCatalog";
 
 
 type TopBarProps = {
@@ -41,6 +43,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isScreenshotting, setIsScreenshotting] = useState(false);
   const [rollbackSteps, setRollbackSteps] = useState(1);
+  const [lastExportWarnings, setLastExportWarnings] = useState<ExportWarning[]>([]);
   const previewMode = useEditorStore((state) => state.previewMode);
   const activeDevice = useEditorStore((state) => state.activeDevice);
   const previewAspect = useEditorStore((state) => state.previewAspect);
@@ -228,17 +231,30 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
 
   const handleExportZip = async () => {
     try {
-      setSaveStatus("saving", "ZIPを書き出し中…");
+      setSaveStatus("saving", buildSaveStatusMessage("zip-exporting"));
       const result = await exportProjectToZip(project, {
         previewMode,
         previewAspect,
       });
+      setLastExportWarnings(result.report.warnings);
       const filename = buildExportFilename(
         exportFilenameTemplate,
         project.meta.projectName || "campaign-lp"
       );
       triggerZipDownload(result.blob, filename);
-      setSaveStatus("saved", "ZIPを書き出しました");
+      const warningCount = result.report.warnings.filter(
+        (warning) => (warning.level ?? "warning") === "warning",
+      ).length;
+      const infoCount = Math.max(0, result.report.warnings.length - warningCount);
+      if (result.report.warnings.length > 0) {
+        console.warn("[export] publish warnings", result.report.warnings);
+      }
+      setSaveStatus(
+        "saved",
+        result.report.warnings.length > 0
+          ? buildSaveStatusMessage("zip-exported-with-warnings", { warningCount, infoCount })
+          : buildSaveStatusMessage("zip-exported"),
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "書き出しに失敗しました。";
@@ -248,11 +264,12 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
 
   const handleExportCanvasZip = async () => {
     try {
-      setSaveStatus("saving", "Canvas ZIPを書き出し中…");
+      setSaveStatus("saving", buildSaveStatusMessage("canvas-zip-exporting"));
       const result = await exportCanvasDocumentToZip(project);
+      setLastExportWarnings(result.report.warnings);
       const baseName = project.meta.projectName || "canvas-lp";
       triggerZipDownload(result.blob, baseName);
-      setSaveStatus("saved", "Canvas ZIPを書き出しました");
+      setSaveStatus("saved", buildSaveStatusMessage("canvas-zip-exported"));
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Canvas書き出しに失敗しました。";
@@ -290,10 +307,10 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
 
 
   const handleSaveProjectJson = () => {
-    setSaveStatus("saving", "プロジェクトをダウンロード中…");
+    setSaveStatus("saving", buildSaveStatusMessage("project-downloading"));
     try {
       downloadProjectJson(project);
-      setSaveStatus("saved", ".lp-project.json をダウンロードしました");
+      setSaveStatus("saved", buildSaveStatusMessage("project-downloaded"));
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "ダウンロードに失敗しました。";
@@ -302,7 +319,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
   };
 
   const handleLoadProjectJson = async () => {
-    setSaveStatus("saving", "プロジェクトを読み込み中…");
+    setSaveStatus("saving", buildSaveStatusMessage("project-loading"));
     try {
       const nextProject = await pickAndLoadProjectJson();
       replaceProject(nextProject);
@@ -314,7 +331,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
         data: normalizedProject,
         updatedAt: Date.now(),
       });
-      setSaveStatus("saved", "プロジェクトを読み込みました");
+      setSaveStatus("saved", buildSaveStatusMessage("project-loaded"));
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         setSaveStatus("saved");
@@ -328,7 +345,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
 
   const handleImportZip = async () => {
     setPreviewBusy(true, "import");
-    setSaveStatus("saving", "ZIPを読み込み中…");
+    setSaveStatus("saving", buildSaveStatusMessage("zip-loading"));
     try {
       const nextProject = await pickAndImportZip();
       replaceProject(nextProject);
@@ -341,7 +358,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
         updatedAt: Date.now(),
       });
       setPreviewBusy(false);
-      setSaveStatus("saved", "ZIPを読み込みました");
+      setSaveStatus("saved", buildSaveStatusMessage("zip-loaded"));
     } catch (error) {
       setPreviewBusy(false);
       if (error instanceof Error && error.name === "AbortError") {
@@ -388,6 +405,38 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
 
   const exportDivider = "my-1 h-px bg-[var(--ui-border)]/60";
 
+  const warningLevelLabel = (warning: ExportWarning) =>
+    (warning.level ?? "warning") === "info" ? "情報" : "警告";
+
+  const warningLevelClass = (warning: ExportWarning) =>
+    (warning.level ?? "warning") === "info"
+      ? "bg-sky-100 text-sky-700"
+      : "bg-amber-100 text-amber-700";
+
+  const warningTypeLabel = (warning: ExportWarning) => {
+    if (warning.type === "asset") {
+      return "画像";
+    }
+    if (warning.type === "dist") {
+      return "書き出し";
+    }
+    return "その他";
+  };
+
+  const sortedExportWarnings = useMemo(() => {
+    const rank = (warning: ExportWarning) =>
+      (warning.level ?? "warning") === "warning" ? 0 : 1;
+    return [...lastExportWarnings].sort((left, right) => rank(left) - rank(right));
+  }, [lastExportWarnings]);
+
+  const warningCount = sortedExportWarnings.filter(
+    (warning) => (warning.level ?? "warning") === "warning",
+  ).length;
+  const infoCount = Math.max(0, sortedExportWarnings.length - warningCount);
+  const totalCheckCount = sortedExportWarnings.length;
+  const warningPreviewItems = sortedExportWarnings.slice(0, 8);
+  const warningHiddenCount = Math.max(0, sortedExportWarnings.length - warningPreviewItems.length);
+
   const zoomOptions = [0.8, 0.9, 1, 1.1, 1.2];
 
   const flatButtonBase =
@@ -408,18 +457,18 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
     }
     try {
       setIsScreenshotting(true);
-      setSaveStatus("saving", "画像を書き出し中…");
+      setSaveStatus("saving", buildSaveStatusMessage("image-exporting"));
       await exportPreviewToPng(iframe, {
         filename: "lp-preview.png",
         backgroundColor: "#ffffff",
         pixelRatio: 2,
         selector: "#__lp_root__",
       });
-      setSaveStatus("saved", "画像を書き出しました");
+      setSaveStatus("saved", buildSaveStatusMessage("image-exported"));
     } catch (error) {
       console.error("画像書き出しに失敗しました", error);
-      setSaveStatus("error", "画像の書き出しに失敗しました");
-      alert("画像の書き出しに失敗しました。コンソールを確認してください。");
+      setSaveStatus("error", buildSaveStatusMessage("image-export-failed"));
+      alert("画像を書き出せませんでした。設定を確認して、もう一度お試しください。");
     } finally {
       setIsScreenshotting(false);
     }
@@ -427,7 +476,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
 
   const handleExportHtml = async () => {
     try {
-      setSaveStatus("saving", "HTMLを書き出し中…");
+      setSaveStatus("saving", buildSaveStatusMessage("html-exporting"));
       const response = await fetch("/api/export-html", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -453,7 +502,7 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
       anchor.download = `${filename}.html`;
       anchor.click();
       URL.revokeObjectURL(anchor.href);
-      setSaveStatus("saved", "HTMLを書き出しました");
+      setSaveStatus("saved", buildSaveStatusMessage("html-exported"));
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "HTMLの書き出しに失敗しました。";
@@ -617,13 +666,19 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
             onClick={() => setIsExportOpen((current) => !current)}
           >
             書き出し
+            {lastExportWarnings.length > 0 ? (
+              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                {totalCheckCount}
+              </span>
+            ) : null}
             <ChevronDown size={14} className={isExportOpen ? "rotate-180" : ""} />
           </button>
           {isExportOpen ? (
             <div
               role="menu"
-              className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-[var(--ui-border)] bg-[var(--surface)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
+              className="absolute right-0 top-full z-20 mt-1 w-96 max-w-[92vw] rounded-md border border-[var(--ui-border)] bg-[var(--surface)]/95 p-1 text-[var(--ui-text)] shadow-[var(--ui-shadow-md)] backdrop-blur"
             >
+              <div className="space-y-1">
               <button
                 type="button"
                 role="menuitem"
@@ -708,6 +763,51 @@ export default function TopBar({ onOpenTemplate, previewIframeRef, editorMode = 
                 >
                   デバッグ: 今すぐ保存
                 </button>
+              ) : null}
+              </div>
+              {sortedExportWarnings.length > 0 ? (
+                <>
+                  <div className={exportDivider} />
+                  <div className="rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] p-2">
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-[var(--ui-muted)]">
+                      <span>公開前チェック</span>
+                      <span>
+                        警告 {warningCount}件 / 情報 {infoCount}件
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      {warningPreviewItems.map((warning, index) => (
+                        <div
+                          key={`${warning.code ?? warning.message}-${index}`}
+                          className="rounded-md border border-[var(--ui-border)] bg-[var(--surface)] p-1.5 text-[10px]"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${warningLevelClass(warning)}`}>
+                              {warningLevelLabel(warning)}
+                            </span>
+                            <span className="text-[var(--ui-muted)]">{warningTypeLabel(warning)}</span>
+                            {warning.sectionLabel ? (
+                              <span className="text-[var(--ui-muted)]">{warning.sectionLabel}</span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 text-[var(--ui-text)]">{warning.message}</div>
+                          {warning.relatedTarget || warning.hint ? (
+                            <div className="mt-0.5 text-[var(--ui-muted)]">
+                              {warning.relatedTarget ? `対象: ${warning.relatedTarget}` : ""}
+                              {warning.relatedTarget && warning.hint ? " / " : ""}
+                              {warning.hint ?? ""}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    {warningHiddenCount > 0 ? (
+                      <div className="mt-1.5 text-[10px] text-[var(--ui-muted)]">
+                        ほか {warningHiddenCount} 件あります
+                      </div>
+                    ) : null}
+                  </div>
+                </>
               ) : null}
             </div>
           ) : null}

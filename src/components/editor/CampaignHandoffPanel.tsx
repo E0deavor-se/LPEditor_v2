@@ -7,6 +7,7 @@ import {
   useCampaignStore,
 } from "@/src/features/campaign/stores/useCampaignStore";
 import { useEditorStore } from "@/src/store/editorStore";
+import { getLayoutSections } from "@/src/lib/editorProject";
 import type { SectionContent } from "@/src/types/project";
 
 const LP_STRUCTURE_TO_SECTION_TYPE: Partial<Record<string, string>> = {
@@ -262,12 +263,16 @@ export default function CampaignHandoffPanel() {
   const saveCreativeDirectionForBuilder = useCampaignStore(
     (state) => state.saveCreativeDirectionForBuilder,
   );
-  const layoutSections = useEditorStore((state) => state.getActiveLayoutDocument().sections);
+  const project = useEditorStore((state) => state.project);
+  const layoutSections = useMemo(
+    () => getLayoutSections(project),
+    [project],
+  );
   const updateSectionData = useEditorStore((state) => state.updateSectionData);
   const updateSectionContent = useEditorStore((state) => state.updateSectionContent);
   const insertSectionAfter = useEditorStore((state) => state.insertSectionAfter);
   const [dismissed, setDismissed] = useState(false);
-  const [isClientReady, setIsClientReady] = useState(false);
+  const isClientReady = typeof window !== "undefined";
   const [isApplyingHero, setIsApplyingHero] = useState(false);
   const [isAddingSections, setIsAddingSections] = useState(false);
   const [isSavingDirection, setIsSavingDirection] = useState(false);
@@ -276,10 +281,6 @@ export default function CampaignHandoffPanel() {
     kind: "success" | "error" | "info";
     text: string;
   } | null>(null);
-
-  useEffect(() => {
-    setIsClientReady(true);
-  }, []);
 
   useEffect(() => {
     refreshBuilderHandoff();

@@ -29,6 +29,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import type { CanvasLayer } from "@/src/types/canvas";
 import { getDocumentMode, getLayout } from "@/src/types/canvas";
+import { buildAiBatchSummaryMap } from "@/src/lib/canvas/aiSetCompare";
 
 const ICON_SIZE = 14;
 
@@ -46,6 +47,7 @@ const typeIcon = (type: string) => {
 type LayerRowProps = {
   layer: CanvasLayer;
   isSelected: boolean;
+  aiDisplayLabel?: string;
   indent?: number;
   isGroup?: boolean;
   isCollapsed?: boolean;
@@ -88,6 +90,7 @@ type SectionRowProps = {
 type SectionLayerRowProps = {
   layer: CanvasLayer;
   isSelected: boolean;
+  aiDisplayLabel?: string;
   isDragOver: boolean;
   onSelect: (layerId: string, e: MouseEvent) => void;
   onToggleHidden: (id: string) => void;
@@ -98,6 +101,7 @@ type SectionLayerRowProps = {
 const SortableLayerRow = ({
   layer,
   isSelected,
+  aiDisplayLabel,
   indent = 0,
   isGroup = false,
   isCollapsed = false,
@@ -127,6 +131,9 @@ const SortableLayerRow = ({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={layer.insertedByAi ? "canvas-ai-layer-row" : undefined}
+      data-ai-batch-id={layer.aiBatchId}
+      data-ai-set-type={layer.aiSetType}
       className={
         "group flex items-center gap-1.5 border-b border-[var(--ui-border)] px-2 py-1.5 text-[11px] transition-colors" +
         (isSelected
@@ -153,6 +160,17 @@ const SortableLayerRow = ({
         </button>
       ) : null}
       <span className="flex-shrink-0 text-[var(--ui-muted)]">{typeIcon(layer.type)}</span>
+      {layer.insertedByAi ? (
+        <span
+          title={aiDisplayLabel ?? layer.aiSetLabel ?? "AI生成"}
+          className="flex-shrink-0 rounded px-0.5 text-[8px] font-bold leading-4 text-white bg-violet-500"
+        >AI</span>
+      ) : null}
+      {layer.insertedByAi && aiDisplayLabel ? (
+        <span className="min-w-0 max-w-[90px] truncate rounded border border-[var(--ui-border)] px-1 text-[9px] text-[var(--ui-muted)]">
+          {aiDisplayLabel}
+        </span>
+      ) : null}
 
       {editingId === layer.id ? (
         <input
@@ -348,6 +366,7 @@ const SortableSectionRow = ({
 const SortableSectionLayerRow = ({
   layer,
   isSelected,
+  aiDisplayLabel,
   isDragOver,
   onSelect,
   onToggleHidden,
@@ -366,6 +385,9 @@ const SortableSectionLayerRow = ({
     <div
       ref={setNodeRef}
       style={style}
+      data-testid={layer.insertedByAi ? "canvas-ai-layer-row" : undefined}
+      data-ai-batch-id={layer.aiBatchId}
+      data-ai-set-type={layer.aiSetType}
       className={
         "relative group flex items-center gap-1.5 border-b border-[var(--ui-border)] px-2 py-1.5 text-[11px] transition-colors " +
         (isSelected
@@ -389,6 +411,17 @@ const SortableSectionLayerRow = ({
         <GripVertical size={11} />
       </button>
       <span className="flex-shrink-0 text-[var(--ui-muted)]">{typeIcon(layer.type)}</span>
+      {layer.insertedByAi ? (
+        <span
+          title={aiDisplayLabel ?? layer.aiSetLabel ?? "AI生成"}
+          className="flex-shrink-0 rounded px-0.5 text-[8px] font-bold leading-4 text-white bg-violet-500"
+        >AI</span>
+      ) : null}
+      {layer.insertedByAi && aiDisplayLabel ? (
+        <span className="min-w-0 max-w-[78px] truncate rounded border border-[var(--ui-border)] px-1 text-[9px] text-[var(--ui-muted)]">
+          {aiDisplayLabel}
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1 truncate">{layer.name}</span>
       <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
         <button
@@ -473,6 +506,10 @@ export default function CanvasLayersPanel() {
         (a, b) => getLayout(b, device).z - getLayout(a, device).z
       ),
     [editableLayers, device]
+  );
+  const aiBatchSummaryMap = useMemo(
+    () => buildAiBatchSummaryMap(editableLayers),
+    [editableLayers],
   );
 
   const groupChildrenMap = useMemo(() => {
@@ -697,6 +734,7 @@ export default function CanvasLayersPanel() {
                         key={layer.id}
                         layer={layer}
                         isSelected={selection.ids.includes(layer.id)}
+                        aiDisplayLabel={layer.aiBatchId ? aiBatchSummaryMap.get(layer.aiBatchId)?.displayLabel : undefined}
                         isDragOver={sectionLayerDragOverId === layer.id}
                         onSelect={handleSelect}
                         onToggleHidden={toggleHidden}
@@ -719,6 +757,7 @@ export default function CanvasLayersPanel() {
                   key={row.layer.id}
                   layer={row.layer}
                   isSelected={selection.ids.includes(row.layer.id)}
+                  aiDisplayLabel={row.layer.aiBatchId ? aiBatchSummaryMap.get(row.layer.aiBatchId)?.displayLabel : undefined}
                   indent={row.indent}
                   isGroup={row.isGroup}
                   isCollapsed={collapsedGroupIds.has(row.layer.id)}

@@ -116,9 +116,8 @@ export default function Home() {
       window.localStorage.setItem(TEMPLATE_STORAGE_KEY, option.id);
     }
     const project = createProjectFromTemplate(
-      option.templateType,
-      option.title,
-      option.sectionOrder
+      option.id,
+      option.title
     );
     try {
       const db = await getDb();

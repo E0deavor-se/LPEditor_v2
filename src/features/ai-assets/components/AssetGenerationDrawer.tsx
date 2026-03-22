@@ -7,6 +7,7 @@ import type {
   AiAssetRole,
   AiAssetTextOverlayLevel,
 } from "@/src/features/ai-assets/types";
+import { buildPresetUsageLines } from "@/src/lib/userMessageCatalog";
 import { buildMetaSummary } from "@/src/features/ai-assets/lib/promptRuleSummary";
 import {
   labelDensity,
@@ -25,10 +26,23 @@ type AssetGenerationDrawerProps = {
   initialDensityByRole?: Partial<Record<AiAssetRole, AiAssetDensity>>;
   initialTextOverlayByRole?: Partial<Record<AiAssetRole, AiAssetTextOverlayLevel>>;
   initialOverlayPositionByRole?: Partial<Record<AiAssetRole, AiAssetOverlayPosition>>;
+  hasSavedPresetByRole?: Partial<Record<AiAssetRole, boolean>>;
+  savedPresetByRole?: Partial<Record<AiAssetRole, {
+    density?: AiAssetDensity;
+    textOverlay?: AiAssetTextOverlayLevel;
+    overlayPosition?: AiAssetOverlayPosition;
+  }>>;
   densityEnabledRoles?: AiAssetRole[];
   textOverlayEnabledRoles?: AiAssetRole[];
   overlayPositionEnabledRoles?: AiAssetRole[];
   onClose: () => void;
+  onSavePreset?: (params: {
+    role: AiAssetRole;
+    density?: AiAssetDensity;
+    textOverlay?: AiAssetTextOverlayLevel;
+    overlayPosition?: AiAssetOverlayPosition;
+  }) => Promise<void>;
+  onRemovePreset?: (params: { role: AiAssetRole }) => Promise<void>;
   onGenerate: (params: {
     role: AiAssetRole;
     prompt: string;
@@ -82,10 +96,14 @@ export default function AssetGenerationDrawer({
   initialDensityByRole,
   initialTextOverlayByRole,
   initialOverlayPositionByRole,
+  hasSavedPresetByRole,
+  savedPresetByRole,
   densityEnabledRoles,
   textOverlayEnabledRoles,
   overlayPositionEnabledRoles,
   onClose,
+  onSavePreset,
+  onRemovePreset,
   onGenerate,
 }: AssetGenerationDrawerProps) {
   const [role, setRole] = useState<AiAssetRole>(defaultRole);
@@ -95,6 +113,8 @@ export default function AssetGenerationDrawer({
   const [textOverlay, setTextOverlay] = useState<TextOverlayOption>("auto");
   const [overlayPosition, setOverlayPosition] = useState<OverlayPositionOption>("auto");
   const [submitting, setSubmitting] = useState(false);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [presetSavedMessage, setPresetSavedMessage] = useState<string | null>(null);
 
   const selectedRole = useMemo(
     () => (allowedRoles.includes(role) ? role : defaultRole),
@@ -146,6 +166,60 @@ export default function AssetGenerationDrawer({
     [initialOverlayPositionByRole, selectedRole],
   );
 
+  const hasSavedPreset = useMemo(
+    () => Boolean(hasSavedPresetByRole?.[selectedRole]),
+    [hasSavedPresetByRole, selectedRole],
+  );
+
+  const selectedSavedPreset = useMemo(
+    () => savedPresetByRole?.[selectedRole],
+    [savedPresetByRole, selectedRole],
+  );
+
+  const presetRelationLines = useMemo(() => {
+    if (!hasSavedPreset || !selectedSavedPreset) {
+      return [];
+    }
+
+    const manualFields: string[] = [];
+    const presetFields: string[] = [];
+
+    if (canOverrideOverlayPosition && selectedSavedPreset.overlayPosition) {
+      if (overlayPosition !== "auto") {
+        manualFields.push("余白位置");
+      } else {
+        presetFields.push("余白位置");
+      }
+    }
+
+    if (canOverrideTextOverlay && selectedSavedPreset.textOverlay) {
+      if (textOverlay !== "auto") {
+        manualFields.push("余白強度");
+      } else {
+        presetFields.push("余白強度");
+      }
+    }
+
+    if (canOverrideDensity && selectedSavedPreset.density) {
+      if (density !== "auto") {
+        manualFields.push("密度");
+      } else {
+        presetFields.push("密度");
+      }
+    }
+
+    return buildPresetUsageLines({ presetFields, manualFields });
+  }, [
+    canOverrideDensity,
+    canOverrideOverlayPosition,
+    canOverrideTextOverlay,
+    density,
+    hasSavedPreset,
+    overlayPosition,
+    selectedSavedPreset,
+    textOverlay,
+  ]);
+
   useEffect(() => {
     if (prompt.trim().length === 0 && defaultPrompt) {
       setPrompt(defaultPrompt);
@@ -159,6 +233,7 @@ export default function AssetGenerationDrawer({
     setDensity("auto");
     setTextOverlay("auto");
     setOverlayPosition("auto");
+    setPresetSavedMessage(null);
   }, [selectedRole]);
 
   if (!open) {
@@ -260,6 +335,15 @@ export default function AssetGenerationDrawer({
         </label>
       ) : null}
 
+      {hasSavedPreset ? (
+        <div className="mb-2 rounded border border-[var(--ui-border)]/70 bg-[var(--ui-panel)] px-2 py-1.5 text-[10px] text-[var(--ui-muted)]">
+          <div className="font-semibold text-[var(--ui-text)]">保存済みの既定値を利用できます</div>
+          {presetRelationLines.map((line) => (
+            <div key={line}>{line}</div>
+          ))}
+        </div>
+      ) : null}
+
       {autoMetaSummary ? (
         <div className="mb-2 rounded border border-[var(--ui-border)]/70 bg-[var(--ui-panel)] px-2 py-2 text-[10px] text-[var(--ui-muted)]">
           <div className="mb-1 flex items-center justify-between">
@@ -275,9 +359,12 @@ export default function AssetGenerationDrawer({
             <span className="rounded border border-[var(--ui-border)] px-1.5 py-0.5">訴求: {autoMetaSummary.campaignFamilyLabel}</span>
             <span className="rounded border border-[var(--ui-border)] px-1.5 py-0.5">セクション: {autoMetaSummary.sectionTypeLabel}</span>
           </div>
-          {autoMetaSummary.sourceSummary.length > 0 ? (
+          {autoMetaSummary.sourceHighlights.length > 0 ? (
             <div className="mb-1 text-[10px] text-[var(--ui-muted)]">
-              判定: {autoMetaSummary.sourceSummary.join(" / ")}
+              <div className="font-semibold text-[var(--ui-text)]">判定の内訳</div>
+              {autoMetaSummary.sourceHighlights.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
             </div>
           ) : null}
           {autoMetaSummary.rules.length > 0 ? (
@@ -322,7 +409,7 @@ export default function AssetGenerationDrawer({
       <button
         type="button"
         className="ui-button h-7 w-full px-2 text-[11px]"
-        disabled={disabled || submitting || prompt.trim().length === 0}
+        disabled={disabled || submitting || savingPreset || prompt.trim().length === 0}
         onClick={async () => {
           setSubmitting(true);
           try {
@@ -352,6 +439,71 @@ export default function AssetGenerationDrawer({
       >
         {submitting ? "生成開始中..." : "生成を開始"}
       </button>
+
+      {onSavePreset ? (
+        <>
+          <button
+            type="button"
+            className="ui-button mt-2 h-7 w-full px-2 text-[11px]"
+            disabled={disabled || submitting || savingPreset}
+            onClick={async () => {
+              const resolvedDensity =
+                canOverrideDensity
+                  ? mapDensityUiToPrompt(density) ?? (initialDensity ?? autoMetaSummary?.density)
+                  : undefined;
+              const resolvedTextOverlay =
+                canOverrideTextOverlay
+                  ? (textOverlay === "auto" ? (initialTextOverlay ?? autoMetaSummary?.textOverlay) : textOverlay)
+                  : undefined;
+              const resolvedOverlayPosition =
+                canOverrideOverlayPosition
+                  ? (overlayPosition === "auto"
+                    ? (initialOverlayPosition ?? autoMetaSummary?.overlayPosition)
+                    : overlayPosition)
+                  : undefined;
+
+              setSavingPreset(true);
+              setPresetSavedMessage(null);
+              try {
+                await onSavePreset({
+                  role: selectedRole,
+                  density: resolvedDensity,
+                  textOverlay: resolvedTextOverlay,
+                  overlayPosition: resolvedOverlayPosition,
+                });
+                setPresetSavedMessage("このセクションの既定値を保存しました。");
+              } finally {
+                setSavingPreset(false);
+              }
+            }}
+          >
+            {savingPreset ? "既定値を保存しています..." : "現在の設定を既定値にする"}
+          </button>
+          {presetSavedMessage ? (
+            <div className="mt-1 text-[10px] text-[var(--ui-muted)]">{presetSavedMessage}</div>
+          ) : null}
+
+          {onRemovePreset && hasSavedPreset ? (
+            <button
+              type="button"
+              className="ui-button mt-1 h-7 w-full px-2 text-[11px]"
+              disabled={disabled || submitting || savingPreset}
+              onClick={async () => {
+                setSavingPreset(true);
+                setPresetSavedMessage(null);
+                try {
+                  await onRemovePreset({ role: selectedRole });
+                  setPresetSavedMessage("既定値を解除しました。");
+                } finally {
+                  setSavingPreset(false);
+                }
+              }}
+            >
+              既定値を解除
+            </button>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

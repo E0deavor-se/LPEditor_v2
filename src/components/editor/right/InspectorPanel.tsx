@@ -83,6 +83,15 @@ import {
 import { EDITOR_UI_INSPECTOR_WIDTH } from "@/src/components/editor/editorUiTokens";
 import InspectorShell from "@/src/components/inspector/InspectorShell";
 import { getLayoutSections } from "@/src/lib/editorProject";
+import {
+  getSectionStructureHint,
+  getSectionStructureRole,
+} from "@/src/structures/sectionStructure";
+import {
+  buildRequiredSectionDeleteWarningMessage,
+  resolveStructureSlotLabel,
+} from "@/src/structures/structureWarningMessages";
+import { getStructureRoleUi } from "@/src/structures/structureRoleUi";
 
 const DEFAULT_PAGE_STYLE: PageBaseStyle = {
   typography: {
@@ -1319,6 +1328,8 @@ export default function InspectorPanel({ skipShell }: InspectorPanelProps = {}) 
   const calloutDefaults = getCalloutDefaults(calloutVariant);
   const sensors = useSensors(useSensor(PointerSensor));
   const selectedSectionId = selectedSection?.id;
+  const structureRole = getSectionStructureRole(selectedSection);
+  const structureRoleUi = getStructureRoleUi(structureRole);
   useEffect(() => {
     setIsAnimationsOpen(false);
     setIsStoreDesignOpen(false);
@@ -2294,7 +2305,32 @@ export default function InspectorPanel({ skipShell }: InspectorPanelProps = {}) 
               selectedSection && duplicateSection(selectedSection.id)
             }
             onDeleteSection={() =>
-              selectedSection && deleteSection(selectedSection.id)
+              (() => {
+                if (!selectedSection) {
+                  return;
+                }
+                const role = getSectionStructureRole(selectedSection);
+                if (role === "fixed") {
+                  window.alert("固定セクションは削除できません。");
+                  return;
+                }
+                if (
+                  role === "required" &&
+                  !window.confirm(
+                    buildRequiredSectionDeleteWarningMessage({
+                      campaignType: project.meta.campaignType,
+                      slotLabel: resolveStructureSlotLabel({
+                        slotId: getSectionStructureHint(selectedSection)?.slotId,
+                        sectionType: selectedSection.type,
+                        blueprintLabel: getSectionStructureHint(selectedSection)?.label,
+                      }),
+                    })
+                  )
+                ) {
+                  return;
+                }
+                deleteSection(selectedSection.id);
+              })()
             }
             onResetPage={() => {
               setPageTypography(DEFAULT_PAGE_STYLE.typography);
@@ -2303,6 +2339,13 @@ export default function InspectorPanel({ skipShell }: InspectorPanelProps = {}) 
               setPageLayout(DEFAULT_PAGE_STYLE.layout);
             }}
           />
+          {isSection && structureRoleUi.label ? (
+            <div className="px-3 pb-1">
+              <span className={structureRoleUi.chipClassName + " text-[10px]"}>
+                {structureRoleUi.label}
+              </span>
+            </div>
+          ) : null}
           <div className="px-3 py-2">
             <InspectorTabs
               value={activeTab}

@@ -45,7 +45,7 @@ const restoreTitle = (el: HTMLElement | null) => {
 };
 
 export default function TooltipLayer() {
-  const mounted = typeof document !== "undefined";
+  const [mounted] = useState(() => typeof document !== "undefined");
   const [tooltip, setTooltip] = useState<TooltipState>({
     text: "",
     visible: false,
@@ -142,6 +142,9 @@ export default function TooltipLayer() {
   }, [tooltip.visible, tooltip.text]);
 
   useEffect(() => {
+    if (!mounted) {
+      return;
+    }
     const root = document.querySelector<HTMLElement>(".lp-editor");
     if (!root) {
       return;
@@ -218,7 +221,7 @@ export default function TooltipLayer() {
       root.removeEventListener("focusin", handleFocusIn);
       root.removeEventListener("focusout", handleFocusOut);
     };
-  }, []);
+  }, [mounted]);
 
   if (!mounted) {
     return null;

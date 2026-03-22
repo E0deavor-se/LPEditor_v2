@@ -11,6 +11,19 @@ import type {
   AiAssetTone,
 } from "@/src/features/ai-assets/types";
 
+type PromptSourceKind =
+  | "explicit"
+  | "preset"
+  | "inferred"
+  | "fallback";
+
+type PromptSourceField =
+  | "overlayPositionSource"
+  | "textOverlaySource"
+  | "densitySource"
+  | "sectionTypeSource"
+  | "campaignFamilySource";
+
 const CAMPAIGN_FAMILY_LABELS: Record<AiAssetCampaignFamily, string> = {
   coupon: "クーポン訴求",
   point: "ポイント訴求",
@@ -83,6 +96,14 @@ const SOURCE_LABELS: Record<
   fallback: "安全補完",
 };
 
+const SOURCE_FIELD_LABELS: Record<PromptSourceField, string> = {
+  overlayPositionSource: "レイアウト",
+  textOverlaySource: "余白",
+  densitySource: "密度",
+  sectionTypeSource: "セクション種別",
+  campaignFamilySource: "訴求タイプ",
+};
+
 const TONE_LABELS: Record<AiAssetTone, string> = {
   clean: "クリーン",
   premium: "プレミアム",
@@ -135,6 +156,34 @@ export const labelSource = (
     | "fallback"
     | undefined,
 ) => (value ? SOURCE_LABELS[value] ?? value : "");
+
+export const labelSourceField = (value: PromptSourceField) =>
+  SOURCE_FIELD_LABELS[value] ?? value;
+
+export const normalizePromptSource = (
+  value:
+    | AiAssetDensitySource
+    | AiAssetTextOverlaySource
+    | AiAssetOverlayPositionSource
+    | "explicit"
+    | "inferred"
+    | "fallback"
+    | undefined,
+): PromptSourceKind | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  if (value === "preset") {
+    return "preset";
+  }
+  if (value === "explicit") {
+    return "explicit";
+  }
+  if (value === "inferred") {
+    return "inferred";
+  }
+  return "fallback";
+};
 
 export const labelTone = (value: AiAssetTone) =>
   TONE_LABELS[value] ?? value;

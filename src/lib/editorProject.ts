@@ -2,6 +2,7 @@ import { createDefaultCanvasDocument } from "@/src/types/canvas";
 import type { CanvasDocument } from "@/src/types/canvas";
 import type { LPDocument, ProjectState, SectionBase } from "@/src/types/project";
 import { ensureProjectAiAssetsConsistency } from "@/src/features/ai-assets/lib/projectAiAssets";
+import { applyLayoutSuggestionsToProject } from "@/src/lib/layout/layoutSuggestions";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -18,6 +19,7 @@ const buildLayoutDocumentFromLegacyRoot = (project: ProjectState): LPDocument =>
   assetMeta: project.assetMeta,
   storeListSpec: project.storeListSpec,
   themeSpec: project.themeSpec,
+  layoutSuggestion: project.layoutSuggestion,
   animationRegistry: project.animationRegistry,
 });
 
@@ -79,8 +81,8 @@ export const normalizeProjectDocuments = (project: ProjectState): ProjectState =
   const layoutDocument = getLayoutDocument(consistentProject);
   const canvasDocument = getCanvasDocument(consistentProject);
 
-  return {
-    ...project,
+  const normalizedProject: ProjectState = {
+    ...consistentProject,
     settings: layoutDocument.settings,
     sections: layoutDocument.sections,
     pageBaseStyle: layoutDocument.pageBaseStyle,
@@ -93,6 +95,7 @@ export const normalizeProjectDocuments = (project: ProjectState): ProjectState =
     assetMeta: layoutDocument.assetMeta,
     storeListSpec: layoutDocument.storeListSpec,
     themeSpec: layoutDocument.themeSpec,
+    layoutSuggestion: layoutDocument.layoutSuggestion,
     animationRegistry: layoutDocument.animationRegistry,
     editorDocuments: {
       mode,
@@ -101,6 +104,8 @@ export const normalizeProjectDocuments = (project: ProjectState): ProjectState =
       canvasDocument,
     },
   };
+
+  return applyLayoutSuggestionsToProject(normalizedProject);
 };
 
 export const serializeProjectForPersistence = (project: ProjectState): ProjectState => {

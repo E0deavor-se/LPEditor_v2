@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type MutableRefObject, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type Ref } from "react";
 import { useEditorStore } from "@/src/store/editorStore";
 import { isTemplateDebugEnabled } from "@/src/lib/debugFlags";
 import { getLayoutSections } from "@/src/lib/editorProject";
+import {
+  getSectionStructureHint,
+  getSectionStructureRole,
+} from "@/src/structures/sectionStructure";
+import {
+  buildRequiredSectionDeleteWarningMessage,
+  resolveStructureSlotLabel,
+} from "@/src/structures/structureWarningMessages";
 
 const busyReasonLabel = {
   render: "プレビューを描画中",
@@ -98,18 +106,24 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
   const updateTargetStoresContent = useEditorStore(
     (state) => state.updateTargetStoresContent
   );
+  const layoutSections = useMemo(() => getLayoutSections(project), [project]);
+  const layoutSectionById = useMemo(
+    () => new Map(layoutSections.map((section) => [section.id, section])),
+    [layoutSections]
+  );
+  const layoutDocSectionsLength =
+    project.editorDocuments?.layoutDocument?.sections?.length;
 
   useEffect(() => {
     if (isTemplateDebugEnabled()) {
-      const layoutSections = getLayoutSections(project);
       console.log("[TemplateDebug] 8.stage selector", {
         editorMode,
         projectSectionsLength: layoutSections.length,
         projectSectionTypes: layoutSections.map((section) => section.type),
-        layoutDocSectionsLength: project.editorDocuments?.layoutDocument?.sections?.length,
+        layoutDocSectionsLength,
       });
     }
-  }, [editorMode, project]);
+  }, [editorMode, layoutDocSectionsLength, layoutSections]);
 
   const [showBusy, setShowBusy] = useState(false);
   const [isPreviewReady, setIsPreviewReady] = useState(false);
@@ -216,6 +230,27 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
           return;
         }
         if (action === "delete") {
+          const section = layoutSectionById.get(sectionId);
+          const role = getSectionStructureRole(section);
+          if (role === "fixed") {
+            window.alert("固定セクションは削除できません。");
+            return;
+          }
+          if (
+            role === "required" &&
+            !window.confirm(
+              buildRequiredSectionDeleteWarningMessage({
+                campaignType: project.meta.campaignType,
+                slotLabel: resolveStructureSlotLabel({
+                  slotId: getSectionStructureHint(section)?.slotId,
+                  sectionType: section?.type,
+                  blueprintLabel: getSectionStructureHint(section)?.label,
+                }),
+              })
+            )
+          ) {
+            return;
+          }
           deleteSection(sectionId);
         }
       }
@@ -226,6 +261,7 @@ export default function PreviewPane({ iframeRef: externalIframeRef }: PreviewPan
   }, [
     deleteSection,
     duplicateSection,
+    layoutSectionById,
     insertSectionAfter,
     setHoveredSection,
     setSelectedSection,

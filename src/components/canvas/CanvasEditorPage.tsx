@@ -13,7 +13,7 @@ import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
-  Table2,
+  Table2, Sparkles, Loader2,
 } from "lucide-react";
 import { useCanvasEditorStore } from "@/src/store/canvasEditorStore";
 import { useEditorStore } from "@/src/store/editorStore";
@@ -26,13 +26,34 @@ import {
   createButtonLayer,
   createImageLayer,
   createTableLayer,
+  getSectionContentYOffset,
 } from "@/src/types/canvas";
 import { AUTO_LAYOUT_PRESETS } from "@/src/lib/canvas/autoLayout";
 import { CANVAS_TEMPLATES, buildDocumentFromTemplate } from "@/src/lib/canvas/canvasTemplates";
+import {
+  runCanvasAiGenerate,
+  runCanvasAiDecorationGenerate,
+  runCanvasAiSectionDesign,
+  buildCanvasDecorationPlan,
+  buildCanvasDecorationPlacement,
+  generateAiBatchId,
+  inferAiSetType,
+  CANVAS_AI_TARGET_LABELS,
+  CANVAS_AI_DECORATION_LABELS,
+  CANVAS_AI_SET_LABELS,
+  type CanvasAiActionTarget,
+  type CanvasAiDecorationKind,
+  type CanvasAiSetType,
+} from "@/src/features/canvas-ai/canvasAiEngine";
+import type { CanvasBackground } from "@/src/types/canvas";
+import { isE2ETestModeEnabled } from "@/src/lib/debugFlags";
 
 const BTN = "h-7 px-2 rounded text-[11px] font-medium flex items-center gap-1 transition-colors";
 const BTN_ACTIVE = "bg-[var(--ui-text)] text-[var(--ui-bg)]";
 const BTN_GHOST = "hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)] text-[var(--ui-text)]";
+const EMPTY_CANVAS_SECTIONS: NonNullable<
+  NonNullable<ReturnType<typeof useCanvasEditorStore.getState>["document"]["sections"]>["sections"]
+> = [];
 
 export default function CanvasEditorPage() {
   const device = useCanvasEditorStore((s) => s.device);
@@ -55,6 +76,7 @@ export default function CanvasEditorPage() {
   const undo = useCanvasEditorStore((s) => s.undo);
   const redo = useCanvasEditorStore((s) => s.redo);
   const addLayer = useCanvasEditorStore((s) => s.addLayer);
+  const withHistoryBatch = useCanvasEditorStore((s) => s.withHistoryBatch);
   const removeLayers = useCanvasEditorStore((s) => s.removeLayers);
   const duplicateLayer = useCanvasEditorStore((s) => s.duplicateLayer);
   const duplicateLayers = useCanvasEditorStore((s) => s.duplicateLayers);
@@ -81,13 +103,23 @@ export default function CanvasEditorPage() {
   const bringToFront = useCanvasEditorStore((s) => s.bringToFront);
   const sendToBack = useCanvasEditorStore((s) => s.sendToBack);
   const clearSelection = useCanvasEditorStore((s) => s.clearSelection);
+  const selectSection = useCanvasEditorStore((s) => s.selectSection);
   const groupSelectedLayers = useCanvasEditorStore((s) => s.groupSelectedLayers);
   const ungroupSelectedLayers = useCanvasEditorStore((s) => s.ungroupSelectedLayers);
+  const selectedSectionId = useCanvasEditorStore((s) => s.selectedSectionId);
+  const updateSection = useCanvasEditorStore((s) => s.updateSection);
+  const updateLayerLayout = useCanvasEditorStore((s) => s.updateLayerLayout);
+  const canvasSections = useCanvasEditorStore(
+    (s) => s.document.sections?.sections ?? EMPTY_CANVAS_SECTIONS
+  );
 
   const [autoLayoutOpen, setAutoLayoutOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
   const autoLayoutMenuRef = useRef<HTMLDivElement>(null);
   const templateMenuRef = useRef<HTMLDivElement>(null);
+  const aiMenuRef = useRef<HTMLDivElement>(null);
   const renderableLayers = getRenderableLayers(device).filter((l) => !l.id.startsWith("section-bg:"));
 
   // Fit Text: 選択レイヤーに text/button が含まれるか判定
@@ -106,6 +138,8 @@ export default function CanvasEditorPage() {
   const projectCanvasDocument = useEditorStore(
     (s) => s.project.editorDocuments?.canvasDocument
   );
+  const project = useEditorStore((s) => s.project);
+  const projectMeta = useEditorStore((s) => s.project.meta);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const copiedLayerIdsRef = useRef<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -119,6 +153,11 @@ export default function CanvasEditorPage() {
   /* ---- Sync: load from project ---- */
   const hasLoadedInitialDocRef = useRef(false);
   const canvasModeRef = useRef(canvasMode);
+  const [isE2ETestMode, setIsE2ETestMode] = useState(false);
+
+  useEffect(() => {
+    setIsE2ETestMode(isE2ETestModeEnabled());
+  }, []);
 
   useEffect(() => {
     canvasModeRef.current = canvasMode;
@@ -136,6 +175,16 @@ export default function CanvasEditorPage() {
     if (!dirty) return;
     updateCanvasDocument(canvasDoc);
   }, [dirty, canvasDoc, updateCanvasDocument]);
+
+  useEffect(() => {
+    if (!isE2ETestMode) return;
+    if (canvasMode !== "sections") return;
+    if (selectedSectionId) return;
+    const firstSectionId = canvasSections[0]?.id;
+    if (!firstSectionId) return;
+    selectSection(firstSectionId);
+    clearSelection();
+  }, [canvasMode, canvasSections, clearSelection, isE2ETestMode, selectSection, selectedSectionId]);
 
   /* ---- Sync: global device (TopBar) -> canvas device ---- */
   useEffect(() => {
@@ -257,12 +306,16 @@ export default function CanvasEditorPage() {
       if (templateMenuRef.current && !templateMenuRef.current.contains(target)) {
         setTemplateMenuOpen(false);
       }
+      if (aiMenuRef.current && !aiMenuRef.current.contains(target)) {
+        setAiMenuOpen(false);
+      }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setAutoLayoutOpen(false);
       setTemplateMenuOpen(false);
+      setAiMenuOpen(false);
     };
 
     window.addEventListener("mousedown", handlePointerDown);
@@ -270,6 +323,7 @@ export default function CanvasEditorPage() {
     return () => {
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
+
     };
   }, []);
 
@@ -279,6 +333,274 @@ export default function CanvasEditorPage() {
   const handleAddButton = () => addLayer(createButtonLayer("ボタン", "#"));
   const handleAddTable = () => addLayer(createTableLayer());
   const handleAddImage = () => fileInputRef.current?.click();
+
+  /* ---- AI Canvas action ---- */
+  const insertDecorationLayer = useCallback(
+    (
+      targetSectionId: string,
+      sectionName: string,
+      kind: CanvasAiDecorationKind,
+      imageUrl: string,
+      batchId?: string,
+      setType?: CanvasAiSetType,
+    ) => {
+      const designWidth = device === "pc" ? canvasDoc.meta.size.pc.width : canvasDoc.meta.size.sp.width;
+      const assetId = addAsset({
+        filename: `canvas-ai-decoration-${kind}-${Date.now()}.png`,
+        data: imageUrl,
+      });
+      const placement = buildCanvasDecorationPlacement(
+        kind,
+        sectionName,
+        designWidth,
+        project.layoutSuggestion?.visualWeight ?? "medium",
+      );
+      const baseLayer = createImageLayer(assetId, `[AI] ${CANVAS_AI_DECORATION_LABELS[kind]}`, {
+        w: placement.w,
+        h: placement.h,
+      });
+      const layer = batchId
+        ? { ...baseLayer, insertedByAi: true as const, aiBatchId: batchId, aiSetType: setType, aiSetLabel: setType ? CANVAS_AI_SET_LABELS[setType] : undefined }
+        : { ...baseLayer, insertedByAi: true as const };
+      addLayer(layer);
+      const contentYOffset = getSectionContentYOffset(canvasSections, targetSectionId, device);
+      updateLayerLayout(layer.id, {
+        x: placement.x,
+        y: contentYOffset + placement.y,
+        w: placement.w,
+        h: placement.h,
+        z: placement.z,
+      });
+    },
+    [
+      device,
+      canvasDoc.meta.size.pc.width,
+      canvasDoc.meta.size.sp.width,
+      addAsset,
+      addLayer,
+      canvasSections,
+      updateLayerLayout,
+      project.layoutSuggestion?.visualWeight,
+    ],
+  );
+
+  const handleCanvasAiAction = useCallback(
+    async (target: CanvasAiActionTarget) => {
+      setAiMenuOpen(false);
+      setIsAiGenerating(true);
+      try {
+        const section = canvasSections.find((s) => s.id === selectedSectionId);
+        const pcWidth = canvasDoc.meta.size.pc.width;
+        const meta = projectMeta as Record<string, unknown>;
+        const themeId = project.themeSpec?.themeId ?? (meta?.themeId as string | undefined);
+
+        const { imageUrl } = await runCanvasAiGenerate({
+          target,
+          sectionName: section?.name,
+          sectionId: section?.id,
+          campaignType: meta?.campaignType as string | undefined,
+          themeId,
+          pcWidth,
+        });
+
+        await withHistoryBatch(async () => {
+          const assetId = addAsset({
+            filename: `canvas-ai-${target}-${Date.now()}.png`,
+            data: imageUrl,
+          });
+
+          if (target === "sectionBackground" || target === "heroBackground") {
+            const targetSectionId = selectedSectionId ?? canvasSections[0]?.id;
+            if (targetSectionId) {
+              updateSection(targetSectionId, {
+                background: { type: "image", assetId } as CanvasBackground,
+              });
+            }
+          } else {
+            const imgW = Math.min(900, pcWidth - 80);
+            const imgH = Math.round(imgW * (target === "heroImage" ? 0.56 : 0.5));
+            const batchId = generateAiBatchId();
+            const setType = inferAiSetType(section?.name ?? "");
+            const baseLayer = createImageLayer(assetId, `AI生成: ${CANVAS_AI_TARGET_LABELS[target]}`, {
+              w: imgW,
+              h: imgH,
+            });
+            const layer = { ...baseLayer, insertedByAi: true as const, aiBatchId: batchId, aiSetType: setType, aiSetLabel: CANVAS_AI_SET_LABELS[setType] };
+            addLayer(layer);
+          }
+        });
+
+        showToast("AI生成が完了しました");
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : "AI生成に失敗しました");
+      } finally {
+        setIsAiGenerating(false);
+      }
+    },
+    [
+      canvasSections,
+      selectedSectionId,
+      canvasDoc.meta.size.pc.width,
+      projectMeta,
+      project.themeSpec?.themeId,
+      addAsset,
+      addLayer,
+      withHistoryBatch,
+      updateSection,
+      showToast,
+    ],
+  );
+
+  const handleCanvasAiDecorations = useCallback(async () => {
+    setAiMenuOpen(false);
+    setIsAiGenerating(true);
+    const section = canvasSections.find((s) => s.id === selectedSectionId) ?? canvasSections[0];
+    const meta = projectMeta as Record<string, unknown>;
+    const themeId = project.themeSpec?.themeId ?? (meta?.themeId as string | undefined);
+    const visualWeight = project.layoutSuggestion?.visualWeight ?? "medium";
+    const spacingScale = project.layoutSuggestion?.spacingScale ?? "normal";
+    const decorationPlan = buildCanvasDecorationPlan(section?.name ?? "", visualWeight);
+    const batchId = generateAiBatchId();
+    const setType = inferAiSetType(section?.name ?? "");
+
+    try {
+      const settled = await Promise.allSettled(
+        decorationPlan.decorationKinds.map((kind) =>
+          runCanvasAiDecorationGenerate({
+            sectionName: section?.name,
+            sectionId: section?.id,
+            campaignType: meta?.campaignType as string | undefined,
+            themeId,
+            pcWidth: canvasDoc.meta.size.pc.width,
+            visualWeight,
+            spacingScale,
+            decorationKind: kind,
+          }),
+        ),
+      );
+
+      let applied = 0;
+      await withHistoryBatch(async () => {
+        for (const item of settled) {
+          if (item.status === "fulfilled" && section?.id) {
+            insertDecorationLayer(section.id, section.name, item.value.kind, item.value.imageUrl, batchId, setType);
+            applied += 1;
+          }
+        }
+      });
+
+      showToast(applied > 0 ? `装飾を追加しました (${applied}件)` : "装飾生成に失敗しました");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "装飾生成に失敗しました");
+    } finally {
+      setIsAiGenerating(false);
+    }
+  }, [
+    canvasSections,
+    selectedSectionId,
+    projectMeta,
+    project.themeSpec?.themeId,
+    project.layoutSuggestion?.visualWeight,
+    project.layoutSuggestion?.spacingScale,
+    canvasDoc.meta.size.pc.width,
+    insertDecorationLayer,
+    withHistoryBatch,
+    showToast,
+  ]);
+
+  const handleCanvasAiSectionDesign = useCallback(async () => {
+    setAiMenuOpen(false);
+    setIsAiGenerating(true);
+    const section = canvasSections.find((s) => s.id === selectedSectionId) ?? canvasSections[0];
+    const pcWidth = canvasDoc.meta.size.pc.width;
+    const meta = projectMeta as Record<string, unknown>;
+    const themeId = project.themeSpec?.themeId ?? (meta?.themeId as string | undefined);
+    const visualWeight = project.layoutSuggestion?.visualWeight ?? "medium";
+    const spacingScale = project.layoutSuggestion?.spacingScale ?? "normal";
+
+    const commonParams = {
+      sectionName: section?.name,
+      sectionId: section?.id,
+      campaignType: meta?.campaignType as string | undefined,
+      themeId,
+      pcWidth,
+      visualWeight,
+      spacingScale,
+    };
+    const batchId = generateAiBatchId();
+    const setType = inferAiSetType(section?.name ?? "");
+
+    try {
+      const result = await runCanvasAiSectionDesign(commonParams);
+      let applied = 0;
+      await withHistoryBatch(async () => {
+        if (result.background) {
+          const bgAssetId = addAsset({
+            filename: `canvas-ai-bg-${Date.now()}.png`,
+            data: result.background.imageUrl,
+          });
+          const targetSectionId = section?.id ?? canvasSections[0]?.id;
+          if (targetSectionId) {
+            updateSection(targetSectionId, {
+              background: { type: "image", assetId: bgAssetId } as CanvasBackground,
+            });
+            applied += 1;
+          }
+        }
+
+        for (const img of result.images) {
+          const imgAssetId = addAsset({
+            filename: `canvas-ai-img-${img.target}-${Date.now()}.png`,
+            data: img.imageUrl,
+          });
+          const imgW = Math.min(900, pcWidth - 80);
+          const imgH = Math.round(imgW * (img.target === "heroImage" ? 0.56 : 0.5));
+          const baseImgLayer = createImageLayer(
+            imgAssetId,
+            `[AI] ${CANVAS_AI_TARGET_LABELS[img.target]}`,
+            { w: imgW, h: imgH },
+          );
+          const imgLayer = { ...baseImgLayer, insertedByAi: true as const, aiBatchId: batchId, aiSetType: setType, aiSetLabel: CANVAS_AI_SET_LABELS[setType] };
+          addLayer(imgLayer);
+          applied += 1;
+        }
+
+        for (const decoration of result.decorations) {
+          if (section?.id) {
+            insertDecorationLayer(section.id, section.name, decoration.kind, decoration.imageUrl, batchId, setType);
+            applied += 1;
+          }
+        }
+      });
+
+      if (result.errors.length === 0) {
+        showToast(`AIデザインを適用しました (${applied}件)`);
+      } else if (applied > 0) {
+        showToast(`一部適用しました (${applied}件成功、${result.errors.length}件失敗)`);
+      } else {
+        const firstError = result.errors[0]?.error;
+        showToast(firstError ?? "AIデザインの生成に失敗しました");
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "AIデザインの生成に失敗しました");
+    } finally {
+      setIsAiGenerating(false);
+    }
+  }, [
+    canvasSections,
+    selectedSectionId,
+    canvasDoc.meta.size.pc.width,
+    projectMeta,
+    project.themeSpec?.themeId,
+    project.layoutSuggestion?.visualWeight,
+    project.layoutSuggestion?.spacingScale,
+    addAsset,
+    addLayer,
+    withHistoryBatch,
+    updateSection,
+    insertDecorationLayer,
+    showToast,
+  ]);
 
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -592,6 +914,78 @@ export default function CanvasEditorPage() {
                   <span className="text-[10px] opacity-60">{t.description}</span>
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* AI Section Composer */}
+        <div className="relative" ref={aiMenuRef}>
+          <button
+            type="button"
+            data-testid="canvas-ai-menu-toggle"
+            className={`${BTN} ${aiMenuOpen ? BTN_ACTIVE : BTN_GHOST} ${isAiGenerating ? "opacity-60 cursor-wait" : ""}`}
+            onClick={() => {
+              if (isAiGenerating) return;
+              setAutoLayoutOpen(false);
+              setTemplateMenuOpen(false);
+              setAiMenuOpen((v) => !v);
+            }}
+            title="AI Section Composer"
+          >
+            {isAiGenerating ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Sparkles size={14} />
+            )}
+            {isAiGenerating ? "生成中…" : "AI 生成"}
+          </button>
+          {aiMenuOpen && (
+            <div className="absolute left-0 top-full z-50 mt-1 w-60 rounded-md border border-[var(--ui-border)] bg-[var(--surface-2)] shadow-lg py-1">
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--ui-muted)]">
+                AI Section Composer
+              </div>
+
+              {/* ── 一発適用 ── */}
+              <button
+                type="button"
+                data-testid="canvas-ai-design-all"
+                className="w-full text-left px-3 py-2 text-[12px] font-semibold hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)] flex items-center gap-2 border-b border-[var(--ui-border)]"
+                onClick={() => { void handleCanvasAiSectionDesign(); }}
+              >
+                <Sparkles size={13} className="flex-shrink-0" />
+                このセクションをAIデザイン
+              </button>
+
+              <button
+                type="button"
+                data-testid="canvas-ai-decoration-all"
+                className="w-full text-left px-3 py-2 text-[12px] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)] flex items-center gap-2 border-b border-[var(--ui-border)]"
+                onClick={() => { void handleCanvasAiDecorations(); }}
+              >
+                <Sparkles size={12} className="flex-shrink-0 opacity-75" />
+                このセクションの装飾をAI生成
+              </button>
+
+              {/* ── 個別アクション ── */}
+              <div className="px-3 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-[var(--ui-muted)]">
+                個別生成
+              </div>
+              {(["heroImage", "heroBackground", "sectionBackground", "sectionImage"] as CanvasAiActionTarget[]).map((target) => (
+                <button
+                  key={target}
+                  type="button"
+                  className="w-full text-left px-3 py-1.5 text-[12px] hover:bg-[color-mix(in_srgb,var(--ui-text)_8%,transparent)] flex items-center gap-2"
+                  onClick={() => { void handleCanvasAiAction(target); }}
+                >
+                  <Sparkles size={12} className="opacity-60 flex-shrink-0" />
+                  {CANVAS_AI_TARGET_LABELS[target]}
+                </button>
+              ))}
+              {canvasMode === "sections" && !selectedSectionId && (
+                <p className="px-3 py-1.5 text-[10px] text-[var(--ui-muted)]">
+                  セクションを選択すると<br />より精度の高い生成ができます
+                </p>
+              )}
             </div>
           )}
         </div>

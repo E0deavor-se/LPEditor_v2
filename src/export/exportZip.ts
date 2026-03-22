@@ -7,6 +7,17 @@ import { normalizeLayoutExportProject } from "@/src/lib/export/normalizeLayoutEx
 import { getLayoutSections } from "@/src/lib/editorProject";
 import { renderLayoutSection } from "@/src/lib/renderers/layout/renderLayoutSection";
 import { renderUnhandledLayoutSectionFallback } from "@/src/lib/renderers/layout/renderUnhandledLayoutSectionFallback";
+import { getCampaignStructurePresetById } from "@/src/structures/campaignStructurePresets";
+import { getSectionStructureHint } from "@/src/structures/sectionStructure";
+import {
+  buildMissingFixedStructureWarningMessage,
+  buildMissingRequiredStructureWarningMessage,
+  resolveStructureSlotLabel,
+} from "@/src/structures/structureWarningMessages";
+import {
+  buildExportHintMessage,
+  buildExportWarningMessage,
+} from "@/src/lib/userMessageCatalog";
 import type {
   AssetMeta,
   AssetRecord,
@@ -24,9 +35,16 @@ type ExportUiState = {
 
 type ExportPreviewMode = "desktop" | "mobile";
 
-type ExportWarning = {
+export type ExportWarning = {
+  code?: string;
+  level?: "warning" | "info";
   type: "asset" | "dist" | "other";
   message: string;
+  sectionId?: string;
+  sectionLabel?: string;
+  relatedTarget?: string;
+  relatedAssetId?: string;
+  hint?: string;
   assetId?: string;
   url?: string;
   detail?: string;
@@ -371,9 +389,252 @@ const stripDataUrlsDeep = (value: unknown): unknown => {
   return result;
 };
 
+const stripInternalFieldsForPublicExport = (project: ProjectState): ProjectState => {
+  const sections = Array.isArray(project.sections)
+    ? project.sections.map((section) => {
+      const data = section.data && typeof section.data === "object"
+        ? { ...(section.data as Record<string, unknown>) }
+        : section.data;
+      if (data && typeof data === "object" && "aiAssetBindings" in data) {
+        delete (data as Record<string, unknown>).aiAssetBindings;
+      }
+      return {
+        ...section,
+        data,
+      };
+    })
+    : project.sections;
+
+  return {
+    ...project,
+    sections,
+    aiAssets: undefined,
+  };
+};
+
+const collectReferencedAssetIds = (project: ProjectState): Set<string> => {
+  const ids = new Set<string>();
+  const visit = (value: unknown, keyHint?: string) => {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => visit(entry, keyHint));
+      return;
+    }
+    if (!value || typeof value !== "object") {
+      return;
+    }
+    Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
+      if (typeof entry === "string") {
+        const normalized = key.toLowerCase();
+        if (normalized === "assetid" || normalized.endsWith("assetid")) {
+          const id = entry.trim();
+          if (id) {
+            ids.add(id);
+          }
+        }
+      }
+      visit(entry, key);
+    });
+  };
+
+  visit(project.settings);
+  visit(project.pageBaseStyle);
+  visit(project.sections);
+  return ids;
+};
+
+type SectionReferenceContext = {
+  sectionId: string;
+  sectionLabel: string;
+  relatedTarget?: string;
+};
+
+const formatSectionLabel = (index: number, sectionType: string) =>
+  `セクション${index + 1}（${sectionType}）`;
+
+const resolveTargetLabel = (key: string) => {
+  const normalized = key.toLowerCase();
+  const map: Record<string, string> = {
+    imageassetid: "画像",
+    imageassetidpc: "PC画像",
+    imageassetidsp: "SP画像",
+    backgroundassetid: "背景画像",
+    heroslidespc: "ヒーロースライド(PC)",
+    heroslidessp: "ヒーロースライド(SP)",
+    faviconassetid: "ファビコン",
+    ogpimageassetid: "OGP画像",
+  };
+  if (map[normalized]) {
+    return map[normalized];
+  }
+  if (normalized.endsWith("assetid")) {
+    const base = normalized.slice(0, -"assetid".length);
+    if (!base) {
+      return "画像";
+    }
+    return `${base}画像`;
+  }
+  return key;
+};
+
+const collectAssetReferenceContexts = (
+  project: ProjectState
+): Map<string, SectionReferenceContext[]> => {
+  const map = new Map<string, SectionReferenceContext[]>();
+  const sections = resolveLayoutSectionsFromProject(project);
+
+  const pushContext = (
+    assetId: string,
+    context: SectionReferenceContext,
+  ) => {
+    const list = map.get(assetId) ?? [];
+    if (
+      list.some(
+        (entry) =>
+          entry.sectionId === context.sectionId &&
+          entry.relatedTarget === context.relatedTarget,
+      )
+    ) {
+      return;
+    }
+    list.push(context);
+    map.set(assetId, list);
+  };
+
+  sections.forEach((section, index) => {
+    const sectionId = section.id;
+    const sectionLabel = formatSectionLabel(index, section.type);
+
+    const visit = (value: unknown) => {
+      if (Array.isArray(value)) {
+        value.forEach((entry) => visit(entry));
+        return;
+      }
+      if (!value || typeof value !== "object") {
+        return;
+      }
+
+      Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
+        if (typeof entry === "string") {
+          const normalized = key.toLowerCase();
+          if (normalized === "assetid" || normalized.endsWith("assetid")) {
+            const assetId = entry.trim();
+            if (assetId) {
+              pushContext(assetId, {
+                sectionId,
+                sectionLabel,
+                relatedTarget: resolveTargetLabel(key),
+              });
+            }
+          }
+        }
+        visit(entry);
+      });
+    };
+
+    visit(section.data);
+    visit(section.content);
+  });
+
+  return map;
+};
+
+const collectSectionImageWarnings = (
+  project: ProjectState
+): ExportWarning[] => {
+  const warnings: ExportWarning[] = [];
+  const sections = resolveLayoutSectionsFromProject(project);
+
+  sections.forEach((section, index) => {
+    if (section.type !== "sectionImage") {
+      return;
+    }
+    const data = (section.data ?? {}) as Record<string, unknown>;
+    const hasAssetId =
+      (typeof data.imageAssetId === "string" && data.imageAssetId.trim().length > 0) ||
+      (typeof data.imageAssetIdPc === "string" && data.imageAssetIdPc.trim().length > 0) ||
+      (typeof data.imageAssetIdSp === "string" && data.imageAssetIdSp.trim().length > 0);
+    const hasUrl =
+      (typeof data.imageUrl === "string" && data.imageUrl.trim().length > 0) ||
+      (typeof data.imageUrlSp === "string" && data.imageUrlSp.trim().length > 0) ||
+      (typeof data.src === "string" && data.src.trim().length > 0);
+    if (!hasAssetId && !hasUrl) {
+      warnings.push({
+        code: "section_image_missing",
+        level: "warning",
+        type: "other",
+        message: "セクション画像が未設定です",
+        sectionId: section.id,
+        sectionLabel: formatSectionLabel(index, section.type),
+        relatedTarget: "sectionImage",
+        hint: "セクション画像を設定すると公開品質が安定します",
+      });
+    }
+  });
+
+  return warnings;
+};
+
+const collectStructureCoverageWarnings = (
+  project: ProjectState,
+): ExportWarning[] => {
+  const preset = getCampaignStructurePresetById(project.meta.structurePresetId);
+  if (!preset) {
+    return [];
+  }
+
+  const existingSlotIds = new Set<string>();
+  resolveLayoutSectionsFromProject(project).forEach((section) => {
+    const hint = getSectionStructureHint(section);
+    if (!hint?.slotId) {
+      return;
+    }
+    if (hint.presetId && hint.presetId !== preset.id) {
+      return;
+    }
+    existingSlotIds.add(hint.slotId);
+  });
+
+  const warnings: ExportWarning[] = [];
+  preset.sections.forEach((blueprint) => {
+    if (blueprint.role === "optional") {
+      return;
+    }
+    if (existingSlotIds.has(blueprint.slotId)) {
+      return;
+    }
+    const isFixed = blueprint.role === "fixed";
+    const slotLabel = resolveStructureSlotLabel({
+      slotId: blueprint.slotId,
+      sectionType: blueprint.sectionType,
+      blueprintLabel: blueprint.label,
+    });
+    warnings.push({
+      code: isFixed ? "structure_fixed_missing" : "structure_required_missing",
+      level: "warning",
+      type: "other",
+      message: isFixed
+        ? buildMissingFixedStructureWarningMessage({
+            campaignType: project.meta.campaignType,
+            slotLabel,
+          })
+        : buildMissingRequiredStructureWarningMessage({
+            campaignType: project.meta.campaignType,
+            slotLabel,
+          }),
+      relatedTarget: blueprint.slotId,
+      hint: isFixed
+        ? "固定セクションを復元してから公開してください"
+        : "必須セクションを追加または復元してから公開してください",
+    });
+  });
+
+  return warnings;
+};
+
 const sanitizeProjectForExport = (project: ProjectState): ProjectState => {
   const cloned = JSON.parse(JSON.stringify(project)) as ProjectState;
-  const withoutDataUrls = stripDataUrlsDeep(cloned) as ProjectState;
+  const withoutInternal = stripInternalFieldsForPublicExport(cloned);
+  const withoutDataUrls = stripDataUrlsDeep(withoutInternal) as ProjectState;
   const normalizedPaths = normalizePathsDeep(withoutDataUrls) as ProjectState;
   return dropUndefinedDeep(normalizedPaths) as ProjectState;
 };
@@ -402,7 +663,7 @@ const collectFooterDefaultAssets = async (
       warnings.push({
         type: "asset",
         url,
-        message: "default footer asset fetch failed",
+        message: buildExportWarningMessage("default-footer-asset-fetch-failed"),
         detail: error instanceof Error ? error.message : String(error),
       });
     }
@@ -533,18 +794,24 @@ const toDistAssetPath = (assetPath: string) => {
 const buildAssetMetaList = async (
   project: ProjectState,
   zip: JSZip,
-  warnings: ExportWarning[]
+  warnings: ExportWarning[],
+  includeAssetIds?: Set<string>,
 ): Promise<AssetMeta[]> => {
   const assets = project.assets ?? {};
   const metas: AssetMeta[] = [];
-  const entries = Object.entries(assets);
+  const entries = Object.entries(assets).filter(([assetId]) => {
+    if (!includeAssetIds) {
+      return true;
+    }
+    return includeAssetIds.has(assetId);
+  });
   for (const [assetId, asset] of entries) {
     const record = asset as AssetRecord;
     if (!record.data) {
       warnings.push({
         type: "asset",
         assetId,
-        message: "asset data is empty",
+        message: buildExportWarningMessage("asset-data-empty"),
       });
       continue;
     }
@@ -564,7 +831,7 @@ const buildAssetMetaList = async (
         warnings.push({
           type: "asset",
           assetId,
-          message: "asset data is not a valid data url",
+          message: buildExportWarningMessage("asset-data-invalid"),
           detail: record.data.slice(0, 100),
         });
         continue;
@@ -593,7 +860,7 @@ const buildAssetMetaList = async (
       warnings.push({
         type: "asset",
         assetId,
-        message: "asset processing failed",
+        message: buildExportWarningMessage("asset-processing-failed"),
         detail,
       });
       const status =
@@ -613,6 +880,162 @@ const buildAssetMetaList = async (
     }
   }
   return metas;
+};
+
+const collectPublishWarnings = (
+  project: ProjectState,
+  referencedAssetIds: Set<string>,
+  exportedAssets: AssetMeta[],
+): ExportWarning[] => {
+  const warnings: ExportWarning[] = [];
+  const assets = project.assets ?? {};
+  const sectionRefsByAssetId = collectAssetReferenceContexts(project);
+  const sectionLabelById = new Map(
+    resolveLayoutSectionsFromProject(project).map((section, index) => [
+      section.id,
+      formatSectionLabel(index, section.type),
+    ]),
+  );
+
+  referencedAssetIds.forEach((assetId) => {
+    if (!assets[assetId]) {
+      const contexts = sectionRefsByAssetId.get(assetId) ?? [];
+      if (contexts.length === 0) {
+        warnings.push({
+          code: "asset_missing",
+          level: "warning",
+          type: "asset",
+          assetId,
+          relatedAssetId: assetId,
+          message: "参照先画像が見つかりません",
+          hint: buildExportHintMessage("asset-reselect"),
+        });
+        return;
+      }
+      contexts.slice(0, 2).forEach((context) => {
+        warnings.push({
+          code: "asset_missing",
+          level: "warning",
+          type: "asset",
+          assetId,
+          relatedAssetId: assetId,
+          message: "参照先画像が見つかりません",
+          sectionId: context.sectionId,
+          sectionLabel: context.sectionLabel,
+          relatedTarget: context.relatedTarget,
+          hint: buildExportHintMessage("asset-reselect"),
+        });
+      });
+    }
+  });
+
+  const hero = resolveLayoutSectionsFromProject(project).find((entry) => entry.type === "heroImage");
+  if (hero) {
+    const data = (hero.data ?? {}) as Record<string, unknown>;
+    const slidesPc = Array.isArray(data.heroSlidesPc) ? data.heroSlidesPc : [];
+    const slidesSp = Array.isArray(data.heroSlidesSp) ? data.heroSlidesSp : [];
+    const hasSlideAsset = [...slidesPc, ...slidesSp].some((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return false;
+      }
+      const row = entry as { assetId?: unknown; src?: unknown };
+      return (typeof row.assetId === "string" && row.assetId.trim().length > 0) ||
+        (typeof row.src === "string" && row.src.trim().length > 0);
+    });
+    const hasHeroAssetId =
+      (typeof data.imageAssetIdPc === "string" && data.imageAssetIdPc.trim().length > 0) ||
+      (typeof data.imageAssetIdSp === "string" && data.imageAssetIdSp.trim().length > 0) ||
+      (typeof data.imageAssetId === "string" && data.imageAssetId.trim().length > 0);
+    const hasHeroUrl =
+      (typeof data.imageUrl === "string" && data.imageUrl.trim().length > 0) ||
+      (typeof data.imageUrlSp === "string" && data.imageUrlSp.trim().length > 0);
+    if (!hasSlideAsset && !hasHeroAssetId && !hasHeroUrl) {
+      warnings.push({
+        code: "hero_missing",
+        level: "warning",
+        type: "other",
+        message: "ヒーロー画像が未設定です",
+        sectionId: hero.id,
+        sectionLabel: sectionLabelById.get(hero.id),
+        relatedTarget: "heroImage",
+        hint: buildExportHintMessage("asset-set-hero"),
+      });
+    }
+  }
+
+  const aiAssets = project.aiAssets;
+  if (aiAssets?.bindings?.length) {
+    const generatedIds = new Set((aiAssets.generatedAssets ?? []).map((entry) => entry.id));
+    aiAssets.bindings.forEach((binding) => {
+      if (!assets[binding.assetId]) {
+        warnings.push({
+          code: "binding_asset_missing",
+          level: "warning",
+          type: "asset",
+          assetId: binding.assetId,
+          relatedAssetId: binding.assetId,
+          message: "バインド先の画像データが見つかりません",
+          sectionId: binding.sectionId,
+          sectionLabel: sectionLabelById.get(binding.sectionId),
+          relatedTarget: binding.role,
+          hint: buildExportHintMessage("ai-rebind"),
+          detail: `${binding.sectionId}/${binding.role}`,
+        });
+      }
+      if (!generatedIds.has(binding.sourceGeneratedAssetId)) {
+        warnings.push({
+          code: "binding_source_missing",
+          level: "warning",
+          type: "other",
+          message: "バインド元の生成画像が見つかりません",
+          sectionId: binding.sectionId,
+          sectionLabel: sectionLabelById.get(binding.sectionId),
+          relatedTarget: binding.role,
+          hint: buildExportHintMessage("ai-regenerate"),
+          detail: `${binding.sectionId}/${binding.role}`,
+        });
+      }
+    });
+  }
+
+  const runningJobs = (aiAssets?.jobs ?? []).filter(
+    (job) => job.status === "queued" || job.status === "running",
+  );
+  if (runningJobs.length > 0) {
+    warnings.push({
+      code: "jobs_running",
+      level: "info",
+      type: "other",
+      message: `生成中の画像があります (${runningJobs.length}件)`,
+      hint: buildExportHintMessage("rerun-export"),
+    });
+  }
+
+  const excludedCount = Math.max(0, Object.keys(assets).length - referencedAssetIds.size);
+  if (excludedCount > 0) {
+    warnings.push({
+      code: "unused_assets_excluded",
+      level: "info",
+      type: "other",
+      message: `公開用に未使用画像は除外されます (${excludedCount}件)`,
+      hint: buildExportHintMessage("asset-reselect"),
+    });
+  }
+
+  if (exportedAssets.length === 0) {
+    warnings.push({
+      code: "export_assets_zero",
+      level: "warning",
+      type: "asset",
+      message: "export 対象の画像が 0 件です",
+      hint: buildExportHintMessage("set-image-before-export"),
+    });
+  }
+
+  warnings.push(...collectSectionImageWarnings(project));
+  warnings.push(...collectStructureCoverageWarnings(project));
+
+  return warnings;
 };
 
 const buildProjectFile = (
@@ -856,7 +1279,7 @@ const collectExternalAssets = async (
       warnings.push({
         type: "asset",
         url,
-        message: "external asset fetch failed",
+        message: buildExportWarningMessage("external-asset-fetch-failed"),
         detail: error instanceof Error ? error.message : String(error),
       });
     }
@@ -1116,7 +1539,7 @@ const resolveExportCss = async (
   if (!doc) {
     warnings.push({
       type: "other",
-      message: "export css is empty, fallback css used",
+      message: buildExportWarningMessage("export-css-empty"),
     });
     return buildStylesCss();
   }
@@ -1141,7 +1564,7 @@ const resolveExportCss = async (
       if (!response.ok) {
         warnings.push({
           type: "other",
-          message: "export css fetch failed",
+          message: buildExportWarningMessage("export-css-fetch-failed"),
           detail: `${response.status} ${href}`,
         });
         continue;
@@ -1153,7 +1576,7 @@ const resolveExportCss = async (
     } catch (error) {
       warnings.push({
         type: "other",
-        message: "export css fetch failed",
+        message: buildExportWarningMessage("export-css-fetch-failed"),
         detail: error instanceof Error ? error.message : String(error),
       });
     }
@@ -1162,7 +1585,7 @@ const resolveExportCss = async (
   if (chunks.length === 0) {
     warnings.push({
       type: "other",
-      message: "export css is empty, fallback css used",
+      message: buildExportWarningMessage("export-css-empty"),
     });
     return buildStylesCss();
   }
@@ -2987,8 +3410,10 @@ export const exportLayoutZip = async (
     }
   };
   const warnings: ExportWarning[] = [];
+  const referencedAssetIds = collectReferencedAssetIds(layoutProject);
   logStep("assets collect start");
-  const assetMeta = await buildAssetMetaList(layoutProject, zip, warnings);
+  const assetMeta = await buildAssetMetaList(layoutProject, zip, warnings, referencedAssetIds);
+  warnings.push(...collectPublishWarnings(layoutProject, referencedAssetIds, assetMeta));
   const footerDefaultUrlMap = await collectFooterDefaultAssets(zip, warnings);
   logStep("assets collect done", { count: assetMeta.length });
   const projectFile = buildProjectFile(layoutProject, assetMeta);
@@ -3079,7 +3504,7 @@ export const exportLayoutZip = async (
     distError = error instanceof Error ? error.message : String(error);
     warnings.push({
       type: "dist",
-      message: "dist generation failed",
+      message: buildExportWarningMessage("dist-generation-failed"),
       detail: distError,
     });
     console.warn("[export] dist generation failed", error);
@@ -3139,7 +3564,7 @@ export const exportLayoutZip = async (
     const detail = error instanceof Error ? error.message : String(error);
     warnings.push({
       type: "other",
-      message: "zip generation failed, fallback to minimal zip",
+      message: buildExportWarningMessage("zip-generation-failed"),
       detail,
     });
     console.warn("[export] zip generation failed", error);
@@ -3224,7 +3649,7 @@ export const exportCanvasOnlyToZip = async (
   for (const assetId of canvasAssetIds) {
     const record = assets[assetId];
     if (!record?.data) {
-      warnings.push({ type: "asset", assetId, message: "canvas asset data is empty" });
+      warnings.push({ type: "asset", assetId, message: buildExportWarningMessage("canvas-asset-data-empty") });
       continue;
     }
     try {
@@ -3242,7 +3667,7 @@ export const exportCanvasOnlyToZip = async (
         warnings.push({
           type: "asset",
           assetId,
-          message: "canvas asset data is not valid",
+          message: buildExportWarningMessage("canvas-asset-data-invalid"),
           detail: record.data.slice(0, 100),
         });
         continue;
@@ -3266,7 +3691,7 @@ export const exportCanvasOnlyToZip = async (
       warnings.push({
         type: "asset",
         assetId,
-        message: "canvas asset fetch failed",
+        message: buildExportWarningMessage("canvas-asset-fetch-failed"),
         detail: err instanceof Error ? err.message : String(err),
       });
     }
@@ -3307,7 +3732,7 @@ export const exportCanvasOnlyToZip = async (
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    warnings.push({ type: "other", message: "zip generation failed", detail });
+    warnings.push({ type: "other", message: buildExportWarningMessage("zip-generation-failed"), detail });
     const fallbackZip = new JSZip();
     fallbackZip.file("index.html", exportHtml);
     blob = await withTimeout(

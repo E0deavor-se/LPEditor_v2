@@ -157,6 +157,14 @@ export type CanvasLayer = {
   visibleOn?: ("pc" | "sp")[];
   /** セクション背景レイヤー専用: グラデーション/画像等 */
   _sectionBg?: CanvasBackground;
+  /** AI生成バッチ識別子。同一 AI 適用操作で追加された layer 間で共有 */
+  aiBatchId?: string;
+  /** AI生成セット種別 (heroSet / ctaSet / benefitSet など) */
+  aiSetType?: string;
+  /** AI生成セットの表示ラベル */
+  aiSetLabel?: string;
+  /** AI によって挿入された layer かどうか */
+  insertedByAi?: boolean;
 };
 
 /** Type-safe layout accessor (readonly use). */

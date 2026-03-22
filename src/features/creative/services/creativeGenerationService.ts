@@ -1,4 +1,5 @@
 import { getCreativeDocumentInput } from "@/src/features/creative/services/creativeDocumentService";
+import { buildCreativeGenerationErrorMessage } from "@/src/lib/userMessageCatalog";
 import type { CreativeJob } from "@/src/features/creative/types/job";
 import type { CreativeInputValues } from "@/src/features/creative/types/document";
 import type { CreativeLayer } from "@/src/features/creative/types/layer";
@@ -385,7 +386,7 @@ export const generateVariants = async (documentId: string): Promise<{ jobId: str
     return (await response.json()) as { jobId: string };
   }
 
-  let message = `Failed to start generation (status: ${response.status}).`;
+  let message = buildCreativeGenerationErrorMessage("start");
   try {
     const errorData = (await response.json()) as { error?: string };
     if (typeof errorData.error === "string" && errorData.error.trim().length > 0) {
@@ -425,7 +426,7 @@ export const pollGenerationJob = async (
           return data;
         }
       } else if (response.status === 404) {
-        let message = "Job not found";
+        let message = buildCreativeGenerationErrorMessage("job-not-found");
         try {
           const errorData = (await response.json()) as { message?: string; error?: string };
           message = errorData.message ?? errorData.error ?? message;
@@ -453,6 +454,6 @@ export const pollGenerationJob = async (
     jobId,
     status: "failed",
     progress: 100,
-    message: "Generation polling timed out.",
+    message: buildCreativeGenerationErrorMessage("poll-timeout"),
   };
 };

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Copy,
   Eye,
   EyeOff,
@@ -21,6 +22,21 @@ import CommonSectionEditor from "@/src/components/layout-v2/inspector/CommonSect
 import PageGlobalSettingsEditor from "@/src/components/layout-v2/inspector/PageGlobalSettingsEditor";
 import SectionAppearanceEditor from "@/src/components/layout-v2/inspector/sectionSpecific/SectionAppearanceEditor";
 import SectionExtensionsEditor from "@/src/components/layout-v2/inspector/sectionSpecific/SectionExtensionsEditor";
+import {
+  getBalanceLabel,
+  getIntensityLabel,
+  getLayoutModeLabel,
+  getPageMoodLabel,
+} from "@/src/lib/layout/layoutSuggestions";
+import {
+  getSectionStructureHint,
+  getSectionStructureRole,
+} from "@/src/structures/sectionStructure";
+import { getStructureRoleUi } from "@/src/structures/structureRoleUi";
+import {
+  buildRequiredSectionDeleteWarningMessage,
+  resolveStructureSlotLabel,
+} from "@/src/structures/structureWarningMessages";
 import {
   renderSectionSpecificEditor,
 } from "@/src/components/layout-v2/inspector/sectionArchitecture/SectionSpecificEditorMap";
@@ -83,23 +99,21 @@ export default function LayoutInspectorNext() {
   const section = core.selectedSection;
   const isSection = core.selected.kind === "section" && Boolean(section);
   const selectedSectionId = section?.id;
+  const structureRole = getSectionStructureRole(section);
+  const roleUi = getStructureRoleUi(structureRole);
   const sectionTypeLabel =
     (section ? SECTION_TYPE_LABELS[section.type] : undefined) ?? section?.type;
   const sectionName = section?.name?.trim() || sectionTypeLabel || "Section";
+  const resolvedScope: ScopeTab =
+    core.selected.kind === "page"
+      ? "page"
+      : scope === "page"
+      ? "section"
+      : scope;
 
   const subtitle = useMemo(() => core.breadcrumb.join(" / "), [core.breadcrumb]);
 
-  useEffect(() => {
-    if (core.selected.kind === "page" && scope !== "page") {
-      setScope("page");
-      return;
-    }
-    if (core.selected.kind === "section" && scope !== "section") {
-      setScope("section");
-    }
-  }, [core.selected.kind, scope]);
-
-  if (scope !== "page" && !section) {
+  if (resolvedScope !== "page" && !section) {
     return (
       <div className="flex h-full items-center justify-center px-3 text-[11px] text-[var(--ui-muted)]">
         セクションを選択してください。
@@ -150,12 +164,36 @@ export default function LayoutInspectorNext() {
               </button>
               <button
                 type="button"
-                className="ui-button ui-button-ghost h-7 w-7 px-0 text-rose-500"
+                className={
+                  "ui-button ui-button-ghost h-7 w-7 px-0 text-rose-500 " +
+                  (structureRole === "fixed" ? "cursor-not-allowed opacity-40" : "")
+                }
                 onClick={() => {
-                  if (!selectedSectionId) return;
+                  if (!selectedSectionId || !section) return;
+                  const role = getSectionStructureRole(section);
+                  if (role === "fixed") {
+                    window.alert("固定セクションは削除できません。");
+                    return;
+                  }
+                  if (
+                    role === "required" &&
+                    !window.confirm(
+                      buildRequiredSectionDeleteWarningMessage({
+                        campaignType: core.project.meta.campaignType,
+                        slotLabel: resolveStructureSlotLabel({
+                          slotId: getSectionStructureHint(section)?.slotId,
+                          sectionType: section.type,
+                          blueprintLabel: getSectionStructureHint(section)?.label,
+                        }),
+                      })
+                    )
+                  ) {
+                    return;
+                  }
                   core.deleteSection(selectedSectionId);
                 }}
-                title="削除"
+                title={structureRole === "fixed" ? "固定セクションは削除できません" : "削除"}
+                disabled={structureRole === "fixed"}
               >
                 <Trash2 size={14} />
               </button>
@@ -165,7 +203,7 @@ export default function LayoutInspectorNext() {
         bottom={
           <div className="space-y-2.5">
             <InspectorPrimaryTabs
-              value={scope}
+              value={resolvedScope}
               options={[
                 { key: "page", label: "ページ" },
                 { key: "section", label: "セクション" },
@@ -177,10 +215,19 @@ export default function LayoutInspectorNext() {
                 }
               }}
             />
-            {scope === "section" ? (
+            {resolvedScope === "section" ? (
               <div className="space-y-2">
                 {section ? (
-                  <div className="rounded-md border border-[var(--ui-border)]/70 bg-[var(--surface)] px-2.5 py-2">
+                  <div
+                    className={
+                      "rounded-md border bg-[var(--surface)] px-2.5 py-2 " +
+                      (structureRole === "fixed"
+                        ? "border-[color-mix(in_srgb,var(--ui-accent)_45%,var(--ui-border))]"
+                        : structureRole === "required"
+                        ? "border-[color-mix(in_srgb,var(--ui-warning)_45%,var(--ui-border))]"
+                        : "border-[var(--ui-border)]/70")
+                    }
+                  >
                     <div className="mb-1.5 flex items-center gap-1.5 text-[var(--ui-text)]">
                       <span className="text-[var(--ui-muted)]">
                         {sectionTypeIcon(section.type)}
@@ -192,6 +239,36 @@ export default function LayoutInspectorNext() {
                     <div className="truncate text-[10px] text-[var(--ui-muted)]">
                       Type: <span className="font-mono">{section.type}</span>
                     </div>
+                    {roleUi.label ? (
+                      <div className="mt-1">
+                        <span className={roleUi.chipClassName + " text-[10px]"}>
+                          {structureRole === "fixed" ? <Lock size={10} /> : null}
+                          {structureRole === "required" ? <AlertTriangle size={10} /> : null}
+                          {roleUi.label}
+                        </span>
+                      </div>
+                    ) : null}
+                    {section.aiLayoutSuggestion ? (
+                      <div className="mt-2 rounded-md border border-[var(--ui-border)]/60 bg-[var(--surface-elevated)] px-2 py-2">
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                          AI Layout Suggestion
+                        </div>
+                        <div className="text-[11px] text-[var(--ui-text)]">
+                          {getLayoutModeLabel(section.aiLayoutSuggestion.layoutMode)} / {getBalanceLabel(section.aiLayoutSuggestion.contentBalance)}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <span className="ui-chip px-2 py-0.5 text-[10px]">
+                            CTA {getIntensityLabel(section.aiLayoutSuggestion.ctaEmphasis)}
+                          </span>
+                          <span className="ui-chip px-2 py-0.5 text-[10px]">
+                            余白 {section.aiLayoutSuggestion.spacingScale}
+                          </span>
+                          <span className="ui-chip px-2 py-0.5 text-[10px]">
+                            カード {section.aiLayoutSuggestion.cardStyleHint ?? "auto"}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <InspectorSecondaryTabs
@@ -211,18 +288,50 @@ export default function LayoutInspectorNext() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-2">
-        {scope === "page" ? (
-          <PageGlobalSettingsEditor
-            pageStyle={core.pageStyle}
-            pageBackground={core.project.settings?.backgrounds?.page}
-            onPatchColors={core.setPageColors}
-            onPatchSpacing={core.setPageSpacing}
-            onPatchLayout={core.setPageLayout}
-            onPatchBackground={core.setPageBackground}
-          />
+        {resolvedScope === "page" ? (
+          <>
+            {core.project.layoutSuggestion ? (
+              <div className="mb-3 rounded-md border border-[var(--ui-border)]/70 bg-[var(--surface-elevated)] px-3 py-3">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                  AI Page Suggestion
+                </div>
+                <div className="text-[11px] text-[var(--ui-text)]">
+                  {getPageMoodLabel(core.project.layoutSuggestion.pageMood)} / {core.project.layoutSuggestion.campaignFamily}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {core.project.meta.campaignType ? (
+                    <span className="ui-chip px-2 py-0.5 text-[10px]">
+                      施策 {core.project.meta.campaignType}
+                    </span>
+                  ) : null}
+                  {core.project.meta.structurePresetId ? (
+                    <span className="ui-chip px-2 py-0.5 text-[10px]">
+                      構造 {core.project.meta.structurePresetId}
+                    </span>
+                  ) : null}
+                  <span className="ui-chip px-2 py-0.5 text-[10px]">
+                    余白 {core.project.layoutSuggestion.spacingScale}
+                  </span>
+                  <span className="ui-chip px-2 py-0.5 text-[10px]">
+                    密度 {core.project.layoutSuggestion.visualWeight}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+            <PageGlobalSettingsEditor
+              pageStyle={core.pageStyle}
+              pageBackground={core.project.settings?.backgrounds?.page}
+              currentThemeId={core.project.themeSpec?.themeId}
+              onPatchColors={core.setPageColors}
+              onPatchSpacing={core.setPageSpacing}
+              onPatchLayout={core.setPageLayout}
+              onPatchBackground={core.setPageBackground}
+              onApplyTheme={core.applyProjectTheme}
+            />
+          </>
         ) : null}
 
-        {scope === "section" && tab === "content"
+        {resolvedScope === "section" && tab === "content"
           ? section
             ? (
               <>
@@ -235,7 +344,7 @@ export default function LayoutInspectorNext() {
             : null
           : null}
 
-        {scope === "section" && tab === "style" && section ? (
+        {resolvedScope === "section" && tab === "style" && section ? (
           <>
             <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
               Style
@@ -258,7 +367,7 @@ export default function LayoutInspectorNext() {
           </>
         ) : null}
 
-        {scope === "section" && tab === "decoration" && section ? (
+        {resolvedScope === "section" && tab === "decoration" && section ? (
           <>
             <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
               Decoration
@@ -482,7 +591,7 @@ export default function LayoutInspectorNext() {
           </>
         ) : null}
 
-        {scope === "section" && tab === "extensions" && section ? (
+        {resolvedScope === "section" && tab === "extensions" && section ? (
           supportsSectionExtensions(section.type) ? (
             <>
               <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">

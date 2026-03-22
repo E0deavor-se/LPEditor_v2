@@ -2,6 +2,7 @@ import {
   createEmptyProjectAiAssets,
   normalizeProjectAiAssets,
   type AiAssetBindingRecord,
+  type AiAssetPromptPreset,
   type AiAssetRole,
   type ProjectAiAssets,
 } from "@/src/features/ai-assets/types";
@@ -135,6 +136,29 @@ const dedupeAndValidateBindings = (
   return next;
 };
 
+const promptPresetKey = (sectionId: string, target: string) => `${sectionId}::${target}`;
+
+const dedupeAndValidatePromptPresets = (
+  project: Pick<ProjectState, "sections">,
+  aiAssets: ProjectAiAssets,
+): ProjectAiAssets["promptPresets"] => {
+  const sectionIds = new Set(project.sections.map((section) => section.id));
+  const byKey = new Map<string, AiAssetPromptPreset>();
+
+  for (const preset of aiAssets.promptPresets) {
+    if (!preset.sectionId || !sectionIds.has(preset.sectionId)) {
+      continue;
+    }
+    if (!preset.overlayPosition && !preset.textOverlay && !preset.density) {
+      continue;
+    }
+    const key = promptPresetKey(preset.sectionId, preset.target);
+    byKey.set(key, preset);
+  }
+
+  return Array.from(byKey.values());
+};
+
 export const deriveSectionAiBindingsFromProject = (
   sectionId: string,
   aiAssets: ProjectAiAssets | undefined,
@@ -198,11 +222,13 @@ export const ensureProjectAiAssetsConsistency = (project: ProjectState): Project
     generatedAssets: dedupeGeneratedAssets(migrated.aiAssets),
     jobs: dedupeJobs(migrated.aiAssets),
     bindings: migrated.aiAssets.bindings,
+    promptPresets: migrated.aiAssets.promptPresets,
   };
 
   const finalAiAssets: ProjectAiAssets = {
     ...normalizedAfterMigration,
     bindings: dedupeAndValidateBindings(project, normalizedAfterMigration),
+    promptPresets: dedupeAndValidatePromptPresets(project, normalizedAfterMigration),
   };
 
   const nextSections = project.sections.map((section) => {

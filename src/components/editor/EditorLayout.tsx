@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import CampaignHandoffPanel from "@/src/components/editor/CampaignHandoffPanel";
 import TopBar from "@/src/components/editor/TopBar";
 import TooltipLayer from "@/src/components/editor/TooltipLayer";
 import { getDb } from "@/src/db/db";
@@ -13,7 +12,7 @@ import {
 	TEMPLATE_STORAGE_KEY,
 } from "@/src/lib/templateOptions";
 import { serializeProjectForPersistence } from "@/src/lib/editorProject";
-import { isTemplateDebugEnabled } from "@/src/lib/debugFlags";
+import { isE2ETestModeEnabled, isTemplateDebugEnabled } from "@/src/lib/debugFlags";
 import type { TemplateOption } from "@/src/lib/templateOptions";
 import { getLayoutSections } from "@/src/lib/editorProject";
 
@@ -56,7 +55,9 @@ export default function EditorLayout() {
 	const randomBgAppliedRef = useRef(false);
 	const loadAttemptedRef = useRef(false);
 	const launchContextAppliedRef = useRef(false);
+	const [projectLoadResolved, setProjectLoadResolved] = useState(false);
 	const [launchContext, setLaunchContext] = useState<{ mode?: string; sectionId?: string } | null>(null);
+	const [isE2ETestMode, setIsE2ETestMode] = useState(false);
 	const lastTemplate = useMemo(
 		() =>
 			TEMPLATE_OPTIONS.find((option) => option.id === selectedTemplateId) ?? null,
@@ -85,23 +86,32 @@ export default function EditorLayout() {
 				const db = await getDb();
 				const record = await db.projects.get("project_default");
 				if (!record?.data) {
-					setTemplateChooserOpen(true);
+					if (!isE2ETestMode) {
+						setTemplateChooserOpen(true);
+					}
+					setProjectLoadResolved(true);
 					return;
 				}
 				replaceProject(record.data);
 				setSaveStatus("saved", "保存データを読み込みました");
 				setTemplateChooserOpen(false);
+				setProjectLoadResolved(true);
 			} catch (error) {
 				const message =
 					error instanceof Error
 						? error.message
 						: "保存データの読み込みに失敗しました。";
 				setSaveStatus("error", message);
-				setTemplateChooserOpen(true);
+				if (!isE2ETestMode) {
+					setTemplateChooserOpen(true);
+				} else {
+					setTemplateChooserOpen(false);
+				}
+				setProjectLoadResolved(true);
 			}
 		};
 		void loadProject();
-	}, [replaceProject, setSaveStatus]);
+	}, [isE2ETestMode, replaceProject, setSaveStatus]);
 
 	const handleTemplateSelect = (option: TemplateOption) => {
 		try {
@@ -119,9 +129,8 @@ export default function EditorLayout() {
 				console.log("[TemplateDebug] 4.template definition", option);
 			}
 			const nextProject = createProjectFromTemplate(
-				option.templateType,
-				option.title,
-				option.sectionOrder
+				option.id,
+				option.title
 			);
 			const docs = nextProject.editorDocuments;
 			if (!docs?.layoutDocument) {
@@ -314,6 +323,7 @@ export default function EditorLayout() {
 			return;
 		}
 		const params = new URLSearchParams(window.location.search);
+		setIsE2ETestMode(isE2ETestModeEnabled(window.location.search));
 		setLaunchContext({
 			mode: params.get("mode") ?? undefined,
 			sectionId: params.get("sectionId") ?? undefined,
@@ -322,6 +332,9 @@ export default function EditorLayout() {
 
 	useEffect(() => {
 		if (launchContextAppliedRef.current) {
+			return;
+		}
+		if (!projectLoadResolved) {
 			return;
 		}
 		const requestedMode = launchContext?.mode;
@@ -340,7 +353,7 @@ export default function EditorLayout() {
 			}
 		}
 		launchContextAppliedRef.current = true;
-	}, [editorMode, launchContext, project, setEditorMode, setSelectedSection]);
+	}, [editorMode, launchContext, project, projectLoadResolved, setEditorMode, setSelectedSection]);
 
 	return (
 		<div className="lp-editor flex h-screen flex-col bg-[var(--ui-bg)] text-[var(--ui-text)]">
@@ -382,8 +395,6 @@ export default function EditorLayout() {
 				</button>
 			</div>
 
-			{editorMode === "layout" ? <CampaignHandoffPanel /> : null}
-
 			{editorMode === "layout" ? (
 				<LayoutV2Shell previewIframeRef={previewIframeRef} />
 			) : (
@@ -395,7 +406,7 @@ export default function EditorLayout() {
 				AURBIT - LP Editor / Created By Jhastine.K
 			</footer>
 			<TooltipLayer />
-			{templateChooserOpen ? (
+			{templateChooserOpen && !isE2ETestMode ? (
 				<div className="absolute inset-0 z-50 ui-modal-overlay flex items-center justify-center p-6">
 					<div className="ui-modal w-full max-w-2xl p-6">
 						<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

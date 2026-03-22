@@ -9,6 +9,7 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
+  AlertTriangle,
   Eye,
   EyeOff,
   GripVertical,
@@ -46,6 +47,16 @@ import SharedSidebarShell from "@/src/components/shared/SharedSidebarShell";
 import SharedSidebarHeader from "@/src/components/shared/SharedSidebarHeader";
 import SharedSidebarListRow from "@/src/components/shared/SharedSidebarListRow";
 import type { SectionBase } from "@/src/types/project";
+import type { CampaignStructureSectionRole } from "@/src/structures/campaignStructurePresets";
+import {
+  getSectionStructureHint,
+  getSectionStructureRole,
+} from "@/src/structures/sectionStructure";
+import { getStructureRoleUi } from "@/src/structures/structureRoleUi";
+import {
+  buildRequiredSectionDeleteWarningMessage,
+  resolveStructureSlotLabel,
+} from "@/src/structures/structureWarningMessages";
 import { isTemplateDebugEnabled } from "@/src/lib/debugFlags";
 
 /* ---------- Constants ---------- */
@@ -97,6 +108,7 @@ const typeIcon = (type: string) => {
 
 type SortableSectionRowProps = {
   section: SectionBase;
+  structureRole?: CampaignStructureSectionRole;
   isSelected: boolean;
   isDropTarget: boolean;
   isAnyDragging: boolean;
@@ -110,6 +122,7 @@ type SortableSectionRowProps = {
 
 function SortableSectionRow({
   section,
+  structureRole,
   isSelected,
   isDropTarget,
   isAnyDragging,
@@ -120,8 +133,9 @@ function SortableSectionRow({
   onDelete,
   onRename,
 }: SortableSectionRowProps) {
+  const isFixed = structureRole === "fixed";
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: section.id });
+    useSortable({ id: section.id, disabled: isFixed });
 
   const [isEditing, setIsEditing] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -132,6 +146,7 @@ function SortableSectionRow({
     opacity: isDragging ? 0.5 : undefined,
     zIndex: isDragging ? 2 : undefined,
   };
+  const roleUi = getStructureRoleUi(structureRole);
 
   const label = section.name || SectionTypeLabels[section.type] || section.type;
 
@@ -157,6 +172,7 @@ function SortableSectionRow({
       <SharedSidebarListRow
         isSelected={isSelected}
         showDropIndicator={isDropTarget && !isDragging}
+        className={roleUi.rowClassName}
         onClick={() => onSelect(section.id)}
         onDoubleClick={() => {
           setDraftName(label);
@@ -177,8 +193,18 @@ function SortableSectionRow({
               }}
             />
           ) : (
-            <span className={section.visible === false ? "opacity-40" : ""}>
-              {label}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className={roleUi.dotClassName} aria-hidden="true" />
+              <span className={"truncate " + (section.visible === false ? "opacity-40" : "")}>
+                {label}
+              </span>
+              {roleUi.label ? (
+                <span className={"shrink-0 " + roleUi.chipClassName}>
+                  {structureRole === "fixed" ? <Lock size={10} /> : null}
+                  {structureRole === "required" ? <AlertTriangle size={10} /> : null}
+                  {roleUi.label}
+                </span>
+              ) : null}
             </span>
           )
         }
@@ -188,12 +214,17 @@ function SortableSectionRow({
               type="button"
               className={
                 "h-5 w-5 rounded text-[var(--ui-muted)] hover:text-[var(--ui-text)] " +
-                (isAnyDragging ? "cursor-grabbing" : "cursor-grab")
+                (isFixed
+                  ? "cursor-not-allowed opacity-40"
+                  : isAnyDragging
+                  ? "cursor-grabbing"
+                  : "cursor-grab")
               }
-              title="ドラッグして並び替え"
-              aria-label="ドラッグして並び替え"
+              title={isFixed ? "固定セクションは並び替えできません" : "ドラッグして並び替え"}
+              aria-label={isFixed ? "固定セクションは並び替えできません" : "ドラッグして並び替え"}
               aria-grabbed={isDragging}
-              {...listeners}
+              {...(isFixed ? {} : listeners)}
+              disabled={isFixed}
             >
               <GripVertical size={12} />
             </button>
@@ -223,9 +254,13 @@ function SortableSectionRow({
             </button>
             <button
               type="button"
-              className="h-5 w-5 rounded text-[var(--ui-muted)] hover:text-[var(--ui-text)]"
+              className={
+                "h-5 w-5 rounded text-[var(--ui-muted)] hover:text-[var(--ui-text)] " +
+                (isFixed ? "cursor-not-allowed opacity-40" : "")
+              }
               onClick={(e) => { e.stopPropagation(); onDelete(section.id); }}
-              title="削除"
+              title={isFixed ? "固定セクションは削除できません" : "削除"}
+              disabled={isFixed}
             >
               <Trash2 size={12} />
             </button>
@@ -326,7 +361,12 @@ function AddSectionModal({ open, onClose, onAdd, existingTypes }: AddSectionModa
 /* ==================== Main Component ==================== */
 
 export default function LayoutV2LeftSidebar() {
-  const sections = useEditorStore((s) => getLayoutSections(s.project)) as SectionBase[];
+  const project = useEditorStore((s) => s.project);
+  const sections = useMemo(
+    () => getLayoutSections(project) as SectionBase[],
+    [project],
+  );
+  const campaignType = useEditorStore((s) => s.project.meta.campaignType);
   const selected = useEditorStore((s) => s.selected);
   const selectSection = useEditorStore((s) => s.selectSection);
   const setSelectedSection = useEditorStore((s) => s.setSelectedSection);
@@ -359,6 +399,41 @@ export default function LayoutV2LeftSidebar() {
   const existingTypes = useMemo(
     () => new Set(sections.map((s) => s.type)),
     [sections]
+  );
+  const sectionById = useMemo(
+    () => new Map(sections.map((section) => [section.id, section])),
+    [sections]
+  );
+
+  const handleDeleteSection = useCallback(
+    (id: string) => {
+      const section = sectionById.get(id);
+      if (!section) {
+        return;
+      }
+      const role = getSectionStructureRole(section);
+      if (role === "fixed") {
+        window.alert("固定セクションは削除できません。");
+        return;
+      }
+      if (
+        role === "required" &&
+        !window.confirm(
+          buildRequiredSectionDeleteWarningMessage({
+            campaignType,
+            slotLabel: resolveStructureSlotLabel({
+              slotId: getSectionStructureHint(section)?.slotId,
+              sectionType: section.type,
+              blueprintLabel: getSectionStructureHint(section)?.label,
+            }),
+          })
+        )
+      ) {
+        return;
+      }
+      deleteSection(id);
+    },
+    [campaignType, deleteSection, sectionById]
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -442,6 +517,7 @@ export default function LayoutV2LeftSidebar() {
               <SortableSectionRow
                 key={section.id}
                 section={section}
+                structureRole={getSectionStructureRole(section)}
                 isSelected={selected.kind === "section" && selected.id === section.id}
                 isDropTarget={Boolean(activeDragId) && overDragId === section.id}
                 isAnyDragging={Boolean(activeDragId)}
@@ -449,7 +525,7 @@ export default function LayoutV2LeftSidebar() {
                 onToggleVisibility={toggleSectionVisible}
                 onToggleLock={toggleSectionLocked}
                 onDuplicate={duplicateSection}
-                onDelete={deleteSection}
+                onDelete={handleDeleteSection}
                 onRename={renameSection}
               />
             ))}

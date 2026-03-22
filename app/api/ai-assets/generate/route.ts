@@ -6,6 +6,12 @@ import {
   updateJob,
   upsertSectionAsset,
 } from "@/src/features/ai-assets/server/serverAssetGenerationStore";
+import {
+  classifyFalError,
+  configureFalClient,
+  FalAiProviderError,
+  getFalModelCandidates,
+} from "@/src/features/ai-assets/server/falProvider";
 import type {
   AiAssetGeneratePayload,
   AiGeneratedAsset,
@@ -14,7 +20,8 @@ import type {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_MODEL = process.env.FAL_NANO_BANANA_MODEL ?? "fal-ai/nano-banana-2";
+const { defaultModel: DEFAULT_MODEL, fallbackModels: FALLBACK_MODELS } =
+  getFalModelCandidates();
 const FAL_REQUEST_TIMEOUT_MS = 120000;
 const isDebug = process.env.NODE_ENV !== "production";
 
@@ -77,20 +84,7 @@ const generateImageUrl = async (payload: AiAssetGeneratePayload) => {
   const width = Math.max(256, Math.min(1920, Math.round(payload.width ?? 1365)));
   const height = Math.max(256, Math.min(1920, Math.round(payload.height ?? 768)));
 
-  if (!process.env.FAL_KEY) {
-    const fallback = `https://dummyimage.com/${width}x${height}/e5e7eb/111827&text=${encodeURIComponent(payload.role)}`;
-    return {
-      imageUrl: fallback,
-      model: "fallback-dummyimage",
-      seed: undefined,
-      prompt,
-      negativePrompt,
-      width,
-      height,
-    };
-  }
-
-  fal.config({ credentials: process.env.FAL_KEY });
+  configureFalClient();
 
   const input = {
     prompt,
@@ -102,23 +96,65 @@ const generateImageUrl = async (payload: AiAssetGeneratePayload) => {
     num_images: 1,
   };
 
-  const response = (await withTimeout(
-    fal.subscribe(DEFAULT_MODEL, {
-      input,
-      logs: false,
-    }) as Promise<unknown>,
-    FAL_REQUEST_TIMEOUT_MS,
-    `sectionId=${payload.sectionId},role=${payload.role}`,
-  )) as FalResponse;
+  const modelCandidates = [DEFAULT_MODEL, ...FALLBACK_MODELS];
+  let response: FalResponse | null = null;
+  let usedModel = DEFAULT_MODEL;
+  const errors: Array<{ model: string; message: string }> = [];
+
+  for (const model of modelCandidates) {
+    try {
+      const result = (await withTimeout(
+        fal.subscribe(model, {
+          input,
+          logs: false,
+        }) as Promise<unknown>,
+        FAL_REQUEST_TIMEOUT_MS,
+        `sectionId=${payload.sectionId},role=${payload.role},model=${model}`,
+      )) as FalResponse;
+      response = result;
+      usedModel = model;
+      if (model !== DEFAULT_MODEL) {
+        logDebug("generate:fallback-model-used", {
+          primaryModel: DEFAULT_MODEL,
+          usedModel: model,
+          sectionId: payload.sectionId,
+          role: payload.role,
+        });
+      }
+      break;
+    } catch (error) {
+      const info = classifyFalError(error);
+      if (info.code === "auth_or_permission") {
+        throw new FalAiProviderError(info.code, info.message);
+      }
+      errors.push({ model, message: info.message });
+    }
+  }
+
+  if (!response) {
+    if (errors.length === 0) {
+      throw new FalAiProviderError("unknown", "fal.ai で画像生成に失敗しました。");
+    }
+    const summary = errors
+      .map((entry) => `${entry.model}: ${entry.message}`)
+      .join(" | ");
+    throw new FalAiProviderError(
+      "unknown",
+      `fal.ai の画像生成に失敗しました。${summary}`,
+    );
+  }
 
   const imageUrl = response.data?.images?.[0]?.url;
   if (!imageUrl) {
-    throw new Error("Image provider returned an empty image URL.");
+    throw new FalAiProviderError(
+      "invalid_response",
+      "fal.ai のレスポンスに画像URLが含まれていませんでした。",
+    );
   }
 
   return {
     imageUrl,
-    model: DEFAULT_MODEL,
+    model: usedModel,
     seed: typeof response.data?.seed === "number" ? response.data.seed : undefined,
     prompt,
     negativePrompt,
@@ -140,6 +176,7 @@ export async function POST(request: NextRequest) {
       sectionType: body.sectionType,
       role: body.role,
       prompt: body.prompt,
+      sourceAssetId: body.sourceAssetId,
       negativePrompt: body.negativePrompt,
       width: body.width,
       height: body.height,
@@ -184,6 +221,8 @@ export async function POST(request: NextRequest) {
             provider: result.model.includes("fallback") ? "fallback" : "fal-ai",
             model: result.model,
             prompt: result.prompt,
+            inputPrompt: payload.prompt,
+            derivedFromAssetId: payload.sourceAssetId,
             negativePrompt: result.negativePrompt,
             seed: result.seed,
             width: result.width,
@@ -211,23 +250,43 @@ export async function POST(request: NextRequest) {
           assetId,
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "generation failed";
+        const providerError =
+          error instanceof FalAiProviderError
+            ? error
+            : new FalAiProviderError(
+                "unknown",
+                error instanceof Error ? error.message : "generation failed",
+              );
         updateJob(jobId, {
           status: "failed",
           progress: 100,
-          message,
-          error: message,
+          message: providerError.message,
+          error: providerError.message,
+          errorCode: providerError.code,
         });
         console.error("[ai-assets:generate-route] generation failed", {
           jobId,
-          message,
+          code: providerError.code,
+          message: providerError.message,
         });
       }
     })();
 
     return NextResponse.json({ jobId });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to start generation.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const providerError =
+      error instanceof FalAiProviderError
+        ? error
+        : new FalAiProviderError(
+            "unknown",
+            error instanceof Error ? error.message : "Failed to start generation.",
+          );
+    return NextResponse.json(
+      {
+        code: providerError.code,
+        error: providerError.message,
+      },
+      { status: 500 },
+    );
   }
 }

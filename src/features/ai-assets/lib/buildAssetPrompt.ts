@@ -161,7 +161,9 @@ const TARGET_RULES: Record<BuildAssetPromptInput["target"], string[]> = {
     "friendly and clear Japanese promotional LP explanatory style",
   ],
   sectionIcon: [
-    "icon-like simple visual clarity",
+    "isolated decorative asset suitable for compositing on LP canvas",
+    "clean silhouette and edge clarity with no scene background",
+    "badge, ribbon, icon, or accent-part friendly composition",
   ],
   bannerImage: [
     "horizontal promotion banner readability",
@@ -231,6 +233,9 @@ const inferDensityByTarget = (
     }
     return "medium";
   }
+  if (target === "sectionIcon") {
+    return "low";
+  }
   return "medium";
 };
 
@@ -299,12 +304,47 @@ const buildTargetParts = (
     }
   }
 
+  if (target === "sectionIcon") {
+    const keywordText = (input.section?.keywords ?? []).join(" ").toLowerCase();
+    parts.push(
+      "avoid photographic full-scene composition and focus on one decorative element",
+      "avoid readable embedded text, numbers, and logos inside the decoration",
+      "keep the result usable as an overlaid decoration on a Japanese LP canvas",
+    );
+
+    if (/badge|seal|sticker|バッジ|シール|特典|還元/.test(keywordText)) {
+      parts.push(
+        "design as a compact promotional badge or sticker accent",
+        "prefer strong contrast and a self-contained silhouette",
+      );
+    }
+    if (/ribbon|banner|リボン|帯/.test(keywordText)) {
+      parts.push(
+        "design as a ribbon or banner-like accent suited for heading-side placement",
+        "prefer elongated horizontal form with decorative folds or tails",
+      );
+    }
+    if (/icon|check|coin|crown|ticket|spark|アイコン|チェック|コイン|王冠|クーポン|きらめき/.test(keywordText)) {
+      parts.push("design as an icon-like motif with simple recognizability at small size");
+    }
+    if (/shape|blob|wave|circle|highlight|波|円|ブロブ|ハイライト/.test(keywordText)) {
+      parts.push("design as an abstract accent shape with low visual noise and clean edges");
+    }
+    if (sectionType === "hero") {
+      parts.push("allow stronger campaign energy suitable for hero support decoration");
+    }
+    if (sectionType === "cta" || sectionType === "cv") {
+      parts.push("support conversion emphasis without stealing attention from CTA copy");
+    }
+  }
+
   return {
     parts,
     rules: [
       `target:${target}`,
       ...(target === "sectionBackground" ? [`target-bg:${sectionType}`] : []),
       ...(target === "sectionImage" ? [`target-image:${sectionType}`] : []),
+      ...(target === "sectionIcon" ? [`target-icon:${sectionType}`] : []),
     ],
   };
 };
@@ -428,6 +468,16 @@ const buildLayoutParts = (
     }
     if (density === "high") {
       parts.push("keep added detail moderate and avoid overpowering section copy");
+    }
+  }
+
+  if (input.target === "sectionIcon") {
+    parts.push(
+      "keep the decorative asset compact, isolated, and easy to place on top of existing layout",
+      "prefer clear outer shape and avoid unnecessary background canvas",
+    );
+    if (density === "high") {
+      parts.push("do not overcomplicate the decoration; preserve quick readability at small size");
     }
   }
 

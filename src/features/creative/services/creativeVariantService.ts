@@ -3,6 +3,7 @@ import {
   buildVariantStrategies,
   getStrategyVariantLayouts,
 } from "@/src/features/creative/services/creativeGenerationService";
+import { buildCreativeGenerationErrorMessage } from "@/src/lib/userMessageCatalog";
 import type { CreativeInputValues } from "@/src/features/creative/types/document";
 import type { CreativeVariant } from "@/src/features/creative/types/variant";
 
@@ -87,7 +88,7 @@ export const regenerateVariant = async (
   });
 
   if (!response.ok) {
-    let message = `Failed to regenerate variant (status: ${response.status}).`;
+    let message = buildCreativeGenerationErrorMessage("regenerate");
     try {
       const payload = (await response.json()) as { error?: string };
       if (typeof payload.error === "string" && payload.error.trim().length > 0) {
@@ -101,7 +102,7 @@ export const regenerateVariant = async (
 
   const payload = (await response.json()) as { variant?: CreativeVariant };
   if (!payload.variant) {
-    throw new Error("Regeneration response did not include variant data.");
+    throw new Error(buildCreativeGenerationErrorMessage("variant-missing"));
   }
   return payload.variant;
 };

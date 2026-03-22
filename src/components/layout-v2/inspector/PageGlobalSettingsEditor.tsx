@@ -8,14 +8,17 @@ import {
   PAGE_BACKGROUND_TEMPLATES,
   getPageBackgroundTemplateById,
 } from "@/src/lib/pageBackgroundTemplates";
+import { BUILDER_THEME_PRESETS } from "@/src/themes/themePresets";
 
 type PageGlobalSettingsEditorProps = {
   pageStyle?: PageBaseStyle;
   pageBackground?: BackgroundSpec;
+  currentThemeId?: string;
   onPatchColors: (patch: Partial<PageBaseStyle["colors"]>) => void;
   onPatchSpacing: (patch: Partial<PageBaseStyle["spacing"]>) => void;
   onPatchLayout: (patch: Partial<PageBaseStyle["layout"]>) => void;
   onPatchBackground: (spec: BackgroundSpec) => void;
+  onApplyTheme: (themeId: string) => void;
 };
 
 const CONTAINER_WIDTH_PRESETS = [
@@ -58,10 +61,12 @@ const asNumber = (value: unknown, fallback: number) =>
 export default function PageGlobalSettingsEditor({
   pageStyle,
   pageBackground,
+  currentThemeId,
   onPatchColors,
   onPatchSpacing,
   onPatchLayout,
   onPatchBackground,
+  onApplyTheme,
 }: PageGlobalSettingsEditorProps) {
   const colors = pageStyle?.colors ?? defaultPageStyle.colors;
   const spacing = pageStyle?.spacing ?? defaultPageStyle.spacing;
@@ -74,6 +79,19 @@ export default function PageGlobalSettingsEditor({
   return (
     <div className="border-t border-[var(--ui-border)]/60">
       <InspectorSection title="ページベース">
+        <InspectorField label="Theme">
+          <select
+            className="ui-input h-7 w-full text-[11px]"
+            value={currentThemeId ?? "orangeCampaign"}
+            onChange={(event) => onApplyTheme(event.target.value)}
+          >
+            {BUILDER_THEME_PRESETS.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.label}
+              </option>
+            ))}
+          </select>
+        </InspectorField>
         <InspectorField label="ページ背景色">
           <InspectorInput
             type="color"

@@ -13,6 +13,9 @@ import { createDefaultCanvasDocument } from "@/src/types/canvas";
 import { applyTemplateHydrator } from "@/src/lib/sections/sectionArchitecture/TemplateHydrator";
 import { normalizeProjectAiAssets } from "@/src/features/ai-assets/types";
 import { ensureProjectAiAssetsConsistency } from "@/src/features/ai-assets/lib/projectAiAssets";
+import { DEFAULT_BUILDER_THEME_ID } from "@/src/themes/themePresets";
+import { normalizeProjectDocuments } from "@/src/lib/editorProject";
+import { deriveCampaignTypeFromTemplateId } from "@/src/structures/campaignStructurePresets";
 
 const DEFAULT_TARGET_STORES_CONFIG = {
   labelKeys: [],
@@ -614,6 +617,24 @@ export const validateAndNormalizeProject = (raw: unknown): ProjectState => {
   const meta = {
     projectName: str(data.meta.projectName || "キャンペーンLP"),
     templateType: (data.meta.templateType ?? "coupon") as ProjectState["meta"]["templateType"],
+    campaignType:
+      data.meta.campaignType === "coupon" ||
+      data.meta.campaignType === "pointReward" ||
+      data.meta.campaignType === "ranking" ||
+      data.meta.campaignType === "generic"
+        ? data.meta.campaignType
+        : deriveCampaignTypeFromTemplateId(
+            typeof data.meta.templateId === "string" ? data.meta.templateId : undefined
+          ),
+    structurePresetId:
+      typeof data.meta.structurePresetId === "string" &&
+      data.meta.structurePresetId.trim().length > 0
+        ? data.meta.structurePresetId
+        : undefined,
+    templateId:
+      typeof data.meta.templateId === "string" && data.meta.templateId.trim().length > 0
+        ? data.meta.templateId
+        : "campaign",
     version: str(data.meta.version || "1.0"),
     createdAt: str(data.meta.createdAt || now),
     updatedAt: str(data.meta.updatedAt || now),
@@ -646,10 +667,29 @@ export const validateAndNormalizeProject = (raw: unknown): ProjectState => {
     data.storeListSpec && typeof data.storeListSpec === "object"
       ? (data.storeListSpec as ProjectState["storeListSpec"])
       : undefined;
-  const themeSpec =
+  const themeSpec: ProjectState["themeSpec"] =
     data.themeSpec && typeof data.themeSpec === "object"
-      ? (data.themeSpec as ProjectState["themeSpec"])
-      : undefined;
+      ? {
+          mode:
+            (data.themeSpec as ProjectState["themeSpec"])?.mode ?? "light",
+          accent:
+            (data.themeSpec as ProjectState["themeSpec"])?.accent ?? "aupay-orange",
+          ...(data.themeSpec as ProjectState["themeSpec"]),
+          themeId:
+            typeof (data.themeSpec as ProjectState["themeSpec"])?.themeId === "string"
+              ? (data.themeSpec as ProjectState["themeSpec"])?.themeId
+              : DEFAULT_BUILDER_THEME_ID,
+          templateId:
+            typeof (data.themeSpec as ProjectState["themeSpec"])?.templateId === "string"
+              ? (data.themeSpec as ProjectState["themeSpec"])?.templateId
+              : meta.templateId,
+        }
+      : {
+          mode: "light",
+          accent: "aupay-orange",
+          themeId: DEFAULT_BUILDER_THEME_ID,
+          templateId: meta.templateId,
+        };
   const animationRegistry = Array.isArray(data.animationRegistry)
     ? (data.animationRegistry as ProjectState["animationRegistry"])
     : undefined;
@@ -724,7 +764,9 @@ export const validateAndNormalizeProject = (raw: unknown): ProjectState => {
     canvasPages: legacyCanvasPages,
   };
 
-  return ensureProjectAiAssetsConsistency(normalizedProject);
+  return normalizeProjectDocuments(
+    ensureProjectAiAssetsConsistency(normalizedProject)
+  );
 };
 
 export const downloadProjectJson = (project: ProjectState) => {

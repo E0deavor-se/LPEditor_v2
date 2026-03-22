@@ -41,7 +41,8 @@ const LayoutInspectorNext = dynamic(
 
 export default function LayoutV2Inspector() {
   const selected = useEditorStore((s) => s.selected);
-  const sections = useEditorStore((s) => getLayoutSections(s.project));
+  const project = useEditorStore((s) => s.project);
+  const sections = useMemo(() => getLayoutSections(project), [project]);
 
   const selectedSectionType = useMemo(() => {
     if (selected.kind !== "section") {

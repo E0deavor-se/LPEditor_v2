@@ -105,6 +105,14 @@ export default function CampaignOverviewEditor({
     typeof data.bodyWidthPct === "number" && Number.isFinite(data.bodyWidthPct)
       ? data.bodyWidthPct
       : 100;
+  const bodyTextSizePx =
+    typeof data.bodyTextSizePx === "number" && Number.isFinite(data.bodyTextSizePx)
+      ? data.bodyTextSizePx
+      : 14;
+  const noticeTextSizePx =
+    typeof data.noticeTextSizePx === "number" && Number.isFinite(data.noticeTextSizePx)
+      ? data.noticeTextSizePx
+      : 13;
 
   const patchAll = (next: {
     heading?: string;
@@ -218,16 +226,28 @@ export default function CampaignOverviewEditor({
             disabled={disabled}
           />
         </InspectorField>
-        <InspectorField label="注意文言">
-          <InspectorTextarea
-            rows={2}
-            autoGrow
-            className="min-h-[44px] resize-none text-[12px]"
-            value={noticeText}
-            onChange={(event) => patchAll({ noticeText: event.target.value })}
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[11px] text-[var(--ui-muted)]">注意文言</span>
+          <button
+            type="button"
+            className="ui-button h-6 px-2 text-[10px]"
+            onClick={() => {
+              const next = noticeText.trim().length > 0 ? `${noticeText}\n` : "";
+              patchAll({ noticeText: next, noticeEnabled: true });
+            }}
             disabled={disabled}
-          />
-        </InspectorField>
+          >
+            + 注意文言追加
+          </button>
+        </div>
+        <InspectorTextarea
+          rows={2}
+          autoGrow
+          className="min-h-[44px] resize-none text-[12px]"
+          value={noticeText}
+          onChange={(event) => patchAll({ noticeText: event.target.value })}
+          disabled={disabled}
+        />
       </Inspector2Block>
 
       <Inspector2Block block="display">
@@ -264,6 +284,24 @@ export default function CampaignOverviewEditor({
 
       <Inspector2Block block="design">
         <label className="flex items-center justify-between text-[11px]">
+          <span className="text-[var(--ui-muted)]">本文文字色</span>
+          <InspectorInput
+            type="color"
+            value={String(data.bodyTextColor ?? "#111827")}
+            onChange={(event) => onPatchData({ bodyTextColor: event.target.value })}
+            disabled={disabled}
+          />
+        </label>
+        <label className="flex items-center justify-between text-[11px]">
+          <span className="text-[var(--ui-muted)]">注意文字色</span>
+          <InspectorInput
+            type="color"
+            value={String(data.noticeTextColor ?? "#92400e")}
+            onChange={(event) => onPatchData({ noticeTextColor: event.target.value })}
+            disabled={disabled}
+          />
+        </label>
+        <label className="flex items-center justify-between text-[11px]">
           <span className="text-[var(--ui-muted)]">背景色</span>
           <InspectorInput
             type="color"
@@ -284,6 +322,34 @@ export default function CampaignOverviewEditor({
       </Inspector2Block>
 
       <Inspector2Block block="details" summary="高度設定">
+        <InspectorField label="本文文字サイズ(px)">
+          <InspectorInput
+            type="number"
+            min={10}
+            max={28}
+            step={1}
+            value={String(Math.max(10, Math.min(28, bodyTextSizePx)))}
+            onChange={(event) => {
+              const next = Number(event.target.value || 14);
+              onPatchData({ bodyTextSizePx: Math.max(10, Math.min(28, next)) });
+            }}
+            disabled={disabled}
+          />
+        </InspectorField>
+        <InspectorField label="注意文字サイズ(px)">
+          <InspectorInput
+            type="number"
+            min={10}
+            max={24}
+            step={1}
+            value={String(Math.max(10, Math.min(24, noticeTextSizePx)))}
+            onChange={(event) => {
+              const next = Number(event.target.value || 13);
+              onPatchData({ noticeTextSizePx: Math.max(10, Math.min(24, next)) });
+            }}
+            disabled={disabled}
+          />
+        </InspectorField>
         <InspectorField label="余白(px)">
           <InspectorInput
             type="number"

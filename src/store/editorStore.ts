@@ -47,6 +47,16 @@ import {
   createEmptyProjectAiAssets,
   type ProjectAiAssets,
 } from "@/src/features/ai-assets/types";
+import { applyThemeToProject } from "@/src/lib/theme/applyTheme";
+import {
+  BUILDER_TEMPLATE_PRESETS,
+  getBuilderTemplatePreset,
+} from "@/src/templates/templatePresets";
+import {
+  deriveCampaignTypeFromTemplateId,
+  resolveCampaignStructurePreset,
+} from "@/src/structures/campaignStructurePresets";
+import { getSectionStructureRole } from "@/src/structures/sectionStructure";
 
 export type EditorSaveStatus = "saved" | "dirty" | "saving" | "error" | "offline";
 
@@ -1904,6 +1914,7 @@ export type EditorUIState = {
   setPageColors: (patch: Partial<PageBaseStyle["colors"]>) => void;
   setPageSpacing: (patch: Partial<PageBaseStyle["spacing"]>) => void;
   setPageLayout: (patch: Partial<PageBaseStyle["layout"]>) => void;
+  applyProjectTheme: (themeId: string) => void;
   setPageSectionAnimation: (
     patch: Partial<PageBaseStyle["sectionAnimation"]>
   ) => void;
@@ -2153,7 +2164,12 @@ const createDefaultProjectState = (): ProjectState => {
       sortState: {},
       uiState: { pageSize: 10, collapsed: false },
     },
-    themeSpec: { mode: "light", accent: "aupay-orange" },
+    themeSpec: {
+      mode: "light",
+      accent: "aupay-orange",
+      themeId: "orangeCampaign",
+      templateId: "campaign",
+    },
     animationRegistry: [],
   };
 
@@ -2161,6 +2177,9 @@ const createDefaultProjectState = (): ProjectState => {
     meta: {
       projectName: "キャンペーンLP",
       templateType: "coupon",
+      campaignType: "coupon",
+      structurePresetId: "coupon-v1",
+      templateId: "campaign",
       version: "1.0",
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -2169,6 +2188,12 @@ const createDefaultProjectState = (): ProjectState => {
     sections,
     pageBaseStyle,
     aiAssets: createEmptyProjectAiAssets(),
+    themeSpec: {
+      mode: "light",
+      accent: "aupay-orange",
+      themeId: "orangeCampaign",
+      templateId: "campaign",
+    },
     editorDocuments: {
       mode: "layout",
       activeDevice: "pc",
@@ -2179,15 +2204,25 @@ const createDefaultProjectState = (): ProjectState => {
 };
 
 export const createProjectFromTemplate = (
-  templateType: ProjectState["meta"]["templateType"],
-  projectName: string,
-  sectionOrder?: string[]
+  templateId: string,
+  projectName?: string,
 ): ProjectState => {
+  const template =
+    getBuilderTemplatePreset(templateId) ?? BUILDER_TEMPLATE_PRESETS[0];
+  const structurePreset = resolveCampaignStructurePreset({
+    campaignType:
+      template.campaignType ?? deriveCampaignTypeFromTemplateId(template.id),
+    structurePresetId: template.structurePresetId,
+    templateId: template.id,
+  });
   const base = createDefaultProjectState();
   const nowIso = new Date().toISOString();
-  const nextOrder = Array.isArray(sectionOrder)
-    ? sectionOrder.filter((type) => typeof type === "string" && type.length > 0)
-    : [];
+  const nextOrder =
+    structurePreset.sectionOrder.length > 0
+      ? structurePreset.sectionOrder
+      : template.sectionOrder.filter(
+          (type) => typeof type === "string" && type.length > 0
+        );
   const orderedSections = (() => {
     if (nextOrder.length === 0) {
       return base.sections;
@@ -2205,7 +2240,25 @@ export const createProjectFromTemplate = (
       }
       ordered.push(createSection(type));
     });
-    return ordered;
+    return ordered.map((section, index) => {
+      const blueprint = structurePreset.sections[index];
+      if (!blueprint) {
+        return section;
+      }
+      return {
+        ...section,
+        data: {
+          ...(section.data ?? {}),
+          __structure: {
+            slotId: blueprint.slotId,
+            role: blueprint.role,
+            label: blueprint.label,
+            presetId: structurePreset.id,
+            campaignType: structurePreset.campaignType,
+          },
+        },
+      };
+    });
   })();
 
   const currentEditorDocuments = base.editorDocuments ?? {
@@ -2220,24 +2273,52 @@ export const createProjectFromTemplate = (
     settings: base.settings,
     sections: orderedSections,
     pageBaseStyle: base.pageBaseStyle,
+    themeSpec: {
+      mode:
+        currentEditorDocuments.layoutDocument?.themeSpec?.mode ??
+        base.themeSpec?.mode ??
+        "light",
+      accent:
+        currentEditorDocuments.layoutDocument?.themeSpec?.accent ??
+        base.themeSpec?.accent ??
+        "aupay-orange",
+      themeId:
+        currentEditorDocuments.layoutDocument?.themeSpec?.themeId ??
+        base.themeSpec?.themeId,
+      templateId: template.id,
+    },
   };
 
-  return {
+  const themedProject = applyThemeToProject(
+    {
     ...base,
     meta: {
       ...base.meta,
-      templateType,
-      projectName,
+      templateType: template.templateType,
+      campaignType: structurePreset.campaignType,
+      structurePresetId: structurePreset.id,
+      templateId: template.id,
+      projectName: projectName || template.title,
       createdAt: nowIso,
       updatedAt: nowIso,
     },
     sections: orderedSections,
+    themeSpec: {
+      mode: base.themeSpec?.mode ?? "light",
+      accent: base.themeSpec?.accent ?? "aupay-orange",
+      ...base.themeSpec,
+      templateId: template.id,
+    },
     editorDocuments: {
       ...currentEditorDocuments,
       mode: "layout",
       layoutDocument: nextLayoutDocument,
     },
-  };
+    },
+    template.defaultThemeId,
+  );
+
+  return themedProject;
 };
 
 const createSection = (type: string): SectionBase => {
@@ -5421,7 +5502,14 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       }
 
       const moving = sections[activeIndex];
+      const overSection = sections[overIndex];
       if (!moving) {
+        return state;
+      }
+      const movingRole = getSectionStructureRole(moving);
+      const overRole = getSectionStructureRole(overSection);
+      // Keep fixed slots stable to avoid breaking structure semantics.
+      if (movingRole === "fixed" || overRole === "fixed") {
         return state;
       }
 
@@ -5671,6 +5759,9 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       if (!target || target.locked) {
         return state;
       }
+      if (getSectionStructureRole(target) === "fixed") {
+        return state;
+      }
 
       const nextSections = sections.filter(
         (section) => section.id !== sectionId
@@ -5736,8 +5827,14 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
       if (!target || target.locked) {
         return state;
       }
+      if (getSectionStructureRole(target) === "fixed") {
+        return state;
+      }
       const nextIndex = direction === "up" ? index - 1 : index + 1;
       if (nextIndex < 0 || nextIndex >= sections.length) {
+        return state;
+      }
+      if (getSectionStructureRole(sections[nextIndex]) === "fixed") {
         return state;
       }
       const nextSections = arrayMove(sections, index, nextIndex);
@@ -5957,6 +6054,51 @@ export const useEditorStore = create<EditorUIState>((set, get) => ({
           pageBaseStyle: nextStyle,
         },
         getCanonicalLayoutSections(state.project)
+      );
+
+      if (projectsEqual(state.project, nextProject)) {
+        return state;
+      }
+
+      const nextUndoStack = pushStack(
+        state.undoStack,
+        cloneProject(state.project)
+      );
+
+      return {
+        ...state,
+        project: nextProject,
+        undoStack: nextUndoStack,
+        redoStack: [],
+        canUndo: nextUndoStack.length > 0,
+        canRedo: false,
+        saveStatus: "dirty",
+        saveStatusMessage: undefined,
+        hasUserEdits: true,
+      };
+    }),
+  applyProjectTheme: (themeId) =>
+    set((state) => {
+      const nextProject = applyThemeToProject(
+        withLayoutSections(
+          {
+            ...state.project,
+            meta: {
+              ...state.project.meta,
+              updatedAt: new Date().toISOString(),
+            },
+            themeSpec: {
+              mode: state.project.themeSpec?.mode ?? "light",
+              accent: state.project.themeSpec?.accent ?? "aupay-orange",
+              ...state.project.themeSpec,
+              themeId,
+              templateId:
+                state.project.themeSpec?.templateId ?? state.project.meta.templateId,
+            },
+          },
+          getCanonicalLayoutSections(state.project)
+        ),
+        themeId,
       );
 
       if (projectsEqual(state.project, nextProject)) {

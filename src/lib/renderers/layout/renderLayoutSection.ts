@@ -867,6 +867,18 @@ const renderCampaignOverview = (section: SectionBase) => {
       ? data.noticePaddingPx
       : 14;
   const noticePadding = Math.max(8, Math.min(32, noticePaddingRaw));
+  const bodyTextSizeRaw =
+    typeof data.bodyTextSizePx === "number" && Number.isFinite(data.bodyTextSizePx)
+      ? data.bodyTextSizePx
+      : 14;
+  const bodyTextSize = Math.max(10, Math.min(28, bodyTextSizeRaw));
+  const bodyTextColor = esc(str(data.bodyTextColor || "#111827"));
+  const noticeTextSizeRaw =
+    typeof data.noticeTextSizePx === "number" && Number.isFinite(data.noticeTextSizePx)
+      ? data.noticeTextSizePx
+      : 13;
+  const noticeTextSize = Math.max(10, Math.min(24, noticeTextSizeRaw));
+  const noticeTextColor = esc(str(data.noticeTextColor || "#92400e"));
 
   const contentItems = Array.isArray(section.content?.items) ? section.content.items : [];
   const textItems = contentItems.filter((item) => item.type === "text");
@@ -894,10 +906,16 @@ const renderCampaignOverview = (section: SectionBase) => {
       : [];
 
   const bodyHtml = bodyLines
-    .map((line) => `<p style="margin:0;text-align:center;font-size:14px;line-height:1.8;font-weight:700;color:#111827;">${renderRichInline(line, true)}</p>`)
+    .map(
+      (line) =>
+        `<p style="margin:0;text-align:center;font-size:${bodyTextSize}px;line-height:1.8;font-weight:700;color:${bodyTextColor};">${renderRichInline(line, true)}</p>`
+    )
     .join("");
   const noticeHtml = noticeLines
-    .map((line) => `<p style="margin:0;font-size:13px;line-height:1.75;color:#92400e;">${renderRichInline(line, true)}</p>`)
+    .map(
+      (line) =>
+        `<p style="margin:0;font-size:${noticeTextSize}px;line-height:1.75;color:${noticeTextColor};">${renderRichInline(line, true)}</p>`
+    )
     .join("");
   const optionalBlocksHtml = renderSectionOptionalBlocks(section);
   const band = resolveUnifiedBandStyles(appearance);
@@ -1424,6 +1442,12 @@ const renderLegalNotes = (section: SectionBase) => {
       ? section.data.notePaddingPx
       : 24;
   const notePadding = Math.max(8, Math.min(40, notePaddingRaw));
+  const noteTextSizeRaw =
+    typeof section.data?.noteTextSizePx === "number" && Number.isFinite(section.data.noteTextSizePx)
+      ? section.data.noteTextSizePx
+      : 14;
+  const noteTextSize = Math.max(10, Math.min(24, noteTextSizeRaw));
+  const noteTextColor = esc(str(section.data?.noteTextColor || "#111827"));
   const rawItems = Array.isArray(section.data?.items) ? section.data.items : [];
 
   const legalTextItem = Array.isArray(section.content?.items)
@@ -1466,7 +1490,7 @@ const renderLegalNotes = (section: SectionBase) => {
   const isNoBulletItem = (value: string) => value.trim().startsWith("※");
 
   const contentHtml = bulletEnabled
-    ? `<div style=\"display:flex;flex-direction:column;gap:8px;margin:0;font-size:14px;line-height:1.8;color:#111827;\">${items
+    ? `<div style=\"display:flex;flex-direction:column;gap:8px;margin:0;font-size:${noteTextSize}px;line-height:1.8;color:${noteTextColor};\">${items
         .map((item) => {
           if (item.bullet === "none" || isNoBulletItem(item.text)) {
             return `<p style=\"margin:0;\">${renderNoteText(item.text)}</p>`;
@@ -1476,7 +1500,7 @@ const renderLegalNotes = (section: SectionBase) => {
           )}</span></li></ul>`;
         })
         .join("")}</div>`
-    : `<div style=\"display:flex;flex-direction:column;gap:8px;margin:0;font-size:14px;line-height:1.8;color:#111827;\">${items
+    : `<div style=\"display:flex;flex-direction:column;gap:8px;margin:0;font-size:${noteTextSize}px;line-height:1.8;color:${noteTextColor};\">${items
         .map((item) => `<p style=\"margin:0;\">${renderNoteText(item.text)}</p>`)
         .join("")}</div>`;
   const optionalBlocksHtml = renderSectionOptionalBlocks(section);

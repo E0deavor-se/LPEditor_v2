@@ -23,6 +23,8 @@ export type CreativeInputValues = {
   preferredStrategies?: CreativeStrategyPreference[];
   brandPrimaryColor: string;
   brandSecondaryColor: string;
+  templateId?: string;
+  themeId?: string;
 };
 
 export type CreativeDocument = {
@@ -45,4 +47,6 @@ export const DEFAULT_CREATIVE_INPUT: CreativeInputValues = {
   preferredStrategies: [],
   brandPrimaryColor: "#eb5505",
   brandSecondaryColor: "#1e3a8a",
+  templateId: "campaign",
+  themeId: "orangeCampaign",
 };

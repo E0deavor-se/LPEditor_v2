@@ -178,7 +178,8 @@ export type CanvasSelection = {
 
 export type CanvasSectionPatch = {
   name?: string;
-  background?: string;
+  /** 単色文字列 (legacy) または CanvasBackground オブジェクト（AI 生成背景画像等） */
+  background?: string | CanvasBackground;
   paddingTop?: number;
   paddingBottom?: number;
   gap?: number;
@@ -208,6 +209,10 @@ export type CanvasEditorState = {
 
   /* ----- Dirty flag ----- */
   dirty: boolean;
+
+  /* ----- History batching ----- */
+  historyBatchDepth: number;
+  historyBatchBaseDoc?: CanvasDocument;
 };
 
 export type CanvasEditorActions = {
@@ -225,6 +230,13 @@ export type CanvasEditorActions = {
 
   /* Selection */
   select: (ids: string[], primaryId?: string) => void;
+  selectAiBatch: (batchId: string, primaryId?: string) => void;
+  getLayersByAiBatch: (batchId: string) => CanvasLayer[];
+  isAiBatchSelected: (batchId: string) => boolean;
+  removeAiBatch: (batchId: string) => void;
+  beginHistoryBatch: () => void;
+  endHistoryBatch: () => void;
+  withHistoryBatch: <T>(fn: () => Promise<T> | T) => Promise<T>;
   clearSelection: () => void;
   selectSection: (sectionId?: string) => void;
   setCanvasMode: (mode: "free" | "sections") => void;
@@ -313,6 +325,14 @@ const commit = (
 ): Partial<CanvasEditorState> => {
   const normalizedDoc = normalizeDocModel(nextDoc);
   const normalizedSelection = sanitizeSelectionForDoc(normalizedDoc, state.selection);
+  if (state.historyBatchDepth > 0) {
+    return {
+      document: normalizedDoc,
+      selection: normalizedSelection,
+      selectedSectionId: sanitizeSelectedSectionIdForDoc(normalizedDoc, state.selectedSectionId),
+      dirty: true,
+    };
+  }
   const past = [...state.past, cloneDoc(state.document)];
   if (past.length > MAX_HISTORY) past.splice(0, past.length - MAX_HISTORY);
   return {
@@ -346,6 +366,8 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
   canUndo: false,
   canRedo: false,
   dirty: false,
+  historyBatchDepth: 0,
+  historyBatchBaseDoc: undefined,
 
   /* ===== Document ===== */
   setDocument: (doc) => {
@@ -357,6 +379,8 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       canUndo: false,
       canRedo: false,
       dirty: false,
+      historyBatchDepth: 0,
+      historyBatchBaseDoc: undefined,
       selection: { ids: [] },
       selectedSectionId: normalized.sections?.sections?.[0]?.id,
     });
@@ -371,6 +395,8 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       canUndo: false,
       canRedo: false,
       dirty: false,
+      historyBatchDepth: 0,
+      historyBatchBaseDoc: undefined,
       selection: { ids: [] },
       selectedSectionId: undefined,
     });
@@ -403,6 +429,91 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
       const nextIds = Array.from(expanded);
       return { selection: { ids: nextIds, primaryId: primaryId ?? nextIds[0] } };
     }),
+  selectAiBatch: (batchId, primaryId) =>
+    set((state) => {
+      const editable = getEditableLayers(state.document);
+      const batchLayers = editable.filter((layer) => layer.aiBatchId === batchId);
+      const nextIds = batchLayers.map((layer) => layer.id);
+      if (nextIds.length === 0) return {};
+      const nextPrimaryId =
+        primaryId && nextIds.includes(primaryId)
+          ? primaryId
+          : nextIds[0];
+      return { selection: { ids: nextIds, primaryId: nextPrimaryId } };
+    }),
+  getLayersByAiBatch: (batchId) => {
+    const editable = getEditableLayers(get().document);
+    return editable.filter((layer) => layer.aiBatchId === batchId);
+  },
+  isAiBatchSelected: (batchId) => {
+    const state = get();
+    const editable = getEditableLayers(state.document);
+    const batchIds = editable
+      .filter((layer) => layer.aiBatchId === batchId)
+      .map((layer) => layer.id);
+    if (batchIds.length === 0) return false;
+    const selected = new Set(state.selection.ids);
+    return batchIds.every((id) => selected.has(id));
+  },
+  removeAiBatch: (batchId) => {
+    const layers = get().getLayersByAiBatch(batchId);
+    if (layers.length === 0) return;
+    get().removeLayers(layers.map((layer) => layer.id));
+  },
+  beginHistoryBatch: () =>
+    set((state) => {
+      if (state.historyBatchDepth > 0) {
+        return { historyBatchDepth: state.historyBatchDepth + 1 };
+      }
+      return {
+        historyBatchDepth: 1,
+        historyBatchBaseDoc: cloneDoc(state.document),
+      };
+    }),
+  endHistoryBatch: () =>
+    set((state) => {
+      if (state.historyBatchDepth <= 0) return {};
+      if (state.historyBatchDepth > 1) {
+        return { historyBatchDepth: state.historyBatchDepth - 1 };
+      }
+
+      const base = state.historyBatchBaseDoc;
+      if (!base) {
+        return { historyBatchDepth: 0, historyBatchBaseDoc: undefined };
+      }
+
+      const baseDoc = normalizeDocModel(base);
+      const currentDoc = normalizeDocModel(state.document);
+      const changed = JSON.stringify(baseDoc) !== JSON.stringify(currentDoc);
+      if (!changed) {
+        return {
+          historyBatchDepth: 0,
+          historyBatchBaseDoc: undefined,
+        };
+      }
+
+      const past = [...state.past, cloneDoc(baseDoc)];
+      if (past.length > MAX_HISTORY) past.splice(0, past.length - MAX_HISTORY);
+      return {
+        historyBatchDepth: 0,
+        historyBatchBaseDoc: undefined,
+        past,
+        future: [],
+        canUndo: true,
+        canRedo: false,
+        dirty: true,
+      };
+    }),
+  withHistoryBatch: async (fn) => {
+    const begin = get().beginHistoryBatch;
+    const end = get().endHistoryBatch;
+    begin();
+    try {
+      return await fn();
+    } finally {
+      end();
+    }
+  },
   clearSelection: () => set({ selection: { ids: [] } }),
   selectSection: (sectionId) => set({ selectedSectionId: sectionId }),
 
@@ -1224,6 +1335,7 @@ export const useCanvasEditorStore = create<CanvasEditorStore>((set, get) => ({
 
   pushSnapshot: () => {
     const state = get();
+    if (state.historyBatchDepth > 0) return;
     const past = [...state.past, cloneDoc(state.document)];
     if (past.length > MAX_HISTORY) past.splice(0, past.length - MAX_HISTORY);
     set({ past, future: [], canUndo: true, canRedo: false });

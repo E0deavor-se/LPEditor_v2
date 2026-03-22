@@ -6,9 +6,11 @@ import {
   labelOverlayPosition,
   labelSectionType,
   labelSource,
+  labelSourceField,
   labelTarget,
   labelTextOverlay,
   labelTone,
+  normalizePromptSource,
 } from "@/src/features/ai-assets/lib/promptDisplayLabels";
 
 type PromptMeta = BuiltAssetPrompt["meta"];
@@ -38,6 +40,81 @@ const rulePriority = (rule: string) => {
   return index < 0 ? PRIORITY_PREFIX.length + 1 : index;
 };
 
+const SOURCE_IMPORTANCE = {
+  explicit: 1,
+  preset: 2,
+  inferred: 3,
+  fallback: 4,
+} as const;
+
+const SOURCE_FIELD_PRIORITY = {
+  overlayPositionSource: 1,
+  textOverlaySource: 2,
+  densitySource: 3,
+  sectionTypeSource: 4,
+  campaignFamilySource: 5,
+} as const;
+
+const buildSourceHighlights = (meta: PromptMeta, maxLines = 3) => {
+  const entries = [
+    {
+      key: "overlayPositionSource" as const,
+      source: normalizePromptSource(meta.overlayPositionSource),
+    },
+    {
+      key: "textOverlaySource" as const,
+      source: normalizePromptSource(meta.textOverlaySource),
+    },
+    {
+      key: "densitySource" as const,
+      source: normalizePromptSource(meta.densitySource),
+    },
+    {
+      key: "sectionTypeSource" as const,
+      source: normalizePromptSource(meta.sectionTypeSource),
+    },
+    {
+      key: "campaignFamilySource" as const,
+      source: normalizePromptSource(meta.campaignFamilySource),
+    },
+  ]
+    .filter((entry): entry is { key: keyof typeof SOURCE_FIELD_PRIORITY; source: keyof typeof SOURCE_IMPORTANCE } => Boolean(entry.source))
+    .sort((a, b) => SOURCE_FIELD_PRIORITY[a.key] - SOURCE_FIELD_PRIORITY[b.key]);
+
+  if (entries.length === 0) {
+    return [];
+  }
+
+  const grouped = entries.reduce<Record<string, Array<keyof typeof SOURCE_FIELD_PRIORITY>>>((acc, entry) => {
+    const key = entry.source;
+    if (!acc[key]) {
+      acc[key] = [];
+    }
+    acc[key].push(entry.key);
+    return acc;
+  }, {});
+
+  return Object.entries(grouped)
+    .sort((a, b) => {
+      const [aSource, aKeys] = a as [keyof typeof SOURCE_IMPORTANCE, Array<keyof typeof SOURCE_FIELD_PRIORITY>];
+      const [bSource, bKeys] = b as [keyof typeof SOURCE_IMPORTANCE, Array<keyof typeof SOURCE_FIELD_PRIORITY>];
+      const aScore = SOURCE_IMPORTANCE[aSource] * 10 + Math.min(...aKeys.map((key) => SOURCE_FIELD_PRIORITY[key]));
+      const bScore = SOURCE_IMPORTANCE[bSource] * 10 + Math.min(...bKeys.map((key) => SOURCE_FIELD_PRIORITY[key]));
+      return aScore - bScore;
+    })
+    .slice(0, maxLines)
+    .map(([source, keys]) => {
+      const sortedKeys = (keys as Array<keyof typeof SOURCE_FIELD_PRIORITY>).sort(
+        (a, b) => SOURCE_FIELD_PRIORITY[a] - SOURCE_FIELD_PRIORITY[b],
+      );
+      const visibleKeys = sortedKeys.slice(0, 2);
+      const hiddenCount = Math.max(0, sortedKeys.length - visibleKeys.length);
+      const keyLabel = visibleKeys.map((key) => labelSourceField(key)).join("・");
+      const restLabel = hiddenCount > 0 ? ` 他${hiddenCount}` : "";
+      return `${labelSource(source as "explicit" | "preset" | "inferred" | "fallback")}: ${keyLabel}${restLabel}`;
+    });
+};
+
 export const summarizeAppliedRules = (appliedRules: string[], maxItems = 4) => {
   const uniq = Array.from(
     new Set(appliedRules.map((entry) => entry.trim()).filter(Boolean)),
@@ -62,14 +139,7 @@ export const summarizeAppliedRules = (appliedRules: string[], maxItems = 4) => {
 
 export const buildMetaSummary = (meta: PromptMeta) => {
   const summarized = summarizeAppliedRules(meta.appliedRules, 4);
-
-  const sourceSummary = [
-    meta.campaignFamilySource ? `訴求: ${labelSource(meta.campaignFamilySource)}` : "",
-    meta.sectionTypeSource ? `セクション: ${labelSource(meta.sectionTypeSource)}` : "",
-    meta.densitySource ? `密度: ${labelSource(meta.densitySource)}` : "",
-    meta.textOverlaySource ? `余白強度: ${labelSource(meta.textOverlaySource)}` : "",
-    meta.overlayPositionSource ? `余白位置: ${labelSource(meta.overlayPositionSource)}` : "",
-  ].filter(Boolean);
+  const sourceHighlights = buildSourceHighlights(meta, 3);
 
   return {
     target: meta.target,
@@ -86,7 +156,7 @@ export const buildMetaSummary = (meta: PromptMeta) => {
     campaignFamilyLabel: labelCampaignFamily(meta.campaignFamily),
     sectionType: meta.sectionType,
     sectionTypeLabel: labelSectionType(meta.sectionType),
-    sourceSummary,
+    sourceHighlights,
     rules: summarized.rules,
     ruleCount: summarized.total,
     hiddenRuleCount: summarized.hiddenCount,

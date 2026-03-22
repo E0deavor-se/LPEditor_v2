@@ -5,7 +5,7 @@
    ─────────────────────────────────────────────── */
 
 import { useMemo } from "react";
-import { useShallow } from "zustand/shallow";
+import { useShallow } from "zustand/react/shallow";
 import { useEditorStore, type EditorUIState } from "@/src/store/editorStore";
 import { useI18n } from "@/src/i18n";
 import { getLayoutSections } from "@/src/lib/editorProject";
@@ -30,6 +30,7 @@ const storeSelector = (state: EditorUIState) => ({
   setPageColors: state.setPageColors,
   setPageSpacing: state.setPageSpacing,
   setPageLayout: state.setPageLayout,
+  applyProjectTheme: state.applyProjectTheme,
   setPageSectionAnimation: state.setPageSectionAnimation,
   setPageBackground: state.setPageBackground,
   setMvBackground: state.setMvBackground,

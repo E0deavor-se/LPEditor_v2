@@ -7,6 +7,11 @@ import CreativeEditPage from "@/src/features/creative/pages/CreativeEditPage";
 import CreativeExportPage from "@/src/features/creative/pages/CreativeExportPage";
 import CreativeGeneratingPage from "@/src/features/creative/pages/CreativeGeneratingPage";
 import CreativeInputPage from "@/src/features/creative/pages/CreativeInputPage";
+import {
+  buildCampaignDirectionHintMessage,
+  buildCreativeActionErrorMessage,
+  buildCreativeGenerationErrorMessage,
+} from "@/src/lib/userMessageCatalog";
 import { createCreativeDocument } from "@/src/features/creative/services/creativeDocumentService";
 import {
   generateVariants,
@@ -197,7 +202,10 @@ export default function CreativeFlowContainer({
 
     setInputValues(nextValues);
     setCampaignDirectionHint(
-      `Campaignの生成方針を初期値として使用: tone=${savedDirection.tone} / style=${savedDirection.style}`,
+      buildCampaignDirectionHintMessage({
+        tone: savedDirection.tone,
+        style: savedDirection.style,
+      }),
     );
   }, [campaignDirectionInStore, inputValues, setInputValues]);
 
@@ -221,7 +229,9 @@ export default function CreativeFlowContainer({
       await startGeneration(document.id);
     } catch (error) {
       setGenerationStatus("failed");
-      setGenerationError(error instanceof Error ? error.message : "Failed to start generation.");
+      setGenerationError(
+        error instanceof Error ? error.message : buildCreativeGenerationErrorMessage("start"),
+      );
     }
   };
 
@@ -244,7 +254,9 @@ export default function CreativeFlowContainer({
         setCurrentVariantById(regenerated.id);
       }
     } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : "Variant regeneration failed.");
+      setGenerationError(
+        error instanceof Error ? error.message : buildCreativeGenerationErrorMessage("regenerate"),
+      );
     } finally {
       setRegeneratingMap((prev) => {
         const next = { ...prev };
@@ -274,7 +286,7 @@ export default function CreativeFlowContainer({
 
         if (job.status === "failed") {
           setGenerationStatus("failed");
-          setGenerationError(job.message ?? "Generation failed.");
+          setGenerationError(job.message ?? buildCreativeGenerationErrorMessage("poll-timeout"));
           return;
         }
 
@@ -298,7 +310,9 @@ export default function CreativeFlowContainer({
           return;
         }
         setGenerationStatus("failed");
-        setGenerationError(error instanceof Error ? error.message : "Polling failed.");
+        setGenerationError(
+          error instanceof Error ? error.message : buildCreativeGenerationErrorMessage("poll-timeout"),
+        );
       }
     };
 
@@ -377,7 +391,7 @@ export default function CreativeFlowContainer({
       setLastExport(result.format, result.downloadUrl);
     } catch (error) {
       setExportStatus("failed");
-      setExportError(error instanceof Error ? error.message : "Export failed.");
+      setExportError(error instanceof Error ? error.message : buildCreativeActionErrorMessage("export"));
     }
   };
 
@@ -399,7 +413,7 @@ export default function CreativeFlowContainer({
 
       const applied = applyVariantToLpHero(currentVariant, imageUrl, launchSectionId);
       if (!applied.applied) {
-        throw new Error("Hero section not found in current LP document.");
+        throw new Error(buildCreativeActionErrorMessage("hero-section-missing"));
       }
 
       if (process.env.NODE_ENV === "development") {
@@ -420,7 +434,7 @@ export default function CreativeFlowContainer({
       }
     } catch (error) {
       setPublishStatus("failed");
-      setExportError(error instanceof Error ? error.message : "Publish failed.");
+      setExportError(error instanceof Error ? error.message : buildCreativeActionErrorMessage("publish"));
     }
   };
 

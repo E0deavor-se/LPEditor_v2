@@ -413,6 +413,72 @@ export type SectionContent = {
   storeFilterOperator?: StoreFilterOperator;
 };
 
+export type LayoutCampaignFamily =
+  | "coupon"
+  | "points"
+  | "ranking"
+  | "store"
+  | "generic";
+
+export type CampaignType =
+  | "pointReward"
+  | "ranking"
+  | "coupon"
+  | "generic";
+
+export type LayoutSuggestionMode =
+  | "heroSplit"
+  | "heroTextLeft"
+  | "heroTextRight"
+  | "stacked"
+  | "cardGrid"
+  | "centeredCta"
+  | "infoList"
+  | "compactNotice";
+
+export type LayoutSuggestionContentBalance =
+  | "textHeavy"
+  | "balanced"
+  | "visualHeavy";
+
+export type LayoutSuggestionVisualWeight = "low" | "medium" | "high";
+
+export type LayoutSuggestionSpacingScale = "compact" | "normal" | "relaxed";
+
+export type LayoutSuggestionIntensity = "low" | "medium" | "high";
+
+export type LayoutSuggestionImagePlacement =
+  | "left"
+  | "right"
+  | "top"
+  | "background"
+  | "center";
+
+export type LayoutSuggestionCardStyle = "flat" | "outlined" | "raised";
+
+export type SectionLayoutSuggestion = {
+  layoutMode: LayoutSuggestionMode;
+  contentBalance: LayoutSuggestionContentBalance;
+  visualWeight: LayoutSuggestionVisualWeight;
+  textAlignment: SectionTextAlign;
+  imagePlacementHint?: LayoutSuggestionImagePlacement;
+  cardStyleHint?: LayoutSuggestionCardStyle;
+  spacingScale: LayoutSuggestionSpacingScale;
+  backgroundIntensity: LayoutSuggestionIntensity;
+  ctaEmphasis: LayoutSuggestionIntensity;
+  badgeEmphasis: LayoutSuggestionIntensity;
+  sourceHints?: string[];
+};
+
+export type ProjectLayoutSuggestion = {
+  templateId?: string;
+  themeId?: string;
+  campaignFamily: LayoutCampaignFamily;
+  pageMood: "benefit" | "trust" | "comparison" | "informational";
+  spacingScale: LayoutSuggestionSpacingScale;
+  visualWeight: LayoutSuggestionVisualWeight;
+};
+
 export type SectionBase = {
   id: string;
   type: string;
@@ -423,6 +489,7 @@ export type SectionBase = {
   content?: SectionContent;
   style: SectionStyle;
   sectionCardStyle?: SectionCardStyle;
+  aiLayoutSuggestion?: SectionLayoutSuggestion;
 };
 
 export type PageBaseStyle = {
@@ -505,6 +572,7 @@ export type LPDocument = {
   assetMeta?: AssetMeta[];
   storeListSpec?: StoreListSpec;
   themeSpec?: ThemeSpec;
+  layoutSuggestion?: ProjectLayoutSuggestion;
   animationRegistry?: AnimationSpec[];
 };
 
@@ -524,6 +592,9 @@ export type ProjectState = {
   meta: {
     projectName: string;
     templateType: "coupon" | "point" | "quickchance" | "target";
+    campaignType?: CampaignType;
+    structurePresetId?: string;
+    templateId?: string;
     version: string;
     createdAt: string;
     updatedAt: string;
@@ -540,6 +611,7 @@ export type ProjectState = {
   assetMeta?: AssetMeta[];
   storeListSpec?: StoreListSpec;
   themeSpec?: ThemeSpec;
+  layoutSuggestion?: ProjectLayoutSuggestion;
   animationRegistry?: AnimationSpec[];
   /** 新しいモード分離ドキュメント状態 */
   editorDocuments?: EditorDocumentState;
@@ -585,6 +657,8 @@ export type StoreListSpec = {
 export type ThemeSpec = {
   mode: "light" | "dark" | "system";
   accent: "aupay-orange" | "kddi-blue";
+  themeId?: string;
+  templateId?: string;
 };
 
 export type GlobalSettings = {
@@ -609,6 +683,7 @@ export type ProjectFile = {
   aiAssets?: ProjectAiAssets;
   storeListSpec?: StoreListSpec;
   themeSpec?: ThemeSpec;
+  layoutSuggestion?: ProjectLayoutSuggestion;
   animationRegistry?: AnimationSpec[];
 };
 

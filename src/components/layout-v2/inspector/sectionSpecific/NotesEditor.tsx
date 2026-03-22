@@ -289,6 +289,10 @@ export default function NotesEditor({
       ? data.noteWidthPct
       : 100;
   const widthPreset = widthValue >= 100 ? "wide" : "standard";
+  const noteTextSizePx =
+    typeof data.noteTextSizePx === "number" && Number.isFinite(data.noteTextSizePx)
+      ? data.noteTextSizePx
+      : 14;
 
   const captureSelection = (event: SyntheticEvent<HTMLDivElement>) => {
     saveSelection(section.id, event.target as EventTarget | null);
@@ -387,6 +391,15 @@ export default function NotesEditor({
 
       <Inspector2Block block="design">
         <label className="flex items-center justify-between text-[11px]">
+          <span className="text-[var(--ui-muted)]">文字色</span>
+          <InspectorInput
+            type="color"
+            value={String(data.noteTextColor ?? "#111827")}
+            onChange={(event) => onPatchData({ noteTextColor: event.target.value })}
+            disabled={disabled}
+          />
+        </label>
+        <label className="flex items-center justify-between text-[11px]">
           <span className="text-[var(--ui-muted)]">背景色</span>
           <InspectorInput
             type="color"
@@ -407,6 +420,20 @@ export default function NotesEditor({
       </Inspector2Block>
 
       <Inspector2Block block="details" summary="高度設定">
+        <InspectorField label="文字サイズ(px)">
+          <InspectorInput
+            type="number"
+            min={10}
+            max={24}
+            step={1}
+            value={String(Math.max(10, Math.min(24, noteTextSizePx)))}
+            onChange={(event) => {
+              const next = Number(event.target.value || 14);
+              onPatchData({ noteTextSizePx: Math.max(10, Math.min(24, next)) });
+            }}
+            disabled={disabled}
+          />
+        </InspectorField>
         <InspectorField label="余白(px)">
           <InspectorInput
             type="number"

@@ -22,11 +22,17 @@ import type {
   AiAssetTone,
   AiAssetTextOverlayLevel,
   AiAssetOverlayPosition,
+  AiAssetPromptPreset,
+  AiAssetPromptTarget,
   AiAssetSectionPromptType,
   BuiltAssetPrompt,
   AiGeneratedAsset,
   ProjectAiAssets,
 } from "@/src/features/ai-assets/types";
+import {
+  buildAiAssetErrorMessage,
+  getAiGenerationStatusLabel,
+} from "@/src/lib/userMessageCatalog";
 import type { SectionBase } from "@/src/types/project";
 
 type SectionAssetPickerProps = {
@@ -347,7 +353,42 @@ const mergeProjectAiAssets = (
   generatedAssets: patch.generatedAssets ?? current?.generatedAssets ?? [],
   jobs: patch.jobs ?? current?.jobs ?? [],
   bindings: patch.bindings ?? current?.bindings ?? [],
+  promptPresets: patch.promptPresets ?? current?.promptPresets ?? [],
 });
+
+const promptPresetKey = (sectionId: string, target: AiAssetPromptTarget) => `${sectionId}::${target}`;
+
+const findPromptPreset = (
+  presets: AiAssetPromptPreset[],
+  sectionId: string,
+  target: AiAssetPromptTarget,
+): AiAssetPromptPreset | undefined => {
+  const key = promptPresetKey(sectionId, target);
+  return [...presets]
+    .reverse()
+    .find((entry) => promptPresetKey(entry.sectionId, entry.target) === key);
+};
+
+const upsertPromptPreset = (
+  presets: AiAssetPromptPreset[],
+  nextPreset: AiAssetPromptPreset,
+): AiAssetPromptPreset[] => {
+  const key = promptPresetKey(nextPreset.sectionId, nextPreset.target);
+  const next = presets.filter((entry) => promptPresetKey(entry.sectionId, entry.target) !== key);
+  return [...next, nextPreset];
+};
+
+const removePromptPreset = (
+  presets: AiAssetPromptPreset[],
+  sectionId: string,
+  target: AiAssetPromptTarget,
+): AiAssetPromptPreset[] =>
+  presets.filter((entry) => promptPresetKey(entry.sectionId, entry.target) !== promptPresetKey(sectionId, target));
+
+const EMPTY_GENERATED_ASSETS: AiGeneratedAsset[] = [];
+const EMPTY_BINDINGS: AiAssetBindingRecord[] = [];
+const EMPTY_PROMPT_PRESETS: AiAssetPromptPreset[] = [];
+const EMPTY_SECTION_ASSETS: AiGeneratedAsset[] = [];
 
 export default function SectionAssetPicker({
   section,
@@ -359,11 +400,20 @@ export default function SectionAssetPicker({
   const [bindingAssetId, setBindingAssetId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const projectAiAssets = useEditorStore((state) => state.project.aiAssets);
-  const generatedAssets = useEditorStore((state) => state.project.aiAssets?.generatedAssets ?? []);
-  const persistedBindings = useEditorStore((state) => state.project.aiAssets?.bindings ?? []);
+  const generatedAssets = useEditorStore(
+    (state) => state.project.aiAssets?.generatedAssets ?? EMPTY_GENERATED_ASSETS
+  );
+  const persistedBindings = useEditorStore(
+    (state) => state.project.aiAssets?.bindings ?? EMPTY_BINDINGS
+  );
+  const promptPresets = useEditorStore(
+    (state) => state.project.aiAssets?.promptPresets ?? EMPTY_PROMPT_PRESETS
+  );
   const updateProjectAiAssets = useEditorStore((state) => state.updateProjectAiAssets);
 
-  const assets = useAiAssetsStore((s) => s.assetsBySection[section.id] ?? []);
+  const assets = useAiAssetsStore(
+    (s) => s.assetsBySection[section.id] ?? EMPTY_SECTION_ASSETS
+  );
   const currentJob = useAiAssetsStore((s) => s.activeJobsBySection[section.id] ?? null);
   const setSectionAssets = useAiAssetsStore((s) => s.setSectionAssets);
   const upsertSectionAsset = useAiAssetsStore((s) => s.upsertSectionAsset);
@@ -441,12 +491,25 @@ export default function SectionAssetPicker({
     const overlayPreset = resolveOverlayPreset(sectionData);
     const densityPreset = resolveDensityPreset(sectionData);
     const textOverlayPreset = resolveTextOverlayPreset(sectionData, inferredTextOverlay);
-    const density = overrides?.density ?? densityPreset?.density;
-    const densitySourceHint = overrides?.density ? "explicit" : densityPreset?.sourceHint;
-    const textOverlay = overrides?.textOverlay ?? textOverlayPreset.textOverlay;
-    const textOverlaySourceHint = overrides?.textOverlay ? "explicit" : textOverlayPreset.sourceHint;
-    const overlayPosition = overrides?.overlayPosition ?? overlayPreset.overlayPosition;
-    const overlaySourceHint = overrides?.overlayPosition ? "explicit" : overlayPreset.sourceHint;
+    const savedPreset = findPromptPreset(promptPresets, section.id, target);
+    const density = overrides?.density ?? savedPreset?.density ?? densityPreset?.density;
+    const densitySourceHint = overrides?.density
+      ? "explicit"
+      : savedPreset?.density
+        ? "preset"
+        : densityPreset?.sourceHint;
+    const textOverlay = overrides?.textOverlay ?? savedPreset?.textOverlay ?? textOverlayPreset.textOverlay;
+    const textOverlaySourceHint = overrides?.textOverlay
+      ? "explicit"
+      : savedPreset?.textOverlay
+        ? "preset"
+        : textOverlayPreset.sourceHint;
+    const overlayPosition = overrides?.overlayPosition ?? savedPreset?.overlayPosition ?? overlayPreset.overlayPosition;
+    const overlaySourceHint = overrides?.overlayPosition
+      ? "explicit"
+      : savedPreset?.overlayPosition
+        ? "preset"
+        : overlayPreset.sourceHint;
 
     return buildAssetPrompt({
       target,
@@ -495,7 +558,7 @@ export default function SectionAssetPicker({
         strictTextSafety: target === "heroImage" || target === "sectionBackground",
       },
     });
-  }, [section]);
+  }, [promptPresets, section]);
 
   const promptByRole = useMemo<Record<AiAssetRole, BuiltAssetPrompt>>(() => {
     return allowedRoles.reduce((acc, role) => {
@@ -570,6 +633,52 @@ export default function SectionAssetPicker({
     [autoPromptRoles, promptByRole],
   );
 
+  const currentBoundAssetIdByRole = useMemo(
+    () =>
+      Object.fromEntries(
+        persistedBindings
+          .filter((entry) => entry.sectionId === section.id)
+          .map((entry) => [entry.role, entry.sourceGeneratedAssetId]),
+      ) as Partial<Record<AiAssetRole, string>>,
+    [persistedBindings, section.id],
+  );
+
+  const hasSavedPresetByRole = useMemo(
+    () =>
+      Object.fromEntries(
+        allowedRoles.map((role) => {
+          const target = resolvePromptTarget(section.type, role);
+          return [role, Boolean(findPromptPreset(promptPresets, section.id, target))];
+        }),
+      ) as Partial<Record<AiAssetRole, boolean>>,
+    [allowedRoles, promptPresets, section.id, section.type],
+  );
+
+  const savedPresetByRole = useMemo(
+    () =>
+      Object.fromEntries(
+        allowedRoles.map((role) => {
+          const target = resolvePromptTarget(section.type, role);
+          const preset = findPromptPreset(promptPresets, section.id, target);
+          return [
+            role,
+            preset
+              ? {
+                density: preset.density,
+                textOverlay: preset.textOverlay,
+                overlayPosition: preset.overlayPosition,
+              }
+              : undefined,
+          ];
+        }),
+      ) as Partial<Record<AiAssetRole, {
+        density?: AiAssetDensity;
+        textOverlay?: AiAssetTextOverlayLevel;
+        overlayPosition?: AiAssetOverlayPosition;
+      }>>,
+    [allowedRoles, promptPresets, section.id, section.type],
+  );
+
   useEffect(() => {
     const nextAssets = generatedAssets.filter((entry) => entry.sectionId === section.id);
     setSectionAssets(section.id, nextAssets);
@@ -630,6 +739,7 @@ export default function SectionAssetPicker({
   const handleGenerate = async (params: {
     role: AiAssetRole;
     prompt: string;
+    sourceAssetId?: string;
     negativePrompt?: string;
     density?: AiAssetDensity;
     textOverlay?: AiAssetTextOverlayLevel;
@@ -664,6 +774,7 @@ export default function SectionAssetPicker({
       sectionType: section.type,
       role: params.role,
       prompt: resolvedPrompt,
+      sourceAssetId: params.sourceAssetId,
       negativePrompt: resolvedNegativePrompt,
       width: size.width,
       height: size.height,
@@ -683,7 +794,7 @@ export default function SectionAssetPicker({
 
     if (!response.ok) {
       const error = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(error.error ?? "Failed to start AI generation.");
+      throw new Error(error.error ?? buildAiAssetErrorMessage("start"));
     }
 
     const data = (await response.json()) as { jobId: string };
@@ -693,7 +804,7 @@ export default function SectionAssetPicker({
       role: params.role,
       status: "queued",
       progress: 0,
-      message: "queued",
+      message: getAiGenerationStatusLabel("queued"),
     };
     setActiveJob(section.id, queuedJob);
     updateProjectAiAssets((current) =>
@@ -766,10 +877,46 @@ export default function SectionAssetPicker({
         }),
       );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to bind asset.");
+      setErrorMessage(error instanceof Error ? error.message : buildAiAssetErrorMessage("bind"));
     } finally {
       setBindingAssetId(null);
     }
+  };
+
+  const handleSavePromptPreset = async (params: {
+    role: AiAssetRole;
+    density?: AiAssetDensity;
+    textOverlay?: AiAssetTextOverlayLevel;
+    overlayPosition?: AiAssetOverlayPosition;
+  }) => {
+    const target = resolvePromptTarget(section.type, params.role);
+    if (!params.density && !params.textOverlay && !params.overlayPosition) {
+      throw new Error("保存する設定がありません。");
+    }
+
+    const nextPreset: AiAssetPromptPreset = {
+      sectionId: section.id,
+      target,
+      density: params.density,
+      textOverlay: params.textOverlay,
+      overlayPosition: params.overlayPosition,
+      updatedAt: new Date().toISOString(),
+    };
+
+    updateProjectAiAssets((current) =>
+      mergeProjectAiAssets(current, {
+        promptPresets: upsertPromptPreset(current?.promptPresets ?? [], nextPreset),
+      }),
+    );
+  };
+
+  const handleRemovePromptPreset = async (params: { role: AiAssetRole }) => {
+    const target = resolvePromptTarget(section.type, params.role);
+    updateProjectAiAssets((current) =>
+      mergeProjectAiAssets(current, {
+        promptPresets: removePromptPreset(current?.promptPresets ?? [], section.id, target),
+      }),
+    );
   };
 
   return (
@@ -786,7 +933,7 @@ export default function SectionAssetPicker({
           </button>
           {currentJob && currentJob.status !== "idle" ? (
             <span className="text-[10px] text-[var(--ui-muted)]">
-              {currentJob.status} {Math.round(currentJob.progress)}%
+              {getAiGenerationStatusLabel(currentJob.status)} {Math.round(currentJob.progress)}%
             </span>
           ) : null}
         </div>
@@ -803,15 +950,31 @@ export default function SectionAssetPicker({
             initialDensityByRole={initialDensityByRole}
             initialTextOverlayByRole={initialTextOverlayByRole}
             initialOverlayPositionByRole={initialOverlayPositionByRole}
+            hasSavedPresetByRole={hasSavedPresetByRole}
+            savedPresetByRole={savedPresetByRole}
             densityEnabledRoles={densityEnabledRoles}
             textOverlayEnabledRoles={textOverlayEnabledRoles}
             overlayPositionEnabledRoles={overlayPositionEnabledRoles}
             onClose={() => setDrawerOpen(false)}
+            onSavePreset={async (params) => {
+              try {
+                await handleSavePromptPreset(params);
+              } catch (error) {
+                setErrorMessage(error instanceof Error ? error.message : buildAiAssetErrorMessage("preset-save"));
+              }
+            }}
+            onRemovePreset={async (params) => {
+              try {
+                await handleRemovePromptPreset(params);
+              } catch (error) {
+                setErrorMessage(error instanceof Error ? error.message : buildAiAssetErrorMessage("preset-remove"));
+              }
+            }}
             onGenerate={async (params) => {
               try {
                 await handleGenerate(params);
               } catch (error) {
-                setErrorMessage(error instanceof Error ? error.message : "Failed to start generation.");
+                setErrorMessage(error instanceof Error ? error.message : buildAiAssetErrorMessage("start"));
               }
             }}
           />
@@ -826,6 +989,10 @@ export default function SectionAssetPicker({
         <AssetsPanel
           assets={assets}
           roleFilter={allowedRoles.length === 1 ? allowedRoles[0] : undefined}
+          defaultRoleFilter={defaultRole}
+          currentSectionLabel={section.name ?? section.id}
+          currentBoundAssetIdByRole={currentBoundAssetIdByRole}
+          currentJob={currentJob}
           selectedAssetId={selectedAssetId}
           onSelectAsset={(assetId) => {
             const selected = assets.find((entry) => entry.id === assetId);
@@ -835,6 +1002,18 @@ export default function SectionAssetPicker({
             setSelectedAssetId(section.id, selected.role, selected.id);
           }}
           onBindAsset={handleBindAsset}
+          onRegenerateFromAsset={async (asset) => {
+            try {
+              await handleGenerate({
+                role: asset.role,
+                prompt: asset.generationMeta.inputPrompt ?? asset.generationMeta.prompt,
+                sourceAssetId: asset.id,
+                negativePrompt: asset.generationMeta.negativePrompt,
+              });
+            } catch (error) {
+              setErrorMessage(error instanceof Error ? error.message : buildAiAssetErrorMessage("regenerate"));
+            }
+          }}
           bindingAssetId={bindingAssetId}
         />
       </InspectorSection>

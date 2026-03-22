@@ -10,6 +10,7 @@ import { getSectionFrameData } from "@/src/lib/sections/sectionFrame";
 import { renderRichText } from "@/src/lib/richText";
 import { renderLayoutSection } from "@/src/lib/renderers/layout/renderLayoutSection";
 import { renderUnhandledLayoutSectionFallback } from "@/src/lib/renderers/layout/renderUnhandledLayoutSectionFallback";
+import { getLayoutModeLabel } from "@/src/lib/layout/layoutSuggestions";
 import { getLayoutSections } from "@/src/lib/editorProject";
 import type {
   ButtonContentItem,
@@ -497,6 +498,7 @@ const buildLayoutStyleWithOverrides = (
     paddingRightPx?: number;
     paddingBottomPx?: number;
     paddingLeftPx?: number;
+    maxWidthPx?: number;
   }
 ): CSSProperties => {
   if (!style) {
@@ -512,10 +514,83 @@ const buildLayoutStyleWithOverrides = (
     options.paddingLeftPx ?? (isFullWidth ? 0 : layout.padding.l);
   return {
     padding: `${paddingTop}px ${paddingRight}px ${paddingBottom}px ${paddingLeft}px`,
-    maxWidth: isFullWidth ? "100%" : `${layout.maxWidth}px`,
+    maxWidth: isFullWidth
+      ? "100%"
+      : `${options.maxWidthPx ?? layout.maxWidth}px`,
     marginLeft: isFullWidth ? 0 : layout.align === "center" ? "auto" : 0,
     marginRight: isFullWidth ? 0 : layout.align === "center" ? "auto" : 0,
     width: "100%",
+  };
+};
+
+const clampSectionPadding = (value: number) => Math.max(12, Math.min(72, value));
+
+const buildSuggestedLayoutStyle = (
+  section: SectionBase,
+  isFooterLastSection: boolean,
+  isHeroFullSize: boolean,
+): CSSProperties => {
+  const suggestion = section.aiLayoutSuggestion;
+  const paddingDelta =
+    suggestion?.spacingScale === "compact"
+      ? -8
+      : suggestion?.spacingScale === "relaxed"
+      ? 8
+      : 0;
+  const maxWidthPx =
+    suggestion?.layoutMode === "compactNotice"
+      ? 860
+      : suggestion?.layoutMode === "centeredCta"
+      ? 980
+      : undefined;
+
+  if (
+    isFooterLastSection ||
+    isHeroFullSize ||
+    paddingDelta !== 0 ||
+    typeof maxWidthPx === "number"
+  ) {
+    const layout = section.style.layout;
+    return buildLayoutStyleWithOverrides(section.style, {
+      paddingTopPx: clampSectionPadding(layout.padding.t + paddingDelta),
+      paddingRightPx: clampSectionPadding(layout.padding.r + paddingDelta),
+      paddingBottomPx: isFooterLastSection
+        ? 0
+        : clampSectionPadding(layout.padding.b + paddingDelta),
+      paddingLeftPx: clampSectionPadding(layout.padding.l + paddingDelta),
+      forceFullWidth: isHeroFullSize ? true : undefined,
+      maxWidthPx,
+    });
+  }
+
+  return buildLayoutStyle(section.style);
+};
+
+const buildPreviewCardStyle = (
+  section: SectionBase,
+  sectionCardStyle: ReturnType<typeof normalizeSectionCardStyle>,
+) => {
+  const suggestion = section.aiLayoutSuggestion;
+  if (!suggestion) {
+    return sectionCardStyle;
+  }
+
+  return {
+    ...sectionCardStyle,
+    borderWidth:
+      suggestion.cardStyleHint === "outlined" && sectionCardStyle.borderWidth === 0
+        ? 1
+        : sectionCardStyle.borderWidth,
+    shadowEnabled:
+      suggestion.cardStyleHint === "raised"
+        ? true
+        : suggestion.cardStyleHint === "flat"
+        ? false
+        : sectionCardStyle.shadowEnabled,
+    headerStyle:
+      suggestion.badgeEmphasis === "high"
+        ? "bandBold"
+        : sectionCardStyle.headerStyle,
   };
 };
 
@@ -1610,8 +1685,11 @@ export default function PreviewSsr(props: PreviewSsrProps) {
             section.type === "tabbedNotes" ||
             section.type === "imageOnly" ||
             Boolean(section.data?.footerAssets);
-          const sectionCardStyle = normalizeSectionCardStyle(
+          const sectionCardStyle = buildPreviewCardStyle(
+            section,
+            normalizeSectionCardStyle(
             section.sectionCardStyle
+            )
           );
           const items = Array.isArray(section.content?.items)
             ? section.content?.items
@@ -1695,18 +1773,22 @@ export default function PreviewSsr(props: PreviewSsrProps) {
                 ) : null}
                 <div
                   className="lp-section-layout"
-                  style={
-                    isFooterLastSection
-                      ? buildLayoutStyleWithOverrides(section.style, {
-                          paddingBottomPx: 0,
-                        })
-                      : isHeroFullSize
-                      ? buildLayoutStyleWithOverrides(section.style, {
-                          forceFullWidth: true,
-                        })
-                      : buildLayoutStyle(section.style)
-                  }
+                  style={buildSuggestedLayoutStyle(
+                    section,
+                    isFooterLastSection,
+                    isHeroFullSize
+                  )}
                 >
+                  {section.aiLayoutSuggestion ? (
+                    <div className="mb-2 flex items-center gap-2 px-1">
+                      <span className="ui-chip px-2 py-0.5 text-[10px]">
+                        AI提案
+                      </span>
+                      <span className="text-[10px] text-[var(--lp-muted)]">
+                        {getLayoutModeLabel(section.aiLayoutSuggestion.layoutMode)}
+                      </span>
+                    </div>
+                  ) : null}
                   {isSpecialSection ? (
                     renderSection(section, project, ui)
                   ) : (

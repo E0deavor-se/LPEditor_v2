@@ -1,22 +1,13 @@
 "use client";
 
 import type { CreativeJobStatus } from "@/src/features/creative/types/job";
+import { getAiGenerationStatusLabel } from "@/src/lib/userMessageCatalog";
 
 type Props = {
   status: CreativeJobStatus;
   progress: number;
   message?: string | null;
 };
-
-function statusLabel(status: CreativeJobStatus): string {
-  switch (status) {
-    case "queued": return "キューに追加中...";
-    case "running": return "生成中...";
-    case "succeeded": return "完了";
-    case "failed": return "エラー";
-    default: return "待機中";
-  }
-}
 
 export default function CreativeGeneratingPage({ status, progress, message }: Props) {
   const isFailed = status === "failed";
@@ -45,7 +36,7 @@ export default function CreativeGeneratingPage({ status, progress, message }: Pr
             />
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--ui-muted)]">
-            <span>{statusLabel(status)}</span>
+            <span>{getAiGenerationStatusLabel(status)}</span>
             <span>{progress}%</span>
           </div>
         </div>
