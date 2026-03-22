@@ -63,6 +63,37 @@ const normalizeLinesFromData = (value: unknown, fallback: string[]): string[] =>
   return [...fallback];
 };
 
+const normalizeBlocksFromData = (value: unknown, fallback: string[]): string[] => {
+  if (Array.isArray(value)) {
+    const next = value
+      .map((entry) => String(entry ?? "").replace(/\r/g, ""))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (next.length > 0) return next;
+  }
+  return [fallback.join("\n")];
+};
+
+const splitNoticeBlocksFromLines = (lines: string[]): string[] => {
+  const blocks: string[] = [];
+  let current: string[] = [];
+  lines.forEach((line) => {
+    const raw = String(line ?? "").replace(/\r/g, "");
+    if (raw.trim().length === 0) {
+      if (current.length > 0) {
+        blocks.push(current.join("\n").trim());
+        current = [];
+      }
+      return;
+    }
+    current.push(raw);
+  });
+  if (current.length > 0) {
+    blocks.push(current.join("\n").trim());
+  }
+  return blocks.filter((block) => block.length > 0);
+};
+
 export default function CampaignOverviewEditor({
   section,
   disabled,
@@ -96,9 +127,15 @@ export default function CampaignOverviewEditor({
     noticeTextItem && noticeTextItem.type === "text" && noticeTextItem.lines.length > 0
       ? noticeTextItem.lines.map((line) => String(line.text ?? ""))
       : normalizeLinesFromData(data.noticeLines, DEFAULT_NOTICE_LINES);
+  const noticeBlocks =
+    Array.isArray(data.noticeBlocks) && data.noticeBlocks.length > 0
+      ? normalizeBlocksFromData(data.noticeBlocks, DEFAULT_NOTICE_LINES)
+      : (() => {
+          const fromLines = splitNoticeBlocksFromLines(noticeLines);
+          return fromLines.length > 0 ? fromLines : [DEFAULT_NOTICE_LINES.join("\n")];
+        })();
 
   const bodyText = bodyLines.join("\n");
-  const noticeText = noticeLines.join("\n");
 
   const noticeEnabled = data.noticeEnabled !== false;
   const bodyWidthPct =
@@ -117,14 +154,22 @@ export default function CampaignOverviewEditor({
   const patchAll = (next: {
     heading?: string;
     bodyText?: string;
-    noticeText?: string;
+    noticeBlocks?: string[];
     noticeEnabled?: boolean;
   }) => {
     const nextHeading = next.heading ?? heading;
     const nextBodyText = next.bodyText ?? bodyText;
-    const nextNoticeText = next.noticeText ?? noticeText;
     const nextBodyLines = splitTextareaLines(nextBodyText);
-    const nextNoticeLines = splitTextareaLines(nextNoticeText);
+    const nextNoticeBlocks = (next.noticeBlocks ?? noticeBlocks)
+      .map((block) => block.replace(/\r/g, ""))
+      .map((block) => block.trim())
+      .filter((block) => block.length > 0);
+    const ensuredNoticeBlocks =
+      nextNoticeBlocks.length > 0 ? nextNoticeBlocks : [DEFAULT_NOTICE_LINES.join("\n")];
+    const nextNoticeLines = ensuredNoticeBlocks.flatMap((block, index) => {
+      const lines = splitTextareaLines(block);
+      return index === 0 ? lines : ["", ...lines];
+    });
     const nextNoticeEnabled =
       typeof next.noticeEnabled === "boolean" ? next.noticeEnabled : noticeEnabled;
 
@@ -171,6 +216,7 @@ export default function CampaignOverviewEditor({
       body: nextBodyText,
       bodyLines: nextBodyLines,
       noticeLines: nextNoticeLines,
+      noticeBlocks: ensuredNoticeBlocks,
       noticeEnabled: nextNoticeEnabled,
     });
   };
@@ -232,22 +278,48 @@ export default function CampaignOverviewEditor({
             type="button"
             className="ui-button h-6 px-2 text-[10px]"
             onClick={() => {
-              const next = noticeText.trim().length > 0 ? `${noticeText}\n` : "";
-              patchAll({ noticeText: next, noticeEnabled: true });
+              patchAll({
+                noticeBlocks: [...noticeBlocks, "新しい注意文言"],
+                noticeEnabled: true,
+              });
             }}
             disabled={disabled}
           >
-            + 注意文言追加
+            + 注意文言ブロック追加
           </button>
         </div>
-        <InspectorTextarea
-          rows={2}
-          autoGrow
-          className="min-h-[44px] resize-none text-[12px]"
-          value={noticeText}
-          onChange={(event) => patchAll({ noticeText: event.target.value })}
-          disabled={disabled}
-        />
+        <div className="flex flex-col gap-2">
+          {noticeBlocks.map((block, index) => (
+            <div key={`notice-block-${index}`} className="rounded border border-[var(--ui-border)]/50 p-1.5">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[10px] text-[var(--ui-muted)]">ブロック {index + 1}</span>
+                <button
+                  type="button"
+                  className="ui-button h-6 px-2 text-[10px]"
+                  onClick={() => {
+                    const next = noticeBlocks.filter((_, itemIndex) => itemIndex !== index);
+                    patchAll({ noticeBlocks: next, noticeEnabled: true });
+                  }}
+                  disabled={disabled || noticeBlocks.length <= 1}
+                >
+                  削除
+                </button>
+              </div>
+              <InspectorTextarea
+                rows={2}
+                autoGrow
+                className="min-h-[44px] resize-none text-[12px]"
+                value={block}
+                onChange={(event) => {
+                  const next = [...noticeBlocks];
+                  next[index] = event.target.value;
+                  patchAll({ noticeBlocks: next, noticeEnabled: true });
+                }}
+                disabled={disabled}
+              />
+            </div>
+          ))}
+        </div>
       </Inspector2Block>
 
       <Inspector2Block block="display">

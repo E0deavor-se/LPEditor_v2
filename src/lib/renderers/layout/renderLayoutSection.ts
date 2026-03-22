@@ -872,13 +872,17 @@ const renderCampaignOverview = (section: SectionBase) => {
       ? data.bodyTextSizePx
       : 14;
   const bodyTextSize = Math.max(10, Math.min(28, bodyTextSizeRaw));
-  const bodyTextColor = esc(str(data.bodyTextColor || "#111827"));
+  const fallbackTextColor =
+    typeof section.style?.typography?.textColor === "string"
+      ? section.style.typography.textColor
+      : "#111827";
+  const bodyTextColor = esc(str(data.bodyTextColor || fallbackTextColor));
   const noticeTextSizeRaw =
     typeof data.noticeTextSizePx === "number" && Number.isFinite(data.noticeTextSizePx)
       ? data.noticeTextSizePx
       : 13;
   const noticeTextSize = Math.max(10, Math.min(24, noticeTextSizeRaw));
-  const noticeTextColor = esc(str(data.noticeTextColor || "#92400e"));
+  const noticeTextColor = esc(str(data.noticeTextColor || fallbackTextColor));
 
   const contentItems = Array.isArray(section.content?.items) ? section.content.items : [];
   const textItems = contentItems.filter((item) => item.type === "text");
@@ -898,12 +902,37 @@ const renderCampaignOverview = (section: SectionBase) => {
           .map((line) => line.trim())
           .filter((line) => line.length > 0);
 
-  const noticeLines =
+  const noticeRawLines =
     noticeTextItem && noticeTextItem.type === "text" && noticeTextItem.lines.length > 0
-      ? noticeTextItem.lines.map((line) => str(line.text || "")).filter((line) => line.trim())
+      ? noticeTextItem.lines.map((line) => str(line.text || "")).map((line) => line.replace(/\r/g, ""))
       : Array.isArray(data.noticeLines)
-      ? data.noticeLines.map((line) => str(line)).filter((line) => line.trim())
+      ? data.noticeLines.map((line) => str(line)).map((line) => line.replace(/\r/g, ""))
       : [];
+
+  const noticeBlocksFromData = Array.isArray(data.noticeBlocks)
+    ? data.noticeBlocks
+        .map((block) => str(block).replace(/\r/g, "").trim())
+        .filter((block) => block.length > 0)
+    : [];
+
+  const noticeBlocksFromLines = (() => {
+    const blocks: string[][] = [];
+    let current: string[] = [];
+    noticeRawLines.forEach((line) => {
+      if (line.trim().length === 0) {
+        if (current.length > 0) {
+          blocks.push(current);
+          current = [];
+        }
+        return;
+      }
+      current.push(line);
+    });
+    if (current.length > 0) {
+      blocks.push(current);
+    }
+    return blocks;
+  })();
 
   const bodyHtml = bodyLines
     .map(
@@ -911,19 +940,46 @@ const renderCampaignOverview = (section: SectionBase) => {
         `<p style="margin:0;text-align:center;font-size:${bodyTextSize}px;line-height:1.8;font-weight:700;color:${bodyTextColor};">${renderRichInline(line, true)}</p>`
     )
     .join("");
-  const noticeHtml = noticeLines
-    .map(
-      (line) =>
-        `<p style="margin:0;font-size:${noticeTextSize}px;line-height:1.75;color:${noticeTextColor};">${renderRichInline(line, true)}</p>`
-    )
-    .join("");
+  const noticeBlocksHtml =
+    noticeBlocksFromData.length > 0
+      ? noticeBlocksFromData
+          .map((block) =>
+            block
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0)
+              .map(
+                (line) =>
+                  `<p style="margin:0;font-size:${noticeTextSize}px;line-height:1.75;color:${noticeTextColor};">${renderRichInline(line, true)}</p>`
+              )
+              .join("")
+          )
+          .filter((blockHtml) => blockHtml.length > 0)
+          .map(
+            (blockHtml) =>
+              `<div style="margin-top:4px;background:${noticeBg};border:1px solid ${noticeBorder};border-radius:10px;padding:${noticePadding}px;display:flex;flex-direction:column;gap:8px;">${blockHtml}</div>`
+          )
+          .join("")
+      : noticeBlocksFromLines
+          .map((lines) =>
+            lines
+              .map(
+                (line) =>
+                  `<p style="margin:0;font-size:${noticeTextSize}px;line-height:1.75;color:${noticeTextColor};">${renderRichInline(line, true)}</p>`
+              )
+              .join("")
+          )
+          .filter((blockHtml) => blockHtml.length > 0)
+          .map(
+            (blockHtml) =>
+              `<div style="margin-top:4px;background:${noticeBg};border:1px solid ${noticeBorder};border-radius:10px;padding:${noticePadding}px;display:flex;flex-direction:column;gap:8px;">${blockHtml}</div>`
+          )
+          .join("");
   const optionalBlocksHtml = renderSectionOptionalBlocks(section);
   const band = resolveUnifiedBandStyles(appearance);
 
   return `<section class="container campaign-overview"><div class="lp-section-shell" style="padding:0;"><div class="lp-section-card" style="max-width:${band.maxWidthPx}px;margin:0 auto;overflow:visible;background:transparent;border:none;box-shadow:none;"><div class="lp-section-header" style="background:${band.headerBg};padding:${band.headerPadding};border-radius:${band.headerRadius};${band.headerShadow}"><h2 class="lp-section-title" style="color:${band.titleColor};font-size:${band.titleSizePx}px;font-weight:700;margin:0;text-align:center;">${title}</h2></div><div class="lp-section-body" style="padding:0;background:transparent;"><div style="width:min(100%, ${bodyWidthPct}%);max-width:${band.maxWidthPx}px;margin:0 auto;background:#ffffff;border:1px solid ${appearance.borderColor};border-radius:12px;padding:24px;box-shadow:0 8px 20px rgba(15,23,42,0.08);display:flex;flex-direction:column;gap:12px;">${bodyHtml}${
-    noticeEnabled && noticeHtml
-      ? `<div style="margin-top:4px;background:${noticeBg};border:1px solid ${noticeBorder};border-radius:10px;padding:${noticePadding}px;display:flex;flex-direction:column;gap:8px;">${noticeHtml}</div>`
-      : ""
+    noticeEnabled && noticeBlocksHtml ? noticeBlocksHtml : ""
   }${optionalBlocksHtml}</div></div></div></div></section>`;
 };
 
@@ -1447,7 +1503,11 @@ const renderLegalNotes = (section: SectionBase) => {
       ? section.data.noteTextSizePx
       : 14;
   const noteTextSize = Math.max(10, Math.min(24, noteTextSizeRaw));
-  const noteTextColor = esc(str(section.data?.noteTextColor || "#111827"));
+  const legalFallbackTextColor =
+    typeof section.style?.typography?.textColor === "string"
+      ? section.style.typography.textColor
+      : "#111827";
+  const noteTextColor = esc(str(section.data?.noteTextColor || legalFallbackTextColor));
   const rawItems = Array.isArray(section.data?.items) ? section.data.items : [];
 
   const legalTextItem = Array.isArray(section.content?.items)
