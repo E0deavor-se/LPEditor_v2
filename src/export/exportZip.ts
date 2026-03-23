@@ -3478,26 +3478,17 @@ export const exportLayoutZip = async (
     exportCss = composedCss;
     exportJs = storesEmbed ? buildStoresAppJs() : "(() => {})();";
     let htmlWithCss = "";
-    try {
+    const htmlFromPreview = buildExportHtmlFromPreviewDom(
+      layoutProject,
+      composedCss,
+      previewDoc,
+      effectivePreviewMode
+    );
+    if (htmlFromPreview) {
+      htmlWithCss = htmlFromPreview;
+    } else {
       const htmlFromApi = await fetchExportHtmlFromApi(layoutProject, ui);
       htmlWithCss = injectInlineCss(htmlFromApi, composedCss);
-    } catch (apiError) {
-      const htmlFromPreview = buildExportHtmlFromPreviewDom(
-        layoutProject,
-        composedCss,
-        previewDoc,
-        effectivePreviewMode
-      );
-      if (!htmlFromPreview) {
-        throw apiError;
-      }
-      warnings.push({
-        type: "other",
-        message: buildExportWarningMessage("dist-generation-failed"),
-        detail:
-          "export-html API failed; preview DOM fallback was used after stripping editor-only elements.",
-      });
-      htmlWithCss = htmlFromPreview;
     }
     htmlWithCss = rewriteAssetUrlsInHtml(
       replaceAssetDataUrls(htmlWithCss, urlMap),
