@@ -26,6 +26,7 @@ import type {
 } from "@/src/types/project";
 
 type PreviewUiState = {
+  editorMode?: string;
   previewMode?: string;
   previewAspect?: string;
   isPreviewBusy?: boolean;
@@ -1428,6 +1429,7 @@ const renderSection = (
 
 export default function PreviewSsr(props: PreviewSsrProps) {
   const { project, ui } = props;
+  const showEditorTools = ui?.editorMode === "layout";
   const assets = project?.assets ?? {};
   const resolveAssetUrl = (assetId: string) => assets?.[assetId]?.data;
   const pageBackground = buildBackgroundStyle(
@@ -1740,30 +1742,32 @@ export default function PreviewSsr(props: PreviewSsrProps) {
                 className={"scroll-mt-4 transition-shadow transition-colors "}
                 style={pageSectionAnimationStyle}
               >
-                <div className="lp-preview-section-actions" data-preview-section-actions="true">
-                  <button
-                    type="button"
-                    data-section-action="duplicate"
-                    data-section-target-id={section.id}
-                    className="lp-preview-section-action-btn"
-                    title="Duplicate section"
-                    aria-label="Duplicate section"
-                  >
-                    <Copy size={12} aria-hidden="true" />
-                    <span className="sr-only">Duplicate</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-section-action="delete"
-                    data-section-target-id={section.id}
-                    className="lp-preview-section-action-btn lp-preview-section-action-btn--danger"
-                    title="Delete section"
-                    aria-label="Delete section"
-                  >
-                    <Trash2 size={12} aria-hidden="true" />
-                    <span className="sr-only">Delete</span>
-                  </button>
-                </div>
+                {showEditorTools ? (
+                  <div className="lp-preview-section-actions" data-preview-section-actions="true">
+                    <button
+                      type="button"
+                      data-section-action="duplicate"
+                      data-section-target-id={section.id}
+                      className="lp-preview-section-action-btn"
+                      title="Duplicate section"
+                      aria-label="Duplicate section"
+                    >
+                      <Copy size={12} aria-hidden="true" />
+                      <span className="sr-only">Duplicate</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-section-action="delete"
+                      data-section-target-id={section.id}
+                      className="lp-preview-section-action-btn lp-preview-section-action-btn--danger"
+                      title="Delete section"
+                      aria-label="Delete section"
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                      <span className="sr-only">Delete</span>
+                    </button>
+                  </div>
+                ) : null}
                 {scopedCss ? (
                   <style
                     dangerouslySetInnerHTML={{
@@ -1811,7 +1815,7 @@ export default function PreviewSsr(props: PreviewSsrProps) {
                   )}
                 </div>
               </div>
-              {index < orderedSections.length - 1 ? (
+              {showEditorTools && index < orderedSections.length - 1 ? (
                 <div
                   data-preview-insert-slot="true"
                   className="lp-preview-insert-slot"
