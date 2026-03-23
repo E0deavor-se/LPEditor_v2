@@ -1308,6 +1308,7 @@ export default function PreviewSsr(props: PreviewSsrProps) {
             section.type === "imageOnly" ||
             section.type === "campaignPeriodBar" ||
             section.type === "campaignOverview" ||
+            section.type === "targetStores" ||
             section.type === "rankingTable" ||
             section.type === "legalNotes" ||
             section.type === "footerHtml" ||
