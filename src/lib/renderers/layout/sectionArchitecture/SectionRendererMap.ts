@@ -1,4 +1,4 @@
-import type { SectionBase } from "@/src/types/project";
+import type { SectionBase, StoresTable } from "@/src/types/project";
 import type { RenderDevice, RendererAssets } from "@/src/lib/renderers/shared/types";
 import { resolveSectionDecorationFromData } from "@/src/lib/sections/sectionAppearance";
 
@@ -13,6 +13,7 @@ type SectionRendererContext = {
   section: SectionBase;
   assets: RendererAssets;
   device: RenderDevice;
+  stores?: StoresTable | null;
   legacy: LegacyRenderers;
 };
 
@@ -181,7 +182,7 @@ const resolveTargetStoresNoticeLines = (section: SectionBase, noteText?: unknown
   return DEFAULT_TARGET_STORES_NOTICE_LINES;
 };
 
-const renderTargetStores = (section: SectionBase) => {
+const renderTargetStores = (section: SectionBase, stores?: StoresTable | null) => {
   const data = section.data as Record<string, unknown>;
   const appearance = resolveSectionDecorationFromData(data, {
     headerBackgroundColor: "#ffffff",
@@ -192,6 +193,10 @@ const renderTargetStores = (section: SectionBase) => {
     showHeaderBand: true,
   });
   const storeCsv = section.content?.storeCsv;
+  const fallbackHeaders = Array.isArray(stores?.columns) ? stores.columns : [];
+  const fallbackRows = Array.isArray(stores?.rows) ? stores.rows : [];
+  const hasStoreCsv =
+    Array.isArray(storeCsv?.headers) && storeCsv.headers.length > 0 && Array.isArray(storeCsv?.rows);
   const storeLabels =
     section.content?.storeLabels && typeof section.content.storeLabels === "object"
       ? section.content.storeLabels
@@ -271,13 +276,38 @@ const renderTargetStores = (section: SectionBase) => {
       ? data.cardRadius
       : 12;
 
-  const rows = Array.isArray(storeCsv?.rows) ? storeCsv.rows : [];
-  const headers = Array.isArray(storeCsv?.headers) ? storeCsv.headers : [];
-  const idKey = headers.find((entry) => entry === "店舗ID") ?? headers[0] ?? "店舗ID";
-  const nameKey = headers.find((entry) => entry === "店舗名") ?? headers[1] ?? "店舗名";
-  const postalKey = headers.find((entry) => entry === "郵便番号") ?? headers[2] ?? "郵便番号";
-  const addressKey = headers.find((entry) => entry === "住所") ?? headers[3] ?? "住所";
-  const regionKey = headers.find((entry) => entry === "都道府県") ?? headers[4] ?? "都道府県";
+  const rows = hasStoreCsv ? (storeCsv?.rows ?? []) : fallbackRows;
+  const headers = hasStoreCsv ? (storeCsv?.headers ?? []) : fallbackHeaders;
+  const idKey =
+    (hasStoreCsv
+      ? headers.find((entry) => entry === "店舗ID")
+      : stores?.canonical?.storeIdKey) ??
+    headers[0] ??
+    "店舗ID";
+  const nameKey =
+    (hasStoreCsv
+      ? headers.find((entry) => entry === "店舗名")
+      : stores?.canonical?.storeNameKey) ??
+    headers[1] ??
+    "店舗名";
+  const postalKey =
+    (hasStoreCsv
+      ? headers.find((entry) => entry === "郵便番号")
+      : stores?.canonical?.postalCodeKey) ??
+    headers[2] ??
+    "郵便番号";
+  const addressKey =
+    (hasStoreCsv
+      ? headers.find((entry) => entry === "住所")
+      : stores?.canonical?.addressKey) ??
+    headers[3] ??
+    "住所";
+  const regionKey =
+    (hasStoreCsv
+      ? headers.find((entry) => entry === "都道府県")
+      : stores?.canonical?.prefectureKey) ??
+    headers[4] ??
+    "都道府県";
   const regions = regionKey
     ? Array.from(new Set(rows.map((row) => str(row[regionKey]).trim()).filter(Boolean)))
     : [];
@@ -627,7 +657,7 @@ export const sectionRendererMap: Partial<Record<string, SectionRenderer>> = {
   rankingTable: ({ legacy }) => legacy.renderRankingTable(),
   couponFlow: ({ legacy }) => legacy.renderCouponFlow(),
   tabbedNotes: ({ legacy }) => legacy.renderTabbedNotes(),
-  targetStores: ({ section }) => renderTargetStores(section),
+  targetStores: ({ section, stores }) => renderTargetStores(section, stores),
   image: ({ section }) => renderImageSection(section),
   stickyNote: ({ section }) => renderStickyNoteSection(section),
   contact: ({ section }) => renderContactSection(section),

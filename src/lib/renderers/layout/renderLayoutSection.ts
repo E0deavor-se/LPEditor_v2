@@ -1655,6 +1655,7 @@ export const renderLayoutSection = (
     section,
     assets,
     device,
+    stores: context?.stores ?? null,
     legacy: {
       renderMainVisual: () =>
         renderMainVisual(section, assets, device, disableMotion),
