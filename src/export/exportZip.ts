@@ -1648,7 +1648,37 @@ const buildExportHtmlFromPreviewDom = (
   if (!root) {
     return null;
   }
-  return buildExportHtmlDocument(project, root.outerHTML, cssText, previewMode);
+  const clonedRoot = root.cloneNode(true) as HTMLElement;
+  const stripSelectors = [
+    ".lp-preview-section-actions",
+    ".lp-preview-insert-slot",
+    ".lp-preview-guides",
+    ".lp-preview-safearea",
+    "[data-preview-section-actions]",
+    "[data-preview-insert-slot]",
+    "[data-preview-ai-suggestion]",
+    "[data-section-action]",
+    "[data-add-after-id]",
+    "[data-add-type]",
+  ];
+  clonedRoot.querySelectorAll(stripSelectors.join(",")).forEach((node) => {
+    node.remove();
+  });
+  const stripAttributes = [
+    "data-preview-hovered",
+    "data-preview-selected",
+    "data-preview-pulse",
+    "data-preview-flash",
+    "data-preview-focused",
+  ];
+  clonedRoot.querySelectorAll("*").forEach((node) => {
+    stripAttributes.forEach((name) => {
+      if (node.hasAttribute(name)) {
+        node.removeAttribute(name);
+      }
+    });
+  });
+  return buildExportHtmlDocument(project, clonedRoot.outerHTML, cssText, previewMode);
 };
 
 const buildStoresEmbed = (project: ProjectState) => {
@@ -1717,7 +1747,7 @@ const buildStoresAppJs = () => {
     "    const extraBadgeHtml = extraBadgeCount > 0 ? '<span class=\"inline-flex min-h-[24px] items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[12px] font-semibold leading-none text-orange-500\">+' + extraBadgeCount + '</span>' : '';",
     "    return '<div class=\"rounded-2xl border border-orange-200 bg-white p-5 shadow-sm transition hover:shadow-md\"><div class=\"mb-3 flex flex-wrap gap-2\">' + badgesHtml + extraBadgeHtml + '</div><div class=\"mb-1 text-lg font-bold text-blue-600 hover:underline\">' + storeName + '</div><div class=\"text-sm text-gray-500\">' + postal + ' ' + address + '</div></div>';",
     "  };",
-    "  const sectionElements = Array.from(document.querySelectorAll('[data-target-stores=\"true\"]'));",
+    "  const sectionElements = Array.from(document.querySelectorAll('[data-target-stores=\"true\"], .target-stores--searchCards'));",
     "  sectionElements.forEach((sectionEl) => {",
     "    const sectionId = sectionEl.getAttribute('data-section-id') || '';",
     "    const sectionConfig = sections.find((entry) => entry.id === sectionId) || { storeLabels: {}, storeFilters: {}, storeFilterOperator: 'AND' };",
@@ -1735,10 +1765,11 @@ const buildStoresAppJs = () => {
     "    let selectedPrefecture = '';",
     "    let page = 1;",
     "    let isMobile = window.innerWidth < 640;",
-    "    const keywordInput = sectionEl.querySelector('[data-store-keyword]');",
+    "    const keywordInput = sectionEl.querySelector('[data-store-keyword], [data-store-keyword-input]');",
     "    const prefectureSelect = sectionEl.querySelector('[data-store-prefecture]');",
     "    const prevButton = sectionEl.querySelector('[data-store-prev]');",
     "    const nextButton = sectionEl.querySelector('[data-store-next]');",
+    "    const pageNode = sectionEl.querySelector('[data-store-page]');",
     "    const countNode = sectionEl.querySelector('[data-store-count]');",
     "    const cardsNode = sectionEl.querySelector('[data-store-cards]');",
     "    const emptyNode = sectionEl.querySelector('[data-store-empty]');",
@@ -1787,14 +1818,16 @@ const buildStoresAppJs = () => {
     "        return true;",
     "      });",
     "    };",
+    "    const configuredPageSize = Math.max(1, Number.parseInt(sectionEl.getAttribute('data-page-size') || '10', 10) || 10);",
     "    const render = () => {",
     "      updateFilterButtons();",
     "      const filtered = filterRows();",
-    "      const pageSize = isMobile ? 5 : 10;",
+    "      const pageSize = configuredPageSize;",
     "      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));",
     "      if (page > totalPages) { page = totalPages; }",
     "      const start = (page - 1) * pageSize;",
     "      const pageRows = filtered.slice(start, start + pageSize);",
+    "      if (pageNode) { pageNode.textContent = String(page) + '/' + String(totalPages); }",
     "      if (countNode) { countNode.textContent = '該当件数: ' + filtered.length + '件'; }",
     "      if (prevButton) { prevButton.disabled = page <= 1; }",
     "      if (nextButton) { nextButton.disabled = page >= totalPages; }",
@@ -1823,7 +1856,7 @@ const buildStoresAppJs = () => {
     "      });",
     "    });",
     "    if (prevButton) { prevButton.addEventListener('click', () => { page = Math.max(1, page - 1); render(); }); }",
-    "    if (nextButton) { nextButton.addEventListener('click', () => { const filtered = filterRows(); const totalPages = Math.max(1, Math.ceil(filtered.length / (isMobile ? 5 : 10))); page = Math.min(totalPages, page + 1); render(); }); }",
+    "    if (nextButton) { nextButton.addEventListener('click', () => { const filtered = filterRows(); const totalPages = Math.max(1, Math.ceil(filtered.length / configuredPageSize)); page = Math.min(totalPages, page + 1); render(); }); }",
     "    if (clearButton) { clearButton.addEventListener('click', () => { selectedPrefecture = ''; extraColumns.forEach((column) => { activeFilters[column] = false; }); page = 1; if (prefectureSelect) { prefectureSelect.value = ''; } render(); }); }",
     "    window.addEventListener('resize', () => { const nextMobile = window.innerWidth < 640; if (nextMobile !== isMobile) { isMobile = nextMobile; page = 1; render(); } });",
     "    render();",
@@ -3444,18 +3477,27 @@ export const exportLayoutZip = async (
     const composedCss = `${normalizedCss}\n${BACKGROUND_LAYER_CSS}`;
     exportCss = composedCss;
     exportJs = storesEmbed ? buildStoresAppJs() : "(() => {})();";
-    const htmlFromPreview = buildExportHtmlFromPreviewDom(
-      layoutProject,
-      composedCss,
-      previewDoc,
-      effectivePreviewMode
-    );
     let htmlWithCss = "";
-    if (htmlFromPreview) {
-      htmlWithCss = htmlFromPreview;
-    } else {
+    try {
       const htmlFromApi = await fetchExportHtmlFromApi(layoutProject, ui);
       htmlWithCss = injectInlineCss(htmlFromApi, composedCss);
+    } catch (apiError) {
+      const htmlFromPreview = buildExportHtmlFromPreviewDom(
+        layoutProject,
+        composedCss,
+        previewDoc,
+        effectivePreviewMode
+      );
+      if (!htmlFromPreview) {
+        throw apiError;
+      }
+      warnings.push({
+        type: "other",
+        message: buildExportWarningMessage("dist-generation-failed"),
+        detail:
+          "export-html API failed; preview DOM fallback was used after stripping editor-only elements.",
+      });
+      htmlWithCss = htmlFromPreview;
     }
     htmlWithCss = rewriteAssetUrlsInHtml(
       replaceAssetDataUrls(htmlWithCss, urlMap),

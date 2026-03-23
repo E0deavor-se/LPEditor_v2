@@ -1783,8 +1783,11 @@ export default function PreviewSsr(props: PreviewSsrProps) {
                     isHeroFullSize
                   )}
                 >
-                  {section.aiLayoutSuggestion ? (
-                    <div className="mb-2 flex items-center gap-2 px-1">
+                  {showEditorTools && section.aiLayoutSuggestion ? (
+                    <div
+                      className="mb-2 flex items-center gap-2 px-1"
+                      data-preview-ai-suggestion="true"
+                    >
                       <span className="ui-chip px-2 py-0.5 text-[10px]">
                         AI提案
                       </span>

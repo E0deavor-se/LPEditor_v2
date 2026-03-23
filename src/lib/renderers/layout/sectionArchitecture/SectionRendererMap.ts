@@ -462,7 +462,7 @@ const renderTargetStores = (section: SectionBase) => {
     }</div>${optionalBlocksHtml}</section>`;
   }
 
-  return `<section class="container target-stores target-stores--searchCards" data-page-size="${Math.max(
+  return `<section class="container target-stores target-stores--searchCards" data-target-stores="true" data-page-size="${Math.max(
     1,
     pageSize
   )}" data-store-filter-operator="${filterOperator}" style="padding:0;background:#f8fafc;"><header class="target-stores__header" style="margin-bottom:12px;"><h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:${esc(
@@ -473,7 +473,7 @@ const renderTargetStores = (section: SectionBase) => {
       : ""
   }</header>${noticeHtml}<section class="target-stores__controls" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;">${
     showSearchBox
-      ? `<div class="target-stores__search" style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;"><label style="font-size:12px;color:#475569;">キーワード</label><input type="search" data-store-keyword-input placeholder="${searchPlaceholder}" style="height:32px;border:1px solid #e2e8f0;border-radius:8px;padding:0 10px;font-size:12px;min-width:200px;flex:1 1 260px;background:#fff;" /></div>`
+      ? `<div class="target-stores__search" style="display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;"><label style="font-size:12px;color:#475569;">キーワード</label><input type="search" data-store-keyword placeholder="${searchPlaceholder}" style="height:32px;border:1px solid #e2e8f0;border-radius:8px;padding:0 10px;font-size:12px;min-width:200px;flex:1 1 260px;background:#fff;" /></div>`
       : ""
   }${regionHtml}${filtersHtml}</section><section class="target-stores__meta" style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#64748b;gap:12px;margin-bottom:12px;">${
     showResultCount

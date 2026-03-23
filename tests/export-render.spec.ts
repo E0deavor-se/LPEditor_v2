@@ -117,4 +117,22 @@ test("Layout export uses canonical renderer pipeline", async ({ request }) => {
   expect(output).toContain("https://example.com/reg-image.png");
   expect(output).toContain("lp-optional-blocks");
   expect(output).toContain("background:");
+  expect(output).toContain("data-target-stores=\"true\"");
+  expect(output).toContain("data-store-prefecture");
+  expect(output).toContain("data-store-prev");
+  expect(output).toContain("data-store-next");
+  expect(output).toContain("data-store-page");
+
+  // Preview/editor-only controls must never leak into export HTML.
+  expect(output).not.toContain("lp-preview-section-actions");
+  expect(output).not.toContain("data-preview-section-actions");
+  expect(output).not.toContain("lp-preview-insert-slot");
+  expect(output).not.toContain("data-preview-insert-slot");
+  expect(output).not.toContain('data-section-action="duplicate"');
+  expect(output).not.toContain('data-section-action="delete"');
+  expect(output).not.toContain("data-add-after-id");
+  expect(output).not.toContain("data-add-type");
+  expect(output).not.toContain("AI提案");
+  expect(output).not.toContain("data-preview-selected");
+  expect(output).not.toContain("data-preview-hovered");
 });
