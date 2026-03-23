@@ -1040,10 +1040,14 @@ const renderSection = (
     }
   );
   if (sharedRendered) {
+    const normalizedRendered =
+      section.type === "targetStores"
+        ? sharedRendered.replace(/<h2[^>]*>[\s\S]*?<\/h2>/i, "")
+        : sharedRendered;
     return (
       <div
         className="w-full"
-        dangerouslySetInnerHTML={{ __html: sharedRendered }}
+        dangerouslySetInnerHTML={{ __html: normalizedRendered }}
       />
     );
   }
@@ -1308,7 +1312,6 @@ export default function PreviewSsr(props: PreviewSsrProps) {
             section.type === "imageOnly" ||
             section.type === "campaignPeriodBar" ||
             section.type === "campaignOverview" ||
-            section.type === "targetStores" ||
             section.type === "rankingTable" ||
             section.type === "legalNotes" ||
             section.type === "footerHtml" ||
