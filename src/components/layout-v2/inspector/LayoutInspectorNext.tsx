@@ -20,6 +20,7 @@ import InspectorPrimaryTabs from "@/src/components/inspector/InspectorPrimaryTab
 import InspectorSecondaryTabs from "@/src/components/inspector/InspectorSecondaryTabs";
 import CommonSectionEditor from "@/src/components/layout-v2/inspector/CommonSectionEditor";
 import PageGlobalSettingsEditor from "@/src/components/layout-v2/inspector/PageGlobalSettingsEditor";
+import PageMetaPanel from "@/src/components/editor/right/groups/PageMetaPanel";
 import SectionAppearanceEditor from "@/src/components/layout-v2/inspector/sectionSpecific/SectionAppearanceEditor";
 import SectionExtensionsEditor from "@/src/components/layout-v2/inspector/sectionSpecific/SectionExtensionsEditor";
 import {
@@ -328,6 +329,14 @@ export default function LayoutInspectorNext() {
               onPatchBackground={core.setPageBackground}
               onApplyTheme={core.applyProjectTheme}
             />
+            <div className="mt-3 rounded-md border border-[var(--ui-border)]/70 bg-[var(--surface-elevated)] px-3 py-3">
+              <PageMetaPanel
+                value={core.pageMeta}
+                onChange={core.setPageMeta}
+                assets={core.project.assets}
+                onAddAsset={core.addAsset}
+              />
+            </div>
           </>
         ) : null}
 
