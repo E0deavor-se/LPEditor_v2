@@ -1743,7 +1743,7 @@ const buildStoresAppJs = () => {
     "    const filterLabels = extraColumns.map((column) => resolvedLabels[column]).filter(Boolean).filter((label) => label.showAsFilter !== false);",
     "    const requiredKeys = { storeIdKey: headers[0] || '店舗ID', storeNameKey: headers[1] || '店舗名', postalCodeKey: headers[2] || '郵便番号', addressKey: headers[3] || '住所', prefectureKey: headers[4] || '都道府県' };",
     "    let activeFilters = {};",
-    "    extraColumns.forEach((column) => { activeFilters[column] = Boolean(sectionConfig.storeFilters && sectionConfig.storeFilters[column]); });",
+    "    extraColumns.forEach((column) => { activeFilters[column] = false; });",
     "    let keyword = '';",
     "    let selectedPrefecture = '';",
     "    let page = 1;",

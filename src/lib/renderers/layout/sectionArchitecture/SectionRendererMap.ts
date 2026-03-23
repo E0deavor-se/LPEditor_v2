@@ -296,29 +296,13 @@ const renderTargetStores = (section: SectionBase) => {
     (columnKey) => ![idKey, nameKey, postalKey, addressKey, regionKey].includes(columnKey)
   );
 
-  const activeFilters =
-    section.content?.storeFilters && typeof section.content.storeFilters === "object"
-      ? (section.content.storeFilters as Record<string, boolean>)
-      : {};
+  const activeFilters: Record<string, boolean> = {};
+  labelKeys.forEach((key) => {
+    activeFilters[key] = false;
+  });
   const filterOperator = section.content?.storeFilterOperator === "OR" ? "OR" : "AND";
 
-  const initialFilteredIndexes: number[] = [];
-  rows.forEach((row, index) => {
-    const selectedKeys = labelKeys.filter((key) => activeFilters[key]);
-    if (selectedKeys.length === 0) {
-      initialFilteredIndexes.push(index);
-      return;
-    }
-    if (filterOperator === "OR") {
-      if (selectedKeys.some((key) => isTruthyStoreFlag(str(row[key])))) {
-        initialFilteredIndexes.push(index);
-      }
-      return;
-    }
-    if (selectedKeys.every((key) => isTruthyStoreFlag(str(row[key])))) {
-      initialFilteredIndexes.push(index);
-    }
-  });
+  const initialFilteredIndexes = rows.map((_, index) => index);
   const initialVisibleIndexes = new Set(
     initialFilteredIndexes.slice(0, Math.max(1, pageSize))
   );
